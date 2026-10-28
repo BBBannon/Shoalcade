@@ -1,0 +1,160 @@
+/*
+ * Player page (/shoalcade/play). Shared Pocket parts (tokens, toolbar rail, settings panel, buttons,
+ * switches, toast) come from sc.css; everything here is only for this page.
+ */
+
+/* ---------- EmulatorJS: its own UI is off (D34); our page provides every control ---------- */
+#sc-game .ejs_menu_bar, #sc-game .ejs_context_menu, #sc-game .ejs_virtualGamepad_parent, #sc-game .ejs_virtualGamepad_open,
+#sc-game .ejs_settings_parent, #sc-game .ejs_popup_container, #sc-game .ejs_start_button { display: none !important; }
+#sc-game { background: #000; }
+#sc-game, #sc-game .ejs_canvas_parent { width: 100%; height: 100%; }
+#sc-game canvas { display: block; width: 100% !important; height: 100% !important; outline: 0; touch-action: none; }
+
+/* ---------- frame ---------- */
+.sc-play { --tp-h: min(44svh, 380px); overflow: hidden; background: #151A12; }
+.game { position: absolute; inset: 0; }
+
+/* The toolbar floats over the game while it comes and goes, so the game isn't resized every time.
+   "Always show the toolbar" (pinned) and the open settings panel make room for it instead. */
+.sc-play .player:not(.pinned) .stage { left: 0; top: 0; }
+.sc-play.panel-open .player .stage { left: var(--rail); }
+/* DS: the game takes touches, so the toolbar must never sit on it (taps there would press Pause etc.).
+   The game always keeps the toolbar's room instead. */
+.sc-play.ds .player .stage { left: var(--rail); }
+.sc-play .tb-btn { text-decoration: none; }
+.sc-play .tb-btn:disabled { opacity: .4; cursor: default; background: none; }
+.player:not(.is-paused) .i-play, .player.is-paused .i-pause { display: none; }
+.snaps-off .snap-only { display: none !important; }
+.no-fullscreen [data-act=full] { display: none; }
+
+/* Paused: a still of the game (the canvas goes blank if it is resized while paused) with a label. */
+.sc-play .paused-badge { background: #000; font: 600 clamp(1.2rem, 5vmin, 2.4rem) var(--cond); z-index: 2; }
+.paused-badge img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; filter: brightness(.55) saturate(.7); }
+.paused-badge span { position: relative; background: rgba(34, 42, 28, .85); color: #ECEFDB; padding: 6px 18px; border-radius: var(--r-m); border-left: 6px solid var(--led); }
+
+/* ---------- cards over the game: before it starts, a save clash, an error ---------- */
+.pl-card { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 12; width: min(460px, calc(100vw - 32px)); max-height: calc(100% - 32px); overflow: auto;
+  background: var(--p-bg); color: var(--p-ink); border: 2px solid var(--ink); border-radius: var(--r-l); padding: 20px 22px; box-shadow: 6px 6px 0 #000; }
+.pl-card.warn { border-left-width: 8px; border-left-color: var(--led); z-index: 30; }
+.pl-card h1, .pl-card h2 { margin: 0 0 8px; font: 700 1.6rem/1.15 var(--cond); overflow-wrap: anywhere; }
+.pl-card h2 { font-size: 1.35rem; }
+.pl-card p { margin: 0 0 10px; overflow-wrap: anywhere; }
+.pl-card .pl-k { font: 700 .75rem var(--cond); text-transform: uppercase; letter-spacing: .08em; color: var(--p-muted); margin: 0 0 4px; }
+.pl-status { color: var(--p-muted); min-height: 1.5em; }
+.pl-status[data-kind=error] { color: var(--danger); font-weight: 650; }
+.pl-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.pl-acts .btn { flex: 1 1 auto; }
+.pl-card .pl-err { color: var(--danger); font-weight: 650; margin-top: 12px; }
+.pl-card .facts { margin: 4px 0 0; }
+body[data-state=playing] #intro { display: none; }
+
+/* ---------- settings panel contents ---------- */
+.sc-play .sv-top { border-bottom: 0; padding: 12px 0 0; }
+.sc-play .sv-top .btn, .game-acts .btn { flex: 1 1 auto; }
+.game-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+#save-state, #save-detail { margin: 0 0 4px; }
+#save-state[data-kind=error], #save-state[data-kind=conflict] { color: var(--danger); }
+.lays { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 6px; }
+.lay { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 6px; border: 2px solid var(--line); background: none; border-radius: var(--r-m); font: 600 .8rem var(--cond); color: var(--p-muted); text-align: center; }
+.lay svg { width: 56px; fill: var(--p-well); stroke: currentColor; stroke-width: 1.5; }
+.lay[aria-pressed=true] { border-color: var(--ink); background: var(--p-well); color: var(--p-ink); }
+.lay[aria-pressed=true] svg { fill: var(--accent-soft); }
+.ctl-body { padding-top: 12px; }
+.ctl-body h4 { margin: 16px 0 8px; }
+.binds { list-style: none; margin: 0; padding: 0; }
+.binds li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: .9rem; }
+.binds .key { max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.device { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 10px; font-size: .92rem; overflow-wrap: anywhere; }
+.device .ico { width: 28px; height: 28px; }
+.ps-foot { padding: 16px 0 0; }
+.ps-foot .fine { margin-top: 8px; }
+.sc-play .seg button { min-height: 38px; }
+#cc button { text-transform: uppercase; }
+.snaps { list-style: none; margin: 0; padding: 0; }
+.snap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 0; border-bottom: 1px solid var(--p-line); }
+.snap-pic { width: 96px; aspect-ratio: 3 / 2; flex: none; border: 2px solid var(--ink); border-radius: var(--r-s); background: var(--p-well); overflow: hidden; display: grid; place-items: center; color: var(--p-muted); font-size: .72rem; }
+.snap-pic img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; background: #000; display: block; }
+.snap-txt { display: flex; flex-direction: column; gap: 2px; flex: 1 1 120px; min-width: 0; }
+.snap .sv-acts { flex-basis: 100%; }
+.mini.sure { background: var(--led); color: #fff; }
+
+/* ---------- launch choice (D90): continue from save, or a snapshot ---------- */
+.launch { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--p-line); }
+.launch-snaps { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.launch-snap { display: flex; align-items: center; gap: 12px; width: 100%; padding: 6px; text-align: left; font: inherit; color: inherit;
+  background: none; border: 2px solid var(--p-line); border-radius: var(--r-m); cursor: pointer; }
+.launch-snap:hover { border-color: var(--ink); background: var(--p-well); }
+.launch-snap:focus-visible { border-color: var(--ink); }
+.launch-snap:disabled { opacity: .6; cursor: default; }
+.launch-snap .snap-pic { width: 84px; }
+
+/* ---------- touch buttons (touch screens only; never on a PC) ---------- */
+.touchpad { --ts: 1; --to: .55; position: absolute; z-index: 4; inset: 0; pointer-events: none;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.touchpad > * { position: absolute; pointer-events: auto; touch-action: none; color: #ECEFDB; font: 700 calc(1rem * var(--ts)) var(--cond); }
+.tp-b, .tp-dpad span { border: 2px solid rgba(236, 239, 219, .85); background: rgba(236, 239, 219, .16); opacity: var(--to); }
+.tp-b { display: grid; place-items: center; padding: 0; }
+.tp-b.on, .tp-dpad span.on { background: rgba(200, 50, 75, .8); }
+.tp-face { display: grid; grid-template-columns: repeat(3, calc(56px * var(--ts))); grid-template-rows: repeat(3, calc(56px * var(--ts))); gap: calc(3px * var(--ts)); }
+.tp-face.two { grid-template-columns: repeat(2, calc(64px * var(--ts))); grid-template-rows: repeat(2, calc(64px * var(--ts))); }
+.tp-face .tp-b { border-radius: 50%; }
+.tp-face [data-b=X] { grid-area: 1 / 2; }
+.tp-face [data-b=Y] { grid-area: 2 / 1; }
+.tp-face [data-b=A] { grid-area: 2 / 3; }
+.tp-face [data-b=B] { grid-area: 3 / 2; }
+.tp-face.two [data-b=A] { grid-area: 1 / 2; }
+.tp-face.two [data-b=B] { grid-area: 2 / 1; }
+.tp-dpad { width: calc(150px * var(--ts)); height: calc(150px * var(--ts)); }
+.tp-dpad span { position: absolute; }
+.tp-dpad span[data-d=Up] { left: 33.3%; width: 33.4%; top: 0; height: 36%; border-radius: 6px 6px 0 0; border-bottom-width: 0; }
+.tp-dpad span[data-d=Down] { left: 33.3%; width: 33.4%; bottom: 0; height: 36%; border-radius: 0 0 6px 6px; border-top-width: 0; }
+.tp-dpad span[data-d=Left] { top: 33.3%; height: 33.4%; left: 0; width: 36%; border-radius: 6px 0 0 6px; border-right-width: 0; }
+.tp-dpad span[data-d=Right] { top: 33.3%; height: 33.4%; right: 0; width: 36%; border-radius: 0 6px 6px 0; border-left-width: 0; }
+.tp-sh { width: calc(86px * var(--ts)); height: calc(38px * var(--ts)); border-radius: 10px; }
+.tp-sm { width: calc(74px * var(--ts)); height: calc(30px * var(--ts)); border-radius: 15px; font-size: calc(.75rem * var(--ts)); }
+.tp-dpad { left: 14px; top: 50%; transform: translateY(-50%); }
+.tp-face { right: 14px; top: 50%; transform: translateY(-50%); }
+.tp-sh[data-b=L] { left: 14px; top: 64px; }
+.tp-sh[data-b=R] { right: 14px; top: 64px; }
+/* PS1 (D137): four smaller shoulder pills, L1 L2 on the left and R2 R1 on the right (same order as the app). */
+.touchpad.ps .tp-sh { width: calc(64px * var(--ts)); }
+.tp-sh[data-b=L2] { left: calc(14px + 70px * var(--ts)); top: 64px; }
+.tp-sh[data-b=R2] { right: calc(14px + 70px * var(--ts)); top: 64px; }
+.tp-sm[data-b=Select] { right: calc(50% + 6px); bottom: 12px; }
+.tp-sm[data-b=Start] { left: calc(50% + 6px); bottom: 12px; }
+.panel-open .touchpad { display: none; }
+/* Upright phone: the game sits on top and the buttons get the bottom part of the screen. */
+@media (orientation: portrait) {
+  .touchpad { top: auto; height: var(--tp-h); }
+  .sc-play.touch-on .player .stage { bottom: var(--tp-h); }
+  .tp-sh[data-b=L], .tp-sh[data-b=R], .tp-sh[data-b=L2], .tp-sh[data-b=R2] { top: 8px; }
+  .tp-dpad, .tp-face { top: 52%; }
+}
+
+/* ---------- phones ---------- */
+@media (max-width: 760px) {
+  .sc-play .panel { height: 58svh; }
+  .sc-play.panel-open .player .stage { left: 0; top: 56px; bottom: 58svh; }
+  .sc-play.ds .player .stage { left: 0; top: 56px; }
+  .sc-play .toast { bottom: auto; top: 66px; }
+  .pl-card { padding: 16px; }
+  .pl-card h1 { font-size: 1.35rem; }
+}
+
+/* Sideways touch screen (D136): the touch buttons get a column each side, so they never sit on the game's picture
+   (on the DS touch screen a tap there would also press A/B instead of touching the game). Select/Start move into the
+   columns too. The left column starts after the toolbar's rail, so the toolbar never covers the D-pad, and the
+   space is kept while the toolbar is hidden, so the buttons never move under a finger. Phones narrower than 761 px
+   have the toolbar as a top strip instead, so no rail space is needed there. --ts (button size) is copied onto the
+   body by play-ui.js. Not while Settings is open (the buttons are hidden then). */
+@media (orientation: landscape) {
+  .sc-play.touch-on { --tp-w: calc(24px + 150px * var(--ts, 1)); --tp-l: var(--rail); }
+  .sc-play.ds.touch-on, .sc-play.psx.touch-on { --tp-w: calc(24px + 174px * var(--ts, 1)); }
+  .sc-play.touch-on:not(.panel-open) .player .stage { left: calc(var(--tp-l) + var(--tp-w)); right: var(--tp-w); }
+  .sc-play.touch-on .touchpad { left: var(--tp-l); }
+  .sc-play .tp-sm[data-b=Select] { right: auto; left: 14px; }
+  .sc-play .tp-sm[data-b=Start] { left: auto; right: 14px; }
+}
+@media (orientation: landscape) and (max-width: 760px) {
+  .sc-play.touch-on { --tp-l: 0px; }
+}

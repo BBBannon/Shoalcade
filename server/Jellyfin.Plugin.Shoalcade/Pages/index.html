@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shoalcade</title>
+  <link rel="icon" href="web/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="web/sc.css">
+  <script src="web/api.js" defer></script>
+  <script src="web/library.js" defer></script>
+</head>
+<body>
+  <div class="lib">
+    <header class="top">
+      <h1 class="brand"><a id="jf-home" class="jf-home" href="../web/#/home" aria-label="Back to Jellyfin" title="Back to Jellyfin"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h4.5v-6h4v6h4.5V10"/></svg><span>Jellyfin</span></a><img class="brand-logo" src="web/logo.svg" alt="" width="32" height="32"><span>Shoalcade</span></h1>
+      <span id="who" class="who"></span>
+      <a id="settings-btn" class="btn" href="settings">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/><circle cx="12" cy="12" r="6.5"/></svg><span>Settings</span>
+      </a>
+      <label id="search-box" class="search" hidden>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
+        <span class="sr">Search games</span>
+        <input id="search" type="search" placeholder="Find a game" autocomplete="off" spellcheck="false">
+      </label>
+    </header>
+
+    <p id="loading" class="loading" role="status">Loading your games…</p>
+
+    <section id="signed-out" class="notice" hidden>
+      <h2>Sign in first</h2>
+      <p id="signed-out-text">Shoalcade uses your Jellyfin sign-in. Sign in to Jellyfin in this browser, then come back to this page.</p>
+      <a id="signin" class="btn primary" href="../web/">Sign in to Jellyfin</a>
+    </section>
+
+    <section id="failed" class="notice" role="alert" hidden>
+      <h2>Couldn't load your games</h2>
+      <p id="failed-text"></p>
+      <button type="button" id="retry" class="btn">Try again</button>
+    </section>
+
+    <div id="library" hidden>
+      <nav id="filters" class="strip" aria-label="Consoles"></nav>
+      <div id="cols" class="cols">
+        <section aria-labelledby="games-h">
+          <div class="sec-row">
+            <h2 id="games-h" class="sec">Games <span id="count" class="count" role="status" aria-live="polite"></span></h2>
+            <label class="sort" for="sort"><span>Sort</span>
+              <select id="sort">
+                <option value="name">Name</option>
+                <option value="year">Year</option>
+                <option value="platform">Platform</option>
+                <option value="played" selected>Last played</option>
+              </select>
+            </label>
+          </div>
+          <div id="grid" class="grid"></div>
+        </section>
+        <aside id="recent" class="recent" aria-labelledby="recent-h" hidden>
+          <h2 id="recent-h" class="sec">Played lately</h2>
+          <div id="recent-list" class="recent-list"></div>
+        </aside>
+      </div>
+    </div>
+    <footer class="ver"><span id="sc-ver"></span></footer>
+  </div>
+
+  <dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
+    <button type="button" id="sheet-x" class="sheet-x" title="Close">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg><span class="sr">Close</span>
+    </button>
+    <div class="sheet-body">
+      <div id="sheet-art" class="sheet-art"></div>
+      <div class="sheet-txt">
+        <h2 id="sheet-title"></h2>
+        <p id="sheet-sub" class="card-m"></p>
+        <div class="sheet-b">
+          <a id="sheet-play" class="btn primary" href="play">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg><span>Play</span>
+          </a>
+          <a id="sheet-saves" class="btn" href="saves-manager">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4"/></svg><span>Saves</span>
+          </a>
+          <button type="button" id="sheet-edit" class="btn" aria-expanded="false" aria-controls="editor" hidden>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg><span>Edit game</span>
+          </button>
+        </div>
+        <p id="sheet-why" class="note" hidden></p>
+        <dl id="sheet-facts" class="facts"></dl>
+        <p class="fine">Your save lives on your Jellyfin server and follows you to the phone app.</p>
+      </div>
+    </div>
+    <section id="editor" class="editor" aria-labelledby="editor-h" hidden>
+      <h3 id="editor-h">Edit game</h3>
+      <p class="fine">Admins only. Changes show in the app and Jellyfin too, and stay after library scans and “Replace all metadata”. Nothing is saved next to your ROM files.</p>
+      <p id="ed-now" class="ed-now"></p>
+      <form id="ed-name-form" class="ed-row">
+        <label for="ed-name" class="ed-lbl">Name</label>
+        <div class="ed-line">
+          <input id="ed-name" type="text" maxlength="200" autocomplete="off" spellcheck="false" required>
+          <button type="submit" class="btn">Save name</button>
+        </div>
+      </form>
+      <div class="ed-row">
+        <span class="ed-lbl" id="ed-cover-l">Cover</span>
+        <div class="ed-line">
+          <button type="button" id="ed-upload" class="btn" aria-describedby="ed-cover-l ed-cover-help">Upload a picture</button>
+          <input id="ed-file" type="file" accept="image/png,image/jpeg,image/webp" class="sr" tabindex="-1" aria-hidden="true">
+        </div>
+        <p id="ed-cover-help" class="fine">PNG, JPEG or WebP, up to 10 MB.</p>
+      </div>
+      <form id="ed-find-form" class="ed-row">
+        <label for="ed-find" class="ed-lbl">Find a cover</label>
+        <div class="ed-line">
+          <input id="ed-find" type="search" maxlength="300" autocomplete="off" spellcheck="false" required>
+          <button type="submit" class="btn">Search</button>
+        </div>
+        <p id="ed-find-help" class="fine">Searches the libretro game list for this console. Type the main title, e.g. “HeartGold”.</p>
+        <div id="ed-results" class="ed-results" aria-label="Covers found"></div>
+      </form>
+      <p id="ed-status" class="note" role="status" aria-live="polite" hidden></p>
+      <div class="ed-foot">
+        <button type="button" id="ed-reset" class="btn danger">Reset to automatic</button>
+        <button type="button" id="ed-done" class="btn">Done</button>
+      </div>
+    </section>
+  </dialog>
+</body>
+</html>

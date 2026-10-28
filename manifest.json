@@ -1,0 +1,21 @@
+[
+  {
+    "guid": "5a8b0f1e-7c3d-4e2a-9b6f-1d4c8e9a2f70",
+    "name": "Shoalcade",
+    "description": "Shoalcade for Jellyfin: play your own games on your Android phone (offline) and in the browser, with every save kept safe on your Jellyfin server.",
+    "overview": "Your own game library in Jellyfin: phone app, browser player, safe saves",
+    "owner": "BBBannon",
+    "category": "General",
+    "imageUrl": "https://raw.githubusercontent.com/BBBannon/Shoalcade/main/server/assets/thumb.png",
+    "versions": [
+      {
+        "version": "0.3.0.0",
+        "changelog": "s0.3 - first public release. Release notes: https://github.com/BBBannon/Shoalcade/releases/tag/v0.3.0",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/BBBannon/Shoalcade/releases/download/v0.3.0/Shoalcade_s0.3.zip",
+        "checksum": "b5c83559563759a863d7b59b0af4cd41",
+        "timestamp": "2026-10-28T12:13:07Z"
+      }
+    ]
+  }
+]

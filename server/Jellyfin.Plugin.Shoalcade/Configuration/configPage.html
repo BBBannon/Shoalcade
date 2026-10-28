@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="utf-8">
+    <title>Shoalcade</title>
+</head>
+<body>
+    <div id="shoalcadeConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <h2 style="display:flex;align-items:center;gap:.5em"><img src="../shoalcade/web/logo.svg" alt="" width="40" height="40">Shoalcade for Jellyfin</h2>
+                <p>Saves, snapshots and settings for the Shoalcade app and the browser player.
+                   Players open the browser library at <a is="emby-linkbutton" class="button-link" href="../shoalcade/" target="_blank">/shoalcade/</a>.</p>
+                <p class="fieldDescription" id="scVersion"></p>
+                <div class="verticalSection" id="scLibrarySection">
+                    <h3 class="sectionTitle">Games library</h3>
+                    <p class="fieldDescription">Games live in a normal Jellyfin <b>Books</b> library (Jellyfin has no game type, so this is how JellyEMU stores them too).</p>
+                    <div id="scScanner" class="fieldDescription"></div>
+                    <div id="scBoxArt" class="fieldDescription"></div>
+                    <div id="scMigration" class="fieldDescription" role="status" hidden></div>
+                    <div id="scLibraries"></div>
+                    <div id="scCreate" style="margin-top:1em">
+                        <h4 style="margin:.5em 0">Add a games library</h4>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="scLibName">Name</label>
+                            <input id="scLibName" type="text" is="emby-input" value="Games" maxlength="60" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="scLibPath">ROM folder on the server</label>
+                            <input id="scLibPath" type="text" is="emby-input" placeholder="/media/games or D:\Games" />
+                            <div class="fieldDescription">The folder with your ROMs, as the server sees it. Nothing is ever written into it.</div>
+                        </div>
+                        <button is="emby-button" type="button" id="scLibCreate" class="raised emby-button"><span>Create games library</span></button>
+                        <div id="scLibMsg" class="fieldDescription" role="status" style="margin-top:.5em"></div>
+                    </div>
+                    <button is="emby-button" type="button" id="scScan" class="raised emby-button" style="margin-top:1em"><span>Scan for new games</span></button>
+                </div>
+                <h3 class="sectionTitle">Settings</h3>
+                <form id="shoalcadeConfigForm">
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableBrowserPlayer" name="EnableBrowserPlayer" type="checkbox" is="emby-checkbox" />
+                            <span>Browser player and library pages</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Turn off to use Shoalcade only from the app.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="ShowInJellyfin" name="ShowInJellyfin" type="checkbox" is="emby-checkbox" />
+                            <span>Shoalcade link and Play/Saves buttons in Jellyfin</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Adds a Shoalcade link to Jellyfin's menu and Play and Saves buttons on each game's page. Reload Jellyfin in the browser after changing this.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="OfferPhoneApp" name="OfferPhoneApp" type="checkbox" is="emby-checkbox" />
+                            <span>Offer the phone app download</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Signed-in people can download the Android app from this server (Shoalcade Settings, Phone app). The app comes inside the plugin, so nothing is fetched from anywhere else.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="KeepGamesOffHomePage" name="KeepGamesOffHomePage" type="checkbox" is="emby-checkbox" />
+                            <span>Keep games off Jellyfin's home page</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Hides games libraries from everyone's home page (My Media and Recently Added) and from Jellyfin's library menu. Games still show in search, and the Shoalcade link opens them. Each person can put games back by ticking "Display in other home screen sections" for the games library in their own Settings, Home screen; Shoalcade won't undo that. Turning this off puts back only what Shoalcade hid.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="ImportJellyEmuSaves" name="ImportJellyEmuSaves" type="checkbox" is="emby-checkbox" />
+                            <span>Import JellyEMU saves</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Copies saves from JellyEMU. JellyEMU's files are only read, never changed.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="KeepRecentVersions">Recent versions to keep per save</label>
+                        <input id="KeepRecentVersions" name="KeepRecentVersions" type="number" is="emby-input" min="1" max="1000" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="KeepDailyDays">Days to keep one version per day</label>
+                        <input id="KeepDailyDays" name="KeepDailyDays" type="number" is="emby-input" min="0" max="3650" />
+                        <div class="fieldDescription">Pinned versions are always kept.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SaveQuotaMegabytes">Save storage per user (MB, 0 = no limit)</label>
+                        <input id="SaveQuotaMegabytes" name="SaveQuotaMegabytes" type="number" is="emby-input" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SnapshotQuotaMegabytes">Snapshot storage per user (MB, 0 = no limit)</label>
+                        <input id="SnapshotQuotaMegabytes" name="SnapshotQuotaMegabytes" type="number" is="emby-input" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MaxSnapshotMegabytes">Largest single snapshot (MB)</label>
+                        <input id="MaxSnapshotMegabytes" name="MaxSnapshotMegabytes" type="number" is="emby-input" min="1" max="1024" />
+                    </div>
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Save</span></button>
+                        <div id="scConfigMsg" class="fieldDescription" role="status" style="margin-top:.5em;color:#ff6b6b"></div>
+                    </div>
+                </form>
+                <div class="verticalSection" id="scStorageSection">
+                    <h3 class="sectionTitle">Storage</h3>
+                    <p class="fieldDescription">What each user stores, against the per-user limits above. View only: nothing can be deleted or downloaded from here.</p>
+                    <div id="scStorageMsg" class="fieldDescription" role="status"></div>
+                    <div class="scScroll">
+                        <table class="scTable" id="scTotals">
+                            <caption>Server totals</caption>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="scScroll">
+                        <table class="scTable" id="scUsers">
+                            <caption>Per user (select a name to see each game)</caption>
+                            <thead><tr><th scope="col">User</th><th scope="col">Saves</th><th scope="col">Snapshots + pictures</th><th scope="col">Settings</th><th scope="col">Total</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <button is="emby-button" type="button" id="scStorageRefresh" class="raised emby-button" style="margin-top:1em"><span>Refresh storage</span></button>
+                </div>
+            </div>
+        </div>
+        <style>
+            #shoalcadeConfigPage .scScroll { overflow-x: auto; margin: .75em 0; }
+            #shoalcadeConfigPage .scTable { border-collapse: collapse; width: 100%; font-size: .95em; }
+            #shoalcadeConfigPage .scTable caption { text-align: left; font-weight: bold; padding: .25em 0; }
+            #shoalcadeConfigPage .scTable th, #shoalcadeConfigPage .scTable td { text-align: left; vertical-align: top; padding: .4em .5em; border-bottom: 1px solid rgba(128,128,128,.35); }
+            #shoalcadeConfigPage .scTable td.scNum { white-space: nowrap; }
+            #shoalcadeConfigPage .scBar { height: .5em; width: 8em; max-width: 100%; background: rgba(128,128,128,.3); border-radius: .25em; margin-top: .25em; overflow: hidden; }
+            #shoalcadeConfigPage .scBar > div { height: 100%; background: #00a4dc; }
+            #shoalcadeConfigPage .scBar.scFull > div { background: #ff6b6b; }
+            #shoalcadeConfigPage .scSmall { font-size: .85em; opacity: .85; }
+            #shoalcadeConfigPage .scTag { display: inline-block; font-size: .8em; padding: 0 .4em; border: 1px solid currentColor; border-radius: .25em; margin-left: .25em; }
+            #shoalcadeConfigPage .scExpand { background: none; border: 0; color: inherit; font: inherit; font-weight: bold; padding: .2em 0; cursor: pointer; text-align: left; min-height: 2em; }
+            #shoalcadeConfigPage .scExpand:focus-visible { outline: 2px solid #00a4dc; }
+            #shoalcadeConfigPage .scDetail > td { padding: .25em 0 1em 1em; }
+            #shoalcadeConfigPage .scWrap, #shoalcadeConfigPage .scTable th { overflow-wrap: anywhere; word-break: break-word; }
+            #shoalcadeConfigPage .scBad { color: #ff6b6b; font-weight: bold; }
+            @media (max-width: 40em) { #shoalcadeConfigPage .scTable { font-size: .85em; } #shoalcadeConfigPage .scBar { width: 5em; } }
+        </style>
+        <script type="text/javascript">
+            (function () {
+                var pluginId = '5a8b0f1e-7c3d-4e2a-9b6f-1d4c8e9a2f70';
+                var bools = ['EnableBrowserPlayer', 'ShowInJellyfin', 'OfferPhoneApp', 'KeepGamesOffHomePage', 'ImportJellyEmuSaves'];
+                var nums = ['KeepRecentVersions', 'KeepDailyDays', 'SaveQuotaMegabytes', 'SnapshotQuotaMegabytes', 'MaxSnapshotMegabytes'];
+                var page = document.querySelector('#shoalcadeConfigPage');
+                function el(tag, text, style) { var e = document.createElement(tag); if (text) { e.textContent = text; } if (style) { e.style.cssText = style; } return e; }
+                function msg(text, bad) { var m = page.querySelector('#scLibMsg'); m.textContent = text; m.style.color = bad ? '#ff6b6b' : ''; }
+                function loadLibraries() {
+                    ApiClient.fetch({ url: ApiClient.getUrl('shoalcade/admin/libraries'), type: 'GET', dataType: 'json' }).then(function (o) {
+                        page.querySelector('#scScanner').textContent = o.scanner === 'JellyEMU'
+                            ? 'ROMs are found by JellyEMU. The Shoalcade scanner is standing down until JellyEMU is removed.'
+                            : 'Shoalcade finds ROMs itself.';
+                        var box = page.querySelector('#scLibraries'); box.textContent = '';
+                        var games = o.libraries.filter(function (l) { return l.romCount > 0; });
+                        o.libraries.forEach(function (l) {
+                            var line;
+                            if (l.romCount > 0) { line = '✔ ' + l.name + ' (' + l.type + '): ' + l.romCount + ' game' + (l.romCount === 1 ? '' : 's'); }
+                            else if (l.suitable) { line = '– ' + l.name + ' (' + l.type + '): no games found'; }
+                            else { line = '– ' + l.name + ' (' + l.type + '): cannot hold games'; }
+                            var row = el('div', line + '  —  ' + (l.paths || []).join(', '), 'margin:.25em 0');
+                            row.className = 'scWrap'; // long folder paths wrap instead of making the page scroll sideways (L12)
+                            box.appendChild(row);
+                        });
+                        if (!games.length) { box.appendChild(el('div', 'No games library found yet. Create one below.', 'margin:.5em 0;font-weight:bold')); }
+                        var art = o.boxArt || [], on = art.filter(function (a) { return a.on; }), off = art.filter(function (a) { return !a.on; });
+                        var names = function (list) { return list.map(function (a) { return a.name; }).join(', '); };
+                        var artText = [];
+                        if (on.length) { artText.push('Box art: on for ' + names(on) + '.'); }
+                        if (off.length) { artText.push('Box art: off for ' + names(off) + ' (to turn it on, tick "Shoalcade box art (libretro)" under Image fetchers in that library’s settings).'); }
+                        page.querySelector('#scBoxArt').textContent = artText.join(' ');
+                        var mig = page.querySelector('#scMigration'); // G6 L8: the JellyGames carry-over result, not only in the log
+                        mig.textContent = o.migration || ''; mig.hidden = !o.migration; mig.className = 'fieldDescription' + (o.migrationProblem ? ' scBad' : '');
+                    }, function () { page.querySelector('#scScanner').textContent = 'Could not load libraries.'; });
+                }
+                page.querySelector('#scLibCreate').addEventListener('click', function () {
+                    msg('Creating…');
+                    ApiClient.fetch({ url: ApiClient.getUrl('shoalcade/admin/libraries'), type: 'POST', contentType: 'application/json',
+                        data: JSON.stringify({ name: page.querySelector('#scLibName').value, path: page.querySelector('#scLibPath').value }) })
+                        .then(function () { msg('Created. Scanning for games now; this can take a few minutes.'); loadLibraries(); },
+                              function (r) { (r && r.json ? r.json() : Promise.reject()).then(function (e) { msg(e.message, true); }, function () { msg('Could not create the library.', true); }); });
+                });
+                page.querySelector('#scScan').addEventListener('click', function () {
+                    ApiClient.fetch({ url: ApiClient.getUrl('shoalcade/admin/scan'), type: 'POST' }).then(function () { msg('Scan started.'); setTimeout(loadLibraries, 5000); },
+                        function () { msg('Could not start the scan.', true); });
+                });
+                function size(b) {
+                    if (b < 1024) { return b + ' bytes'; }
+                    var u = ['KB', 'MB', 'GB', 'TB'], i = -1;
+                    do { b /= 1024; i++; } while (b >= 1024 && i < u.length - 1);
+                    return (b < 10 ? b.toFixed(1) : Math.round(b)) + ' ' + u[i];
+                }
+                function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+                function small(parent, text) { var d = el('div', text); d.className = 'scSmall'; parent.appendChild(d); return d; }
+                function usedCell(used, quota) {
+                    var td = el('td'); td.className = 'scNum';
+                    td.appendChild(el('div', size(used)));
+                    if (quota > 0) {
+                        var pct = Math.min(100, Math.round(used * 100 / quota));
+                        small(td, 'of ' + size(quota) + ' (' + pct + '%)');
+                        var bar = el('div'); bar.className = 'scBar' + (pct >= 90 ? ' scFull' : ''); bar.setAttribute('aria-hidden', 'true');
+                        bar.appendChild(el('div', '', 'width:' + pct + '%'));
+                        td.appendChild(bar);
+                    } else {
+                        small(td, 'no limit');
+                    }
+                    return td;
+                }
+                function numCell(tr, text) { var td = el('td', text); td.className = 'scNum'; tr.appendChild(td); return td; }
+                // L12: a folder the server could not read is never shown as an honest 0 bytes.
+                var UNREADABLE = "Couldn't read some folders, so this is too low";
+                function badNote(parent, on) { if (on) { var b = el('div', UNREADABLE); b.className = 'scBad scSmall'; parent.appendChild(b); } }
+                function gamesTable(u, label) {
+                    var wrap = el('div');
+                    small(wrap, plural(u.pinnedCount, 'pinned version') + ' (' + size(u.pinnedBytes) + '), ' + plural(u.movedCount, 'moved-in version') + ' (' + size(u.movedBytes) + ')');
+                    if (u.settings.length) {
+                        small(wrap, 'Settings: ' + u.settings.map(function (x) { return x.scope + ' ' + size(x.bytes); }).join(', '));
+                    }
+                    if (!u.games.length) { wrap.appendChild(el('p', 'No saves or snapshots.')); return wrap; }
+                    var t = el('table'); t.className = 'scTable';
+                    t.appendChild(el('caption', 'Games for ' + label));
+                    var head = t.createTHead().insertRow();
+                    ['Game', 'Saves', 'Snapshots + pictures', 'Total'].forEach(function (h) { var th = el('th', h); th.scope = 'col'; head.appendChild(th); });
+                    var body = t.createTBody();
+                    u.games.forEach(function (g) {
+                        var tr = body.insertRow();
+                        var th = el('th'); th.scope = 'row';
+                        th.appendChild(document.createTextNode(g.name || 'Unknown game'));
+                        if (g.console) { var c = el('span', ' (' + g.console + ')'); c.className = 'scSmall'; th.appendChild(c); }
+                        if (!g.inLibrary) { th.appendChild(document.createTextNode(' ')); var tag = el('span', 'Not in their library'); tag.className = 'scTag'; th.appendChild(tag); }
+                        tr.appendChild(th);
+                        var s = numCell(tr, '');
+                        s.appendChild(el('div', size(g.saveBytes)));
+                        var bits = [plural(g.versionCount, 'version')];
+                        if (g.pinnedCount) { bits.push(g.pinnedCount + ' pinned'); }
+                        if (g.movedCount) { bits.push(g.movedCount + ' moved in'); }
+                        small(s, bits.join(', '));
+                        var st = numCell(tr, '');
+                        st.appendChild(el('div', size(g.snapshotBytes)));
+                        small(st, plural(g.snapshotCount, 'snapshot'));
+                        badNote(numCell(tr, size(g.totalBytes)), g.unreadable);
+                    });
+                    var sc = el('div'); sc.className = 'scScroll'; sc.appendChild(t); wrap.appendChild(sc);
+                    return wrap;
+                }
+                function loadStorage() {
+                    var note = page.querySelector('#scStorageMsg');
+                    note.textContent = 'Loading storage use…';
+                    ApiClient.fetch({ url: ApiClient.getUrl('shoalcade/admin/storage'), type: 'GET', dataType: 'json' }).then(function (r) {
+                        note.textContent = '';
+                        var t = r.totals;
+                        var tb = page.querySelector('#scTotals tbody'); tb.textContent = '';
+                        [['Saves', size(t.saveBytes)], ['Snapshots + pictures', size(t.snapshotBytes)], ['Settings', size(t.settingsBytes)], ['Total', size(t.totalBytes)],
+                         ['Pinned versions', plural(t.pinnedCount, 'version') + ', ' + size(t.pinnedBytes)],
+                         ['Moved-in versions', plural(t.movedCount, 'version') + ', ' + size(t.movedBytes)],
+                         ['Games with data', t.games + ' (' + t.gamesNotInLibrary + ' not in the library)'],
+                         ['Users', String(t.users)]].concat(t.unreadable ? [["Couldn't read", plural(t.unreadable, 'user') + ': some folders could not be read (check the server folder permissions), so these figures are too low']] : []).forEach(function (row) {
+                            var tr = tb.insertRow(); var th = el('th', row[0]); th.scope = 'row'; tr.appendChild(th); tr.appendChild(el('td', row[1]));
+                        });
+                        var ub = page.querySelector('#scUsers tbody'); ub.textContent = '';
+                        r.users.forEach(function (u, i) {
+                            var label = u.name || ('Deleted user ' + u.userId.substring(0, 8));
+                            var tr = ub.insertRow();
+                            var th = el('th'); th.scope = 'row';
+                            var btn = el('button', '▸ ' + label); btn.type = 'button'; btn.className = 'scExpand';
+                            btn.setAttribute('aria-expanded', 'false'); btn.setAttribute('aria-controls', 'scUser' + i);
+                            th.appendChild(btn); tr.appendChild(th);
+                            tr.appendChild(usedCell(u.saveBytes, r.saveQuotaBytes));
+                            tr.appendChild(usedCell(u.snapshotBytes, r.snapshotQuotaBytes));
+                            numCell(tr, size(u.settingsBytes));
+                            badNote(numCell(tr, size(u.totalBytes)), u.unreadable);
+                            var dr = ub.insertRow(); dr.className = 'scDetail'; dr.id = 'scUser' + i; dr.hidden = true;
+                            var dc = el('td'); dc.colSpan = 5; dr.appendChild(dc);
+                            btn.addEventListener('click', function () {
+                                var open = btn.getAttribute('aria-expanded') !== 'true';
+                                if (open && !dc.firstChild) { dc.appendChild(gamesTable(u, label)); }
+                                dr.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+                                btn.textContent = (open ? '▾ ' : '▸ ') + label;
+                            });
+                        });
+                    }, function () { note.textContent = 'Could not load storage use.'; });
+                }
+                page.querySelector('#scStorageRefresh').addEventListener('click', loadStorage);
+                function loadVersion() {
+                    // D88: "s0.2 dev 1" for a dev build, "s1.0" for a release. Jellyfin's plugin list shows 0.2.0.1.
+                    ApiClient.fetch({ url: ApiClient.getUrl('shoalcade/info'), type: 'GET', dataType: 'json' }).then(function (i) {
+                        page.querySelector('#scVersion').textContent = 'Version ' + (i.display || i.server) + ' (' + i.serverVersion + ')';
+                    }, function () { page.querySelector('#scVersion').textContent = ''; });
+                }
+                function onShow() {
+                    loadVersion();
+                    loadLibraries();
+                    loadStorage();
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        bools.forEach(function (k) { page.querySelector('#' + k).checked = !!config[k]; });
+                        nums.forEach(function (k) { page.querySelector('#' + k).value = config[k]; });
+                        Dashboard.hideLoadingMsg();
+                    }, function () { Dashboard.hideLoadingMsg(); configMsg('Could not load the settings. Reload the page to try again.'); });
+                }
+                function configMsg(text) { page.querySelector('#scConfigMsg').textContent = text; }
+                // Jellyfin 12 sends 'viewshow'; older versions 'pageshow'. Also run now in case it already fired.
+                page.addEventListener('viewshow', onShow);
+                page.addEventListener('pageshow', onShow);
+                if (window.ApiClient) { onShow(); }
+                page.querySelector('#shoalcadeConfigForm').addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    Dashboard.showLoadingMsg();
+                    configMsg('');
+                    var failed = function () { Dashboard.hideLoadingMsg(); configMsg('Could not save the settings. Try again.'); };
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        bools.forEach(function (k) { config[k] = page.querySelector('#' + k).checked; });
+                        nums.forEach(function (k) { config[k] = parseInt(page.querySelector('#' + k).value, 10) || 0; });
+                        ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        }, failed);
+                    }, failed);
+                    return false;
+                });
+            })();
+        </script>
+    </div>
+</body>
+</html>

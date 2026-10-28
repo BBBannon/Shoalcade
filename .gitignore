@@ -1,0 +1,130 @@
+# --- Build output ---
+build/
+**/build/
+.gradle/
+**/.gradle/
+.kotlin/
+**/.kotlin/
+.externalNativeBuild/
+.cxx/
+captures/
+*.apk
+*.aab
+*.apks
+*.ap_
+*.dex
+output-metadata.json
+dist/
+
+# --- Machine-specific / IDE ---
+local.properties
+*.iml
+.idea/
+.vscode/
+.fleet/
+*.swp
+*~
+
+# --- Signing keys and secrets (never commit) ---
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+keystore.properties
+signing.properties
+*-release.properties
+google-services.json
+.env
+.env.*
+secrets.*
+
+# --- Game files: ROMs, saves, BIOS, firmware (personal, never commit) ---
+*.gb
+*.gbc
+*.gba
+*.nds
+*.dsi
+*.3ds
+*.cci
+*.cia
+*.cxi
+*.3dsx
+*.zip
+*.7z
+*.sav
+*.srm
+*.dsv
+*.sa1
+*.state
+*.state[0-9]
+*.rtc
+bios*.bin
+gba_bios.bin
+firmware*.bin
+nand*.bin
+aes_keys.txt
+/roms/
+/saves/
+
+# --- Python bytecode (embeds local paths) ---
+__pycache__/
+*.pyc
+
+# --- Logs and crash reports ---
+*.log
+crash.txt
+logcat*.txt
+hs_err_pid*
+replay_pid*
+
+# --- Claude Code local-only settings ---
+.claude/settings.local.json
+
+# --- OS clutter ---
+Thumbs.db
+desktop.ini
+.DS_Store
+$RECYCLE.BIN/
+
+# --- Server plugin (.NET) build output ---
+server/**/bin/
+server/**/obj/
+server/**/*.user
+server/**/TestResults/
+
+# --- Self-contained test-bed (portable .NET, Jellyfin, test ROMs; D31) ---
+.testbed/
+
+# --- Local tools: graphify code graph, Obsidian vault settings ---
+graphify-out/
+.obsidian/
+
+# --- Claude Code instruction files (kept local, not published) ---
+CLAUDE.md
+**/CLAUDE.md
+.claude/
+
+# --- Working docs and notes (kept local, not published) ---
+docs/*
+!docs/licences.md
+!docs/assets/
+docs/assets/logo-drafts/
+tasks/
+TODO.md
+ChangeLog.txt
+
+# --- Not published: kept on Ben's PC only (public repo = bare minimum) ---
+tools/
+android/coretest/
+android/linktest/
+android/app/src/test/
+server/tests/
+server/Shoalcade.slnx
+
+# --- Private search words for tools/prepare_public.sh ---
+.public-scan-patterns
+
+# --- Raw screenshots (README copies live in docs/assets/screenshots/) and test-bed captures ---
+/Screenshots/
+/*.png

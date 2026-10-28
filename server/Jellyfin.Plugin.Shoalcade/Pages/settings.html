@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings · Shoalcade</title>
+  <link rel="icon" href="web/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="web/sc.css">
+  <script src="web/api.js" defer></script>
+  <script src="web/qr.js" defer></script>
+  <script src="web/settings.js" defer></script>
+</head>
+<body>
+  <div class="lib settings-page">
+    <header class="top">
+      <h1 class="brand"><a id="jf-home" class="jf-home" href="../web/#/home" aria-label="Back to Jellyfin" title="Back to Jellyfin"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h4.5v-6h4v6h4.5V10"/></svg><span>Jellyfin</span></a><img class="brand-logo" src="web/logo.svg" alt="" width="32" height="32"><a id="home" href="./">Shoalcade</a></h1>
+      <span id="who" class="who"></span>
+      <a id="back" class="btn top-back" href="./">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><span>Back to library</span>
+      </a>
+    </header>
+
+    <p id="loading" class="loading" role="status">Loading your settings…</p>
+
+    <section id="signed-out" class="notice" hidden>
+      <h2>Sign in first</h2>
+      <p id="signed-out-text">Shoalcade uses your Jellyfin sign-in. Sign in to Jellyfin in this browser, then come back to this page.</p>
+      <a id="signin" class="btn primary" href="../web/">Sign in to Jellyfin</a>
+    </section>
+
+    <section id="failed" class="notice" role="alert" hidden>
+      <h2>Couldn't load your settings</h2>
+      <p id="failed-text"></p>
+      <button type="button" id="retry" class="btn">Try again</button>
+    </section>
+
+    <div id="settings" hidden>
+      <h2 class="set-title">Settings</h2>
+      <nav class="strip set-nav" aria-label="Settings sections">
+        <a class="chip" href="#saves-s">Saves</a>
+        <a class="chip" href="#app-s">Phone app</a>
+        <a class="chip" href="#player-s">Browser player</a>
+      </nav>
+
+      <!-- Saves: the saves manager page is reused as it is (D134). -->
+      <section id="saves-s" class="set-box" aria-labelledby="saves-h">
+        <h2 id="saves-h" class="sec">Saves</h2>
+        <p id="saves-sum"></p>
+        <a id="saves-open" class="btn primary" href="saves-manager">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4"/></svg><span>Manage saves</span>
+        </a>
+        <p class="fine">See every version of each save, use an older one, upload a save file or move a save to another game. Your saves live on your Jellyfin server and follow you to the phone app.</p>
+      </section>
+
+      <!-- Phone app: the APK bundled in the plugin, from this server only (D134). -->
+      <section id="app-s" class="set-box" aria-labelledby="app-h">
+        <h2 id="app-h" class="sec">Phone app</h2>
+        <p id="app-off" class="note" hidden>Your Jellyfin admin has turned this off.</p>
+        <p id="app-none" class="note" hidden>The phone app isn't included in this build of the plugin. Your Jellyfin admin can add it by installing a plugin build that has it.</p>
+        <p id="app-err" class="note" role="alert" hidden></p>
+        <div id="app-box" hidden>
+          <p class="fine app-lead">Shoalcade for Android. Download it from your own Jellyfin: nothing comes from anywhere else.</p>
+          <div class="app-cols">
+            <div class="app-get">
+              <div class="app-dl-row">
+                <button type="button" id="app-dl" class="btn primary">
+                  <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Download the phone app</span>
+                </button>
+                <span id="app-ver" class="app-ver"></span>
+              </div>
+              <h3 class="set-h3">How to install</h3>
+              <ol class="app-steps">
+                <li>Scan the code with your phone's camera, or download the file and copy it to your phone.</li>
+                <li>Open the downloaded file. If Android asks, <strong>allow installs from this source</strong>.</li>
+                <li>Open Shoalcade and log in with your Jellyfin address and your Jellyfin username and password.</li>
+              </ol>
+              <p class="fine">Your Jellyfin address: <span id="app-addr" class="app-addr"></span></p>
+            </div>
+            <figure class="app-qr-box">
+              <div id="app-qr" class="app-qr" role="img" aria-label="QR code to download the phone app"></div>
+              <figcaption>
+                <span id="app-qr-text" class="fine">Scan with your phone's camera. This code works for 10 minutes.</span>
+                <button type="button" id="app-qr-new" class="mini">Make a new code</button>
+              </figcaption>
+            </figure>
+          </div>
+          <p class="fine">Your phone must be able to reach this address. If you opened this page as “localhost” or “127.0.0.1”, open it with your server's network address instead.</p>
+        </div>
+      </section>
+
+      <!-- Browser player settings per console: the same settings the player's Settings panel changes (prefs/{console}). -->
+      <section id="player-s" class="set-box" aria-labelledby="player-h">
+        <h2 id="player-h" class="sec">Browser player</h2>
+        <p class="fine set-intro">Each console has its own settings. To change keys, shortcuts, controller or touch buttons, open a game and use Settings in the player.</p>
+        <p id="player-off" class="note" hidden>The browser player isn't available on this server.</p>
+        <div id="consoles" class="set-cons"></div>
+      </section>
+    </div>
+    <footer class="ver"><span id="sc-ver"></span></footer>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

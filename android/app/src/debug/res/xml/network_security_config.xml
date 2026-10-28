@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug builds only. Cleartext (plain HTTP) stays OFF everywhere, except the Android emulator's alias for this PC
+  (10.0.2.2), so the emulator can reach the HTTP test-bed (tools/testbed, port 8196). Never add any other domain:
+  Ben sideloads the debug APK, so this file ships to his phone too. Trust anchors are the defaults.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

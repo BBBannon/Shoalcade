@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon (Android 13+) version: the launcher tints this single colour.
+     Shoalcade mark: three 8-bit fish on a 24x24 pixel grid (1 cell = 4.5dp), from docs/assets/logo.svg.
+     Grid centre = canvas centre; every pixel sits inside the 66dp safe zone (furthest corner 32.4dp from centre). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M63,27h9v4.5h-9z
+            M36,31.5h9v4.5h-9z
+            M54,31.5h4.5v4.5h-4.5z
+            M63,31.5h13.5v4.5h-13.5z
+            M27,36h4.5v4.5h-4.5z
+            M36,36h13.5v4.5h-13.5z
+            M58.5,36h18v4.5h-18z
+            M31.5,40.5h18v4.5h-18z
+            M54,40.5h4.5v4.5h-4.5z
+            M63,40.5h9v4.5h-9z
+            M27,45h4.5v4.5h-4.5z
+            M36,45h9v4.5h-9z
+            M58.5,54h9v4.5h-9z
+            M40.5,58.5h4.5v4.5h-4.5z
+            M54,58.5h22.5v4.5h-22.5z
+            M40.5,63h27v4.5h-27z
+            M72,63h9v4.5h-9z
+            M45,67.5h36v4.5h-36z
+            M40.5,72h36v4.5h-36z
+            M40.5,76.5h4.5v4.5h-4.5z
+            M54,76.5h18v4.5h-18z" />
+</vector>

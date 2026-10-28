@@ -1,0 +1,6 @@
+# EmulatorJS pinned for the browser player (D34). npm tarballs, checked by SHA-256 before every build.
+# name  version  sha256
+emulatorjs   4.2.3  8033a18a3398cae5efd7a4c12a633b10672435977290959633d671365b589639
+core-mgba    4.2.3  9ea664b4f998f6304a49c31a427206e2c12a3c1aa3652765ec5aa6db42cad529
+core-melonds 4.2.3  6cbd17e0019bd0896265b2d03490a9f14627335ece3daeb6208ff89ee08d0045
+core-pcsx_rearmed 4.2.3  d641b90c4d4bea0a29e55803a5bc7bd02eb9980e7b4684be6e64618ff165d923
