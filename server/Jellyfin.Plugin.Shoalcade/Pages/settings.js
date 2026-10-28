@@ -85,7 +85,7 @@
       renderApp();
       // Only our own section ids, never the hash as a selector (a crafted link like settings#[ used to throw, I3).
       const want = location.hash.slice(1);
-      if (["saves-s", "app-s", "player-s"].includes(want)) $(want).scrollIntoView();
+      if (["saves-s", "app-s", "player-s", "patch-s"].includes(want)) $(want).scrollIntoView();
     } catch (e) {
       if (e && e.status === 401) {
         $("signed-out-text").textContent = e.message;

@@ -8,7 +8,7 @@
 
 ## You need
 
-- **Jellyfin 12.3**, and an admin account
+- **Jellyfin 12.3 or newer** (tested on 12.3 and 12.4), and an admin account
 - An **HTTPS** address for your server (the app won't use plain HTTP)
 - An **Android 11+** phone
 - Your own games in a folder Jellyfin can read

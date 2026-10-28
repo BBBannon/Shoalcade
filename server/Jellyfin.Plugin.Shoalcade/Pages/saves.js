@@ -399,7 +399,7 @@
     // D91: versions merged in from the old separate DS browser list say so. D90: so do saves made after loading a snapshot.
     const meta = ["Version " + v.version, from + (v.device ? " (" + v.device + ")" : ""),
       v.origin === "browser" ? "Was a browser save (merged in)" : null,
-      v.afterSnapshot ? "Saved after loading a snapshot" : null, size(v.size)].filter(Boolean).join(" · ");
+      v.afterSnapshot ? "Saved after loading a snapshot" : null, v.cheats ? "Made with cheats on" : null, size(v.size)].filter(Boolean).join(" · ");
     const btn = (act, icon, label, title, extra) => h("button", Object.assign({ type: "button", class: "mini", "data-act": act, "data-v": v.version, title }, extra || {}), [ico(icon), h("span", { text: label })]);
     return h("li", { class: "sv" + (v.isCurrent ? " cur" : "") }, [
       h("div", { class: "sv-main" }, [

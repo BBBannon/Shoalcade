@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/BBBannon/Shoalcade/main/server/assets/thumb.png",
     "versions": [
       {
+        "version": "0.4.0.0",
+        "changelog": "s0.4 - ROM patcher page and cheats (browser + phone app 0.7.0). Release notes: https://github.com/BBBannon/Shoalcade/releases/tag/v0.4.0",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/BBBannon/Shoalcade/releases/download/v0.4.0/Shoalcade_s0.4.zip",
+        "checksum": "ddbbca808c624ffe02f14ede99a6d28a",
+        "timestamp": "2026-10-28T15:31:25Z"
+      },
+      {
         "version": "0.3.0.0",
         "changelog": "s0.3 - first public release. Release notes: https://github.com/BBBannon/Shoalcade/releases/tag/v0.3.0",
         "targetAbi": "12.3.0.0",

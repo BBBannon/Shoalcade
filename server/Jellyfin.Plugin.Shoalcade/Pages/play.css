@@ -158,3 +158,14 @@ body[data-state=playing] #intro { display: none; }
 @media (orientation: landscape) and (max-width: 760px) {
   .sc-play.touch-on { --tp-l: 0px; }
 }
+
+/* Cheats tab (D143) */
+.cheats { list-style: none; margin: 0; padding: 0; }
+.cheat { padding: 8px 0 10px; border-bottom: 1px solid var(--p-line); }
+.cheat .tog { padding: 4px 0; }
+.cheat-code { display: block; font-family: var(--mono); font-size: .78rem; color: var(--p-muted); white-space: pre-wrap; overflow-wrap: anywhere; margin: 2px 0 6px; }
+.cheat .sv-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.fld { display: block; font-size: .82rem; font-weight: 650; margin: 10px 0 4px; }
+.txt { width: 100%; padding: 8px 10px; border: 2px solid var(--p-ink); border-radius: var(--r-s); background: var(--p-raise); color: var(--p-ink); font: inherit; }
+.txt.code { font-family: var(--mono); font-size: .85rem; resize: vertical; min-height: 4.5em; }
+.cheat-err { color: var(--danger); font-weight: 650; }

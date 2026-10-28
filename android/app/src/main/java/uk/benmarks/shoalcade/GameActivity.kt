@@ -34,6 +34,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.swordfish.libretrodroid.GLRetroView
 import com.swordfish.libretrodroid.GLRetroViewData
+import com.swordfish.libretrodroid.LibretroDroid
 import com.swordfish.libretrodroid.Variable
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -121,6 +122,7 @@ class GameActivity : ComponentActivity() {
             toast("Saving is off this session: couldn't back up your save first (${it.message}). Your phone save is unchanged.")
         }
         loadedSave = Storage.readSave(userId, game)
+        if (link == null) loadCheats() // D143: none in a link session
 
         val libDir = applicationInfo.nativeLibraryDir
         val realCore = File(libDir, if (link != null && console == Console.GBA) LinkRules.GPSP_CORE else console.core!!).absolutePath
@@ -226,6 +228,7 @@ class GameActivity : ComponentActivity() {
         }
         setContentView(root)
         startWatchers()
+        syncCheats() // in the background: the game never waits for the server
     }
 
     // --- Screen layout (D128) --------------------------------------------------------------------
@@ -325,7 +328,11 @@ class GameActivity : ComponentActivity() {
         setUpControllers()
         val loadedSave = this.loadedSave
         lifecycleScope.launch {
-            retroView.getGLRetroErrors().first().let { code ->
+            // D143: a cheat the core won't take never ends the game; it's only mentioned.
+            retroView.getGLRetroErrors().first { code ->
+                if (code == GLRetroView.ERROR_CHEAT) toast(CHEAT_REFUSED)
+                code != GLRetroView.ERROR_CHEAT
+            }.let { code ->
                 toast("The emulator couldn't start this game (error $code).")
                 finish()
             }
@@ -341,6 +348,7 @@ class GameActivity : ComponentActivity() {
             }
             ready = true
             dsPending?.let { (l, swap) -> setDsLayout(l, swap) }
+            applyCheats() // D143: the in-game save's cheats (a snapshot start then puts in the snapshot's)
             if (startFromState) {
                 delay(500) // let the core settle before the state goes in
                 startFromSnapshot()
@@ -430,6 +438,7 @@ class GameActivity : ComponentActivity() {
             if (Storage.readSave(userId, game)?.contentEquals(bytes) != true) {
                 // Marked before the write: if the app dies in between, an unmarked older-progress save can't slip out.
                 if (guard.active) SaveSync(this).markSavedAfterSnapshot(userId, game)
+                if (cheated) SaveSync(this).markSavedWithCheats(userId, game) // D143: the upload says "made with cheats on"
                 Storage.writeSave(userId, game, bytes!!)
             }
             if (guard.active) guard.clear() // the game's own save is on the phone: back to the normal rule
@@ -543,6 +552,14 @@ class GameActivity : ComponentActivity() {
             navResult(nav.key(event.keyCode, down, event.repeatCount))
             return true
         }
+        // Cheat screen: keys move around it (A presses, the D-pad moves); Home / Back go back.
+        if (cheatsOpen) {
+            if (isGamepad(event.source) && MenuKeys.isMenu(event.keyCode)) {
+                if (down && event.repeatCount == 0) cheatsBackPressed()
+                return true
+            }
+            return super.dispatchKeyEvent(event)
+        }
         if (!isGamepad(event.source)) return super.dispatchKeyEvent(event)
         val info = infoOf(event.device)
         lastController = info
@@ -556,8 +573,8 @@ class GameActivity : ComponentActivity() {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        if (!::retroView.isInitialized || !isGamepad(event.source) || event.action != MotionEvent.ACTION_MOVE) {
-            return super.dispatchGenericMotionEvent(event)
+        if (!::retroView.isInitialized || cheatsOpen || !isGamepad(event.source) || event.action != MotionEvent.ACTION_MOVE) {
+            return super.dispatchGenericMotionEvent(event) // cheat screen: the hat / stick become D-pad keys (Android does this)
         }
         val values = PadTranslator.AXES.associateWith { event.getAxisValue(it) }
         val info = infoOf(event.device)
@@ -581,7 +598,7 @@ class GameActivity : ComponentActivity() {
             if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) swallowEdge = false
             return true
         }
-        if (!::pad.isInitialized || controlsOpen || drawer.open) return super.dispatchTouchEvent(ev)
+        if (!::pad.isInitialized || controlsOpen || drawer.open || cheatsOpen) return super.dispatchTouchEvent(ev)
         if (edgeSwipeOpens(ev)) return true
         if (ev.actionMasked == MotionEvent.ACTION_DOWN && !autoHide.visible) {
             val onDsScreen = console == Console.NDS && hits(retroView, ev)
@@ -682,6 +699,8 @@ class GameActivity : ComponentActivity() {
             touch = autoHide.mode, screen = display.screen,
             ds = display.ds(land), dsSwap = display.swap(land), muted = muted,
             canUpload = !intent.getBooleanExtra(EXTRA_OFF_LIST, false),
+            cheatsAllowed = link == null,
+            cheats = cheatBook.cheats.map { MenuCheat(it.id, it.name, cheatBook.isOn(it.id)) },
         )
     }
 
@@ -695,7 +714,7 @@ class GameActivity : ComponentActivity() {
     }
 
     private fun openDrawer() {
-        if (quitting || controlsOpen || drawer.open) return // Back / Home on the Controls screen is handled there
+        if (quitting || controlsOpen || cheatsOpen || drawer.open) return // Back / Home on those screens is handled there
         // Nothing stays held in the game while the menu is open.
         for (t in translators.values) send(t.releaseAll())
         cancelTouches()
@@ -740,7 +759,7 @@ class GameActivity : ComponentActivity() {
 
     /** Sound on or off for now: off while the menu stands the game still (not in a link session), or with App Mute. */
     private fun applySound() {
-        retroView.audioEnabled = GameSound.enabled(menuOpen = link == null && drawer.open, muted = muted)
+        retroView.audioEnabled = GameSound.enabled(menuOpen = link == null && (drawer.open || cheatsOpen), muted = muted)
     }
 
     /** Lets go of any finger on the touch buttons or the game (the menu is taking over). */
@@ -775,7 +794,10 @@ class GameActivity : ComponentActivity() {
                 applyLayout()
             }
             GameMenu.ID_MUTE -> { muted = !muted; applySound() }
+            GameMenu.ID_ADD_CHEAT -> { closeDrawer(); openCheats(list = false) }
+            GameMenu.ID_EDIT_CHEATS -> { closeDrawer(); openCheats(list = true) }
             else -> {
+                GameMenu.cheatOf(id)?.let { toggleCheat(it) }
                 GameMenu.touchOf(id)?.let { m ->
                     autoHide.mode = m
                     controlPrefs.setTouchMode(console, m) // per console (D132), the same value Settings shows
@@ -833,9 +855,11 @@ class GameActivity : ComponentActivity() {
             val bytes = withTimeoutOrNull(5_000) { result.await() }
             if (bytes == null || bytes.isEmpty()) { toast("Couldn't make a snapshot of this game."); return@launch }
             val picture = takePicture()
+            // D143: the snapshot remembers which cheats were on.
+            val cheats = cheatBook.snapshotCheats().takeIf { it.isNotEmpty() }?.let(CheatBook::snapToJson)
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
-                    Storage.writeState(userId, game, bytes)
+                    Storage.writeState(userId, game, bytes, cheats)
                     // The picture is optional; an old one is removed so it never shows beside a newer state.
                     runCatching { Storage.writeStateImage(userId, game, picture) }
                 }.isSuccess
@@ -898,6 +922,7 @@ class GameActivity : ComponentActivity() {
             val ok = applyState(bytes, prior)
             toast(if (ok) "Snapshot loaded. Your save only changes when you save in the game."
                 else "That snapshot couldn't be loaded (maybe from a different emulator version).")
+            if (ok) snapshotCheats()
         }
     }
 
@@ -928,6 +953,207 @@ class GameActivity : ComponentActivity() {
         if (bytes == null) { loadingState = false; guard.cancel(startPrior) } // back to the normal rule
         toast(if (ok) "Started from the snapshot. Your save only changes when you save in the game."
             else "Couldn't load the snapshot, so the game started from your save.")
+        if (ok) snapshotCheats()
+    }
+
+    // --- Cheats (D143): a list per game, the ticked ones applied to the core, kept in step with Jellyfin ----------
+
+    /** The game's cheats on the phone. Main thread only: every change goes through [setBook]. */
+    private var cheatBook = CheatBook()
+    /** Cheats were on at some point this session: every save written from then on is marked (switching off doesn't undo them). */
+    @Volatile private var cheated = false
+    private var cheatSync: CheatSyncCore? = null
+    private var cheatSyncing = false
+    private var cheatSyncAgain = false
+    private val cheatEditor = CheatEditorState()
+    private var cheatView: ComposeView? = null
+    private val cheatsOpen get() = cheatView?.visibility == android.view.View.VISIBLE
+    private val cheatsBack = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() = cheatsBackPressed()
+    }
+    private val cheatHolder = object : CheatSyncCore.Holder {
+        override var book: CheatBook
+            get() = cheatBook
+            set(v) = setBook(v)
+    }
+
+    private fun loadCheats() {
+        val (book, damaged) = CheatStore.read(userId, game.id)
+        cheatBook = book
+        if (damaged) toast("The cheat list on the phone couldn't be read, so it was kept aside and a new list started.")
+    }
+
+    /** Keeps [b] (on the phone straight away, so nothing is lost offline) and shows it wherever it's on screen. */
+    private fun setBook(b: CheatBook) {
+        if (b == cheatBook) return
+        cheatBook = b
+        runCatching { CheatStore.write(userId, game.id, b) }
+            .onFailure { toast("Couldn't keep the cheat list on the phone: ${it.message}") }
+        cheatEditor.cheats = b.cheats
+        if (drawer.open) refreshDrawer()
+    }
+
+    /**
+     * Saves are precious: before cheats are first switched on for this game, the save is backed up (the server also
+     * pins "Before cheats" on the first upload made with them). False if that couldn't be done.
+     */
+    private fun ensureCheatBackup(): Boolean {
+        if (cheatBook.backedUp || saveDisabled) return true // saving off: the phone save can't be changed this session
+        return runCatching { Storage.backupSave(userId, game) }.fold(
+            { setBook(cheatBook.copy(backedUp = true)); true },
+            { toast("Couldn't back up your save first (${it.message}), so no cheat was switched on."); false })
+    }
+
+    /**
+     * Puts the ticked cheats into the core: always a reset, then each one from index 0, on the emulator's thread
+     * (mGBA ignores switching a single cheat off, so the whole list is sent every time).
+     */
+    private fun applyCheats() {
+        if (link != null) return
+        val active = cheatBook.activeCheats()
+        if (active.isNotEmpty() && !cheated) {
+            cheated = true
+            // PSP writes its save files itself, so the mark can't wait for a save: it's set now.
+            if (console.hasFolderSaves) SaveSync(this).markSavedWithCheats(userId, game)
+        }
+        if (!ready) return // applied when the game is ready
+        val ops = CheatApply.ops(active)
+        retroView.queueEvent {
+            var refused = 0
+            for (op in ops) runCatching {
+                when (op) {
+                    CheatApply.Op.Reset -> LibretroDroid.resetCheat()
+                    is CheatApply.Op.Set -> LibretroDroid.setCheat(op.index, true, op.code)
+                }
+            }.onFailure { refused++ }
+            if (refused > 0) runOnUiThread { toast(CHEAT_REFUSED) }
+        }
+    }
+
+    private fun toggleCheat(id: String) {
+        val on = !cheatBook.isOn(id)
+        if (on && !ensureCheatBackup()) return
+        setBook(cheatBook.setOn(id, on))
+        applyCheats()
+        syncCheats()
+    }
+
+    /** After a snapshot loads: exactly the cheats it was made with go on (any missing are added to the list). */
+    private suspend fun snapshotCheats() {
+        val list = CheatBook.snapFromJson(withContext(Dispatchers.IO) { Storage.readStateCheats(userId, game) })
+        val (b, added) = cheatBook.fromSnapshot(list)
+        if (list.isNotEmpty()) ensureCheatBackup() // the save was already backed up before the load; this records it
+        setBook(b.copy(backedUp = cheatBook.backedUp))
+        applyCheats()
+        if (cheatBook.pending) syncCheats()
+        if (list.isNotEmpty()) toast(GameMenu.cheatsOn(list.size) + " from the snapshot" +
+            (if (added > 0) ", added to this game's list." else "."))
+    }
+
+    /**
+     * Sends phone changes to Jellyfin and takes its list (D143). Never blocks the game; offline or an older server
+     * leaves everything on the phone, tried again next time. One at a time; a change during a run starts another.
+     */
+    private fun syncCheats() {
+        if (link != null) return
+        if (cheatSyncing) { cheatSyncAgain = true; return }
+        cheatSyncing = true
+        lifecycleScope.launch {
+            try {
+                val core = cheatSync ?: withContext(Dispatchers.IO) {
+                    val store = SessionStore(this@GameActivity)
+                    store.load()?.takeIf { it.userId == userId }?.let { s ->
+                        val c = JellyfinClient(store.deviceId, s)
+                        CheatSyncCore(c) { Compat.ensure(c, s.serverUrl) }
+                    }
+                }?.also { cheatSync = it } ?: return@launch
+                var rounds = 0
+                do {
+                    cheatSyncAgain = false
+                    val before = cheatBook.activeCheats()
+                    val r = core.sync(game.id, cheatHolder)
+                    if (r is CheatSyncCore.Result.Failed) Log.i("Shoalcade", "Cheats not synced for now: ${r.error.message}")
+                    val now = cheatBook.activeCheats()
+                    if (now.map { it.code } != before.map { it.code }) { // a phone cheat getting its server id changes nothing here
+                        // Changed on Jellyfin (e.g. in the browser player) for this save.
+                        if (now.isNotEmpty()) ensureCheatBackup()
+                        applyCheats()
+                        toast(GameMenu.cheatsOn(now.size) + " (from Jellyfin).")
+                    }
+                } while (cheatSyncAgain && r is CheatSyncCore.Result.Done && ++rounds < 5)
+            } finally {
+                cheatSyncing = false
+            }
+        }
+    }
+
+    private fun openCheats(list: Boolean) {
+        if (link != null) return
+        for (t in translators.values) send(t.releaseAll())
+        cheatEditor.cheats = cheatBook.cheats
+        if (list) cheatEditor.openList() else cheatEditor.openAdd()
+        val view = cheatView ?: ComposeView(this).also { v ->
+            v.setContent { HapticsGate {
+                CheatEditor(cheatEditor, console, onSave = { id, name, code -> saveCheat(id, name, code) },
+                    onDelete = { deleteCheat(it) }, onClose = { closeCheats() })
+            } }
+            root.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            onBackPressedDispatcher.addCallback(this, cheatsBack) // added after the menu's, so it wins while enabled
+            cheatView = v
+        }
+        view.bringToFront()
+        view.visibility = android.view.View.VISIBLE
+        cheatsBack.isEnabled = true
+        setGameAccessible(false)
+        retroView.frameSpeed = 0 // the game stands still while the screen is open, as with the menu
+        applySound()
+    }
+
+    private fun closeCheats() {
+        val v = cheatView ?: return
+        WindowCompat.getInsetsController(window, v).hide(WindowInsetsCompat.Type.ime())
+        v.visibility = android.view.View.GONE
+        cheatsBack.isEnabled = false
+        setGameAccessible(true)
+        retroView.frameSpeed = 1
+        applySound()
+    }
+
+    private fun cheatsBackPressed() {
+        if (!cheatEditor.back()) closeCheats()
+    }
+
+    /** The cheat screen's Add / Save. A plain-English problem, or null when done. */
+    private fun saveCheat(id: String?, name: String, code: String): String? {
+        CheatRules.problem(name, code)?.let { return it }
+        if (id == null) {
+            val (b, c) = cheatBook.add(name, code) ?: return "That cheat can't be used."
+            val known = b == cheatBook
+            setBook(b)
+            val on = ensureCheatBackup()
+            if (on) setBook(cheatBook.setOn(c.id, true))
+            toast(when {
+                known && on -> "You already have that code as \"${c.name}\". It's switched on."
+                known -> "You already have that code as \"${c.name}\"."
+                on -> "Cheat added and switched on."
+                else -> "Cheat added, but not switched on."
+            })
+        } else {
+            setBook(cheatBook.edit(id, name, code) ?: return "That cheat isn't in the list any more.")
+            toast("Cheat saved.")
+        }
+        applyCheats()
+        syncCheats()
+        if (!cheatEditor.back()) closeCheats()
+        return null
+    }
+
+    private fun deleteCheat(id: String) {
+        setBook(cheatBook.delete(id))
+        applyCheats()
+        syncCheats()
+        toast("Cheat deleted.")
+        if (!cheatEditor.back()) closeCheats()
     }
 
     /**
@@ -1021,6 +1247,7 @@ class GameActivity : ComponentActivity() {
         private const val TOUCH_HIDDEN_HINT = "Touch buttons hidden. Tap here to show them."
         private const val MENU_LABEL = "☰ Menu"
         private const val TOUCH_OFF_HINT = "Touch buttons off. Change it in the menu."
+        private const val CHEAT_REFUSED = "The emulator didn't take a cheat. Check its code for this game."
 
         /** The one activity currently allowed to own the native emulator. Main-thread only. */
         private var owner: GameActivity? = null

@@ -64,7 +64,13 @@ class SaveSyncCore(
 
     /** D90: the phone save was written by the game after a snapshot was loaded (set by [GameActivity]). */
     fun savedAfterSnapshot(game: Game) = state.get(afterSnapshotKey(userId, game.id)) != null
-    private fun clearAfterSnapshot(game: Game) = state.set(afterSnapshotKey(userId, game.id), null)
+    private fun clearAfterSnapshot(game: Game) {
+        state.set(afterSnapshotKey(userId, game.id), null)
+        state.set(cheatsKey(userId, game.id), null) // D143: the same goes for the "made with cheats on" mark
+    }
+
+    /** D143: the phone save was written while cheats were on (set by [GameActivity]); the upload says so. */
+    fun savedWithCheats(game: Game) = state.get(cheatsKey(userId, game.id)) != null
 
     fun synced(game: Game): Synced? =
         state.get(baseKey(game))?.split(':')?.takeIf { it.size == 2 }
@@ -213,7 +219,7 @@ class SaveSyncCore(
         if (Storage.isBlank(bytes)) return SyncResult.Failed("No save to upload yet. Save in the game first.")
         return try {
             ensureCompatible()
-            when (val r = client.putSave(game.id, bytes!!, base = synced(game)?.version ?: 0, afterSnapshot = savedAfterSnapshot(game))) {
+            when (val r = client.putSave(game.id, bytes!!, base = synced(game)?.version ?: 0, afterSnapshot = savedAfterSnapshot(game), cheats = savedWithCheats(game))) {
                 is PutResult.Stored -> {
                     record(game, r.current)
                     clearAfterSnapshot(game)
@@ -322,7 +328,7 @@ class SaveSyncCore(
         return try {
             ensureCompatible()
             client.getSave(game.id)?.let { old -> withContext(Dispatchers.IO) { Storage.backupServerSave(userId, game, old.bytes) } }
-            when (val r = client.putSave(game.id, bytes!!, base = null, mode = "force", afterSnapshot = savedAfterSnapshot(game),
+            when (val r = client.putSave(game.id, bytes!!, base = null, mode = "force", afterSnapshot = savedAfterSnapshot(game), cheats = savedWithCheats(game),
                 expect = shown?.let { it.save?.version ?: 0 }, expectSha = shown?.save?.sha256)) {
                 is PutResult.Stored -> {
                     record(game, r.current)
@@ -392,7 +398,7 @@ class SaveSyncCore(
         val bytes = phoneSave(game) ?: return
         withContext(Dispatchers.IO) { Storage.backupSave(userId, game) }
         if (Storage.isBlank(bytes) || JellyfinClient.sha256(bytes) == synced(game)?.sha256) return
-        client.putSave(game.id, bytes, base = null, mode = "history", afterSnapshot = savedAfterSnapshot(game)) // never changes the current save
+        client.putSave(game.id, bytes, base = null, mode = "history", afterSnapshot = savedAfterSnapshot(game), cheats = savedWithCheats(game)) // never changes the current save
     }
 
     /**
@@ -468,6 +474,7 @@ class SaveSyncCore(
         private val REFUSED_THIS_GAME = setOf(400, 404, 413, 422)
 
         fun afterSnapshotKey(userId: String, gameId: String) = "s|$userId|$gameId"
+        fun cheatsKey(userId: String, gameId: String) = "x|$userId|$gameId"
     }
 
     /** After a first download: pull the server save only if the phone has none. */
@@ -513,6 +520,9 @@ class SaveSync(context: Context) {
 
     /** D90: the game wrote this phone save after a snapshot was loaded; the next upload is marked so. Works logged out. */
     fun markSavedAfterSnapshot(userId: String, game: Game) = syncStore.set(SaveSyncCore.afterSnapshotKey(userId, game.id), "1")
+
+    /** D143: this phone save was written while cheats were on; the next upload is marked so. Works logged out. */
+    fun markSavedWithCheats(userId: String, game: Game) = syncStore.set(SaveSyncCore.cheatsKey(userId, game.id), "1")
 
     fun localSaveTime(game: Game): Long? {
         val s = store.load() ?: return null

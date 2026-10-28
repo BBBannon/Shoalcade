@@ -59,6 +59,7 @@ internal fun describeVersion(v: SaveVersion) = buildString {
     append(", ").append(fromLabel(v).replaceFirstChar { it.lowercase() })
     if (v.origin == "browser") append(", was a browser save (merged in)")
     if (v.afterSnapshot) append(", saved after loading a snapshot")
+    if (v.cheats) append(", made with cheats on")
 }
 
 private const val MAX_FILE = 64L * 1024 * 1024 // biggest save any console allows (PSP / 3DS)
@@ -225,7 +226,8 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
                                     Text(
                                         listOfNotNull(v.createdMillis?.let { formatTime(it) }, fromLabel(v), sizeLabel(v.size),
                                             if (v.origin == "browser") "Was a browser save (merged in)" else null,
-                                            if (v.afterSnapshot) "Saved after loading a snapshot" else null).joinToString(" · "),
+                                            if (v.afterSnapshot) "Saved after loading a snapshot" else null,
+                                            if (v.cheats) "Made with cheats on" else null).joinToString(" · "),
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                 }

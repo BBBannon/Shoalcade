@@ -47,7 +47,8 @@ enum class Console(
                 "melonds_console_mode" to "ds",
             )
             // Lemuroid's only PSP default: smoother picture when the game runs below 60 fps.
-            PSP -> listOf("ppsspp_frame_duplication" to "enabled")
+            // D143: PPSSPP only applies cheats with this on.
+            PSP -> listOf("ppsspp_frame_duplication" to "enabled", "ppsspp_cheats" to "enabled")
             // D135, same three as the browser: built-in BIOS stand-in (no BIOS bundled), card 1 = the synced save,
             // no second card (its default "shared" would be a card file Shoalcade never syncs).
             PSX -> listOf(

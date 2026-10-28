@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Jellyfin.Plugin.Shoalcade.Cheats;
 using Jellyfin.Plugin.Shoalcade.Configuration;
 using Jellyfin.Plugin.Shoalcade.Import;
 using Jellyfin.Plugin.Shoalcade.Migration;
@@ -30,7 +31,8 @@ public sealed class ShoalcadeServices
         Saves = new SaveStore(Path.Combine(DataRoot, "saves"), SaveOptions, TimeProvider.System, loggerFactory.CreateLogger<SaveStore>());
         States = new StateStore(Path.Combine(DataRoot, "states"), TimeProvider.System, loggerFactory.CreateLogger<StateStore>());
         Prefs = new PrefsStore(Path.Combine(DataRoot, "prefs"), TimeProvider.System, loggerFactory.CreateLogger<PrefsStore>());
-        Storage = new StorageReport(Path.Combine(DataRoot, "saves"), Path.Combine(DataRoot, "states"), Path.Combine(DataRoot, "prefs"));
+        Cheats = new CheatStore(Path.Combine(DataRoot, "cheats"), TimeProvider.System, loggerFactory.CreateLogger<CheatStore>());
+        Storage = new StorageReport(Path.Combine(DataRoot, "saves"), Path.Combine(DataRoot, "states"), Path.Combine(DataRoot, "prefs"), Path.Combine(DataRoot, "cheats"));
         JellyEmu = new JellyEmuImporter(Path.Combine(paths.DataPath, "jellyemu-saves"), Saves, () => Config.ImportJellyEmuSaves, loggerFactory.CreateLogger<JellyEmuImporter>());
     }
 
@@ -51,6 +53,9 @@ public sealed class ShoalcadeServices
 
     /// <summary>Gets the settings store.</summary>
     public PrefsStore Prefs { get; }
+
+    /// <summary>Gets the cheats store (D143).</summary>
+    public CheatStore Cheats { get; }
 
     /// <summary>Gets the admin storage report (view only).</summary>
     public StorageReport Storage { get; }

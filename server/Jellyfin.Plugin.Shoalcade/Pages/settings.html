@@ -40,6 +40,7 @@
         <a class="chip" href="#saves-s">Saves</a>
         <a class="chip" href="#app-s">Phone app</a>
         <a class="chip" href="#player-s">Browser player</a>
+        <a class="chip" href="#patch-s">Patch a game</a>
       </nav>
 
       <!-- Saves: the saves manager page is reused as it is (D134). -->
@@ -94,6 +95,15 @@
         <p class="fine set-intro">Each console has its own settings. To change keys, shortcuts, controller or touch buttons, open a game and use Settings in the player.</p>
         <p id="player-off" class="note" hidden>The browser player isn't available on this server.</p>
         <div id="consoles" class="set-cons"></div>
+      </section>
+
+      <!-- Patcher: a separate page that patches a game file in the browser; nothing is uploaded. -->
+      <section id="patch-s" class="set-box" aria-labelledby="patch-s-h">
+        <h2 id="patch-s-h" class="sec">Patch a game</h2>
+        <a id="patch-open" class="btn primary" href="patcher">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l6-6M14 4l6 6-8 8-6-6z"/></svg><span>Open the patcher</span>
+        </a>
+        <p class="fine">Add a hack, translation or fix to your own game file (IPS, UPS, BPS, PPF, xdelta and more). It all happens in this browser: nothing is uploaded and your library isn't changed.</p>
       </section>
     </div>
     <footer class="ver"><span id="sc-ver"></span></footer>

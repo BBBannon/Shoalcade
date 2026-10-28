@@ -458,10 +458,11 @@
       b.tabIndex = on ? 0 : -1;
       if (on && focus) b.focus();
     }
-    for (const t of ["display", "saves", "snaps", "controls"]) $("pt-" + t).hidden = t !== tab;
+    for (const t of ["display", "saves", "snaps", "cheats", "controls"]) $("pt-" + t).hidden = t !== tab;
     stopListening();
     if (tab === "saves") renderSaves();
     if (tab === "snaps") refreshSnaps();
+    if (tab === "cheats") renderCheats();
     if (tab === "controls") renderControls();
   }
 
@@ -625,7 +626,8 @@
     const otherCore = info && info.core && info.core !== player.snapshotCore;
     const meta = !info ? (slot === "auto" ? "Taken when you leave the game or switch to another tab" : "Empty")
       : damaged ? "Damaged on the server, so it can't be loaded. Save over it or delete it."
-      : when(info.created) + ", " + size(info.size) + (otherCore ? ". Made by a different emulator version, so it can't be loaded" : "");
+      : when(info.created) + ", " + size(info.size) + (info.cheats && info.cheats.length ? ", " + (info.cheats.length === 1 ? "1 cheat" : info.cheats.length + " cheats") + " on" : "")
+        + (otherCore ? ". Made by a different emulator version, so it can't be loaded" : "");
     const acts = h("div", { class: "sv-acts" });
     const run = async (fn, done) => {
       try { const r = await fn(); toast(r && r.pictureFailed ? done.replace(/\.$/, ", without a picture.") : done); } catch (e) { toast(e.message); }
@@ -653,6 +655,123 @@
       h("div", { class: "snap-txt" }, h("span", { class: "sv-when", text: label }), h("span", { class: "sv-meta", text: meta })),
       acts.childElementCount ? acts : null);
   }
+
+  // ----- Cheats tab (D143) -----
+  // Which code types each console's emulator reads (checked on the test-bed: tools/testbed/cheat_cores.py).
+  const CHEAT_HINTS = {
+    gb: "Game Boy: GameShark codes like 01FF16D0, or Game Genie codes like 00A-17B-C49.",
+    gbc: "Game Boy Color: GameShark codes like 01FF16D0, or Game Genie codes like 00A-17B-C49.",
+    gba: "Game Boy Advance: CodeBreaker, GameShark or Action Replay codes, like 82025CE4 03E7. Put each line of a long code on its own line.",
+    nds: "DS: Action Replay codes, like 02000000 0000270F. Put each line on its own line.",
+    psx: "PlayStation: GameShark codes, like 800A1234 03E7. Put each line on its own line.",
+  };
+  const CODE_OK = /^[A-Za-z0-9 +\-:_.,\n]+$/;
+  const cheatForm = { editing: null };
+
+  /** Plain-English problem with a name and code, or "" if they're fine (same rules as the server). */
+  function cheatProblem(name, code) {
+    const n = name.trim().replace(/\s+/g, " ");
+    const lines = code.replace(/\r/g, "").split("\n").map(l => l.trim().replace(/\s+/g, " ")).filter(Boolean);
+    if (!n) return "Give the cheat a name.";
+    if (n.length > 60) return "Keep the name to 60 characters or fewer.";
+    if (!lines.length) return "Type or paste the cheat code.";
+    if (!CODE_OK.test(lines.join("\n"))) return "That doesn't look like a cheat code. Codes use letters, numbers, spaces and + - : _ . , only.";
+    if (lines.length > 64 || lines.join("\n").length > 4000) return "That code is too long.";
+    return "";
+  }
+
+  function resetCheatForm() {
+    cheatForm.editing = null;
+    $("cheat-name").value = "";
+    $("cheat-code").value = "";
+    $("cheat-err").hidden = true;
+    $("cheat-form-h").textContent = "Add a cheat";
+    $("cheat-add").textContent = "Add and turn on";
+    $("cheat-cancel").hidden = true;
+  }
+
+  function cheatSaid(stuck, done) {
+    toast(stuck ? done + " A DS cheat you switched off stays on until you leave the game and start it again." : done);
+  }
+
+  function renderCheats() {
+    const list = $("cheats");
+    const msg = $("cheat-msg");
+    const say = text => { msg.textContent = text; msg.hidden = !text; };
+    $("cheat-hint").textContent = CHEAT_HINTS[player.game && player.game.console] || "";
+    $("cheat-ds").hidden = !(player.game && player.game.console === "nds");
+    const ok = !!player.cheats;
+    for (const id of ["cheat-name", "cheat-code", "cheat-add"]) $(id).disabled = !ok;
+    if (!ok) { say(player.cheatsNote || "Loading…"); list.replaceChildren(); return; }
+    const doc = player.cheats;
+    const on = new Set(doc.active);
+    say(!doc.cheats.length ? "No cheats yet. Add one below." : (on.size ? on.size + " on." : "None on.") + (playing() ? "" : " They go on when the game starts."));
+    list.replaceChildren(...doc.cheats.map(c => {
+      const sw = h("input", { type: "checkbox", role: "switch", id: "cheat-" + c.id });
+      sw.checked = on.has(c.id);
+      sw.addEventListener("change", async () => {
+        sw.disabled = true;
+        const ids = doc.cheats.filter(x => x.id === c.id ? sw.checked : on.has(x.id)).map(x => x.id);
+        try {
+          cheatSaid(await player.setActiveCheats(ids), (sw.checked ? "Turned on " : "Turned off ") + c.name + ".");
+        } catch (e) {
+          sw.checked = !sw.checked;
+          toast("Couldn't change it: " + e.message);
+        }
+        renderCheats();
+      });
+      const edit = h("button", { type: "button", class: "mini" }, "Edit");
+      edit.addEventListener("click", () => {
+        cheatForm.editing = c.id;
+        $("cheat-name").value = c.name;
+        $("cheat-code").value = c.code;
+        $("cheat-form-h").textContent = "Change " + c.name;
+        $("cheat-add").textContent = "Save changes";
+        $("cheat-cancel").hidden = false;
+        $("cheat-err").hidden = true;
+        $("cheat-name").focus();
+      });
+      const del = h("button", { type: "button", class: "mini danger" }, icon("trash"), "Delete");
+      del.addEventListener("click", () => sure(del, "Press Delete again to delete " + c.name + ".", async () => {
+        try {
+          cheatSaid(await player.deleteCheat(c.id), "Deleted " + c.name + ".");
+          if (cheatForm.editing === c.id) resetCheatForm();
+        } catch (e) { toast("Couldn't delete it: " + e.message); }
+        renderCheats();
+      }));
+      return h("li", { class: "cheat" },
+        h("label", { class: "tog", for: "cheat-" + c.id }, h("span", { text: c.name }), sw, h("span", { class: "tog-ui", "aria-hidden": "true" })),
+        h("code", { class: "cheat-code", text: c.code }),
+        h("div", { class: "sv-acts" }, edit, del));
+    }));
+  }
+
+  $("cheat-add").addEventListener("click", async () => {
+    const name = $("cheat-name").value, code = $("cheat-code").value;
+    const err = $("cheat-err");
+    const problem = cheatProblem(name, code);
+    if (problem) { err.textContent = problem; err.hidden = false; return; }
+    err.hidden = true;
+    const b = $("cheat-add");
+    b.disabled = true;
+    try {
+      if (cheatForm.editing) {
+        cheatSaid(await player.editCheat(cheatForm.editing, { name, code }), "Saved " + name.trim() + ".");
+      } else {
+        const r = await player.addCheat(name, code, true);
+        cheatSaid(r.stuck, "Added " + r.cheat.name + (playing() ? " and turned it on." : ". It goes on when the game starts."));
+      }
+      resetCheatForm();
+    } catch (e) {
+      err.textContent = e.message;
+      err.hidden = false;
+    } finally {
+      b.disabled = false;
+    }
+    renderCheats();
+  });
+  $("cheat-cancel").addEventListener("click", resetCheatForm);
+  player.on("cheats", () => { if (panelOpen() && S.tab === "cheats") renderCheats(); });
 
   // ----- Controls tab -----
   function hotkeysOf(prefs) {

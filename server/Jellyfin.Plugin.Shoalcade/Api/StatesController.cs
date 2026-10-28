@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -160,6 +161,68 @@ public class StatesController : ShoalcadeControllerBase
         }
 
         return r.Info is null ? Fail(StatusCodes.Status422UnprocessableEntity, "bad_image", "Needs a PNG, and a snapshot in that slot.") : Ok(r.Info);
+    }
+
+    /// <summary>Stores which cheats were on with a snapshot ({ cheats: [{ name, code }] }, D143). Sent after the snapshot
+    /// itself, like its picture. An empty list clears it.</summary>
+    /// <param name="id">Item id.</param>
+    /// <param name="slot">Slot.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Info.</returns>
+    [HttpPut("{id:guid}/{slot}/cheats")]
+    [Consumes("application/json")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult> PutCheats([FromRoute] Guid id, [FromRoute] string slot, CancellationToken cancellationToken)
+    {
+        if (Resolve(id, slot, true, out var user, out var rom) is ActionResult fail)
+        {
+            return fail;
+        }
+
+        var max = Cheats.CheatStore.MaxBodyBytes * 4;
+        var (uploadSlot, busy) = await BeginUploadAsync(user.Id, max, cancellationToken).ConfigureAwait(false);
+        if (busy is not null)
+        {
+            return busy;
+        }
+
+        using var slotHandle = uploadSlot;
+        var (data, bodyFail) = await ReadBodyAsync(max, cancellationToken).ConfigureAwait(false);
+        if (bodyFail is not null)
+        {
+            return bodyFail;
+        }
+
+        List<Cheats.SnapshotCheat>? list = null;
+        try
+        {
+            list = System.Text.Json.JsonSerializer.Deserialize<SnapshotCheatsDto>(data!)?.Cheats;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // handled below
+        }
+
+        if (list is null || list.Count > Cheats.CheatStore.MaxCheats)
+        {
+            return Fail(StatusCodes.Status422UnprocessableEntity, "bad_cheats", "That isn't a list of cheats.");
+        }
+
+        var clean = new List<Cheats.SnapshotCheat>();
+        foreach (var c in list)
+        {
+            var name = Cheats.CheatStore.CleanName(c?.Name);
+            var code = Cheats.CheatStore.CleanCode(c?.Code);
+            if (name is null || code is null)
+            {
+                return Fail(StatusCodes.Status422UnprocessableEntity, "bad_cheats", "One of the cheats has a name or code that isn't allowed.");
+            }
+
+            clean.Add(new Cheats.SnapshotCheat(name, code));
+        }
+
+        var info = await Services.States.PutCheatsAsync(user.Id, rom!.Id, slot, clean, cancellationToken).ConfigureAwait(false);
+        return info is null ? Fail(StatusCodes.Status404NotFound, "no_snapshot", "There's no snapshot in that slot.") : Ok(info);
     }
 
     /// <summary>Deletes a snapshot.</summary>

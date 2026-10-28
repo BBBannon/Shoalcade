@@ -29,12 +29,13 @@ The only third party contacted is **libretro**, by your **server**, for game nam
 
 | Where to | What | When |
 |---|---|---|
-| **Your Jellyfin server only** (HTTPS) | Login, game list, game downloads, save uploads and downloads, the app's version number | When you use the app online |
+| **Your Jellyfin server only** (HTTPS) | Login, game list, game downloads, save uploads and downloads, your cheat codes, the app's version number | When you use the app online |
 | **Other phones on the same Wi-Fi** | The name **"Shoalcade" + your phone model**, a check that you typed the host's **4-digit PIN** (the PIN itself is never sent), then game link data, phone to phone | Only during **Link play (same Wi-Fi)** |
 
 - The app contacts **no other server**. Not us, not libretro, not Google.
 - Box art comes from **your** server.
 - The browser player and library pages can only talk to **your** server (their security policy blocks anything else). EmulatorJS's update check is switched off.
+- **Patch a game** runs entirely in your browser: the game file and patch you pick are **never uploaded**, not even to your own server.
 
 ---
 
@@ -65,7 +66,7 @@ If the phone was offline when you logged out, remove it in **Dashboard → Devic
 
 **Removed:**
 - Downloaded games, box art cache
-- **Saves on the phone**, their backup copies, and **snapshots**
+- **Saves on the phone**, their backup copies, **snapshots** and cheat lists
 - Your login
 
 **Kept on the server:** every save you uploaded, with all its versions.
@@ -78,7 +79,7 @@ If the phone was offline when you logged out, remove it in **Dashboard → Devic
 
 **Kept** (on purpose, so a reinstall picks up where you left off):
 - **Your ROM files** — never touched
-- **Saves, snapshots and player settings** in Jellyfin's data folder: `<Jellyfin data>/shoalcade/` (**include it in your backups**)
+- **Saves, snapshots, cheat codes and player settings** in Jellyfin's data folder: `<Jellyfin data>/shoalcade/` (**include it in your backups**)
 - The downloaded game lists (`<Jellyfin data>/shoalcade/gamedb/`)
 - The games library and box art Jellyfin has stored
 - JellyEMU's old save files, if any (only ever read)
@@ -92,6 +93,6 @@ If the phone was offline when you logged out, remove it in **Dashboard → Devic
 ## Who can see what
 
 - Every Shoalcade request needs a **Jellyfin login**.
-- People see **only their own saves**.
+- People see **only their own saves**, snapshots and cheat codes.
 - Admins get a **storage view** (sizes, counts and names only). They can't open, download or delete other people's saves from it.
 - Only games are served. Your other Jellyfin media is never exposed through Shoalcade.

@@ -35,6 +35,7 @@ public sealed record ConflictError(
 /// <param name="Consoles">Known consoles.</param>
 /// <param name="User">The signed-in user.</param>
 /// <param name="SaveRules">How many save versions are kept (shown on the saves page).</param>
+/// <param name="Features">What the server can do beyond its API level (e.g. "cheats").</param>
 public sealed record InfoDto(
     [property: JsonPropertyName("server")] string Server,
     [property: JsonPropertyName("serverVersion")] string ServerVersion,
@@ -45,7 +46,8 @@ public sealed record InfoDto(
     [property: JsonPropertyName("browserPlayer")] bool BrowserPlayer,
     [property: JsonPropertyName("consoles")] IReadOnlyList<ConsoleDto> Consoles,
     [property: JsonPropertyName("user")] UserDto User,
-    [property: JsonPropertyName("saveRules")] SaveRulesDto SaveRules);
+    [property: JsonPropertyName("saveRules")] SaveRulesDto SaveRules,
+    [property: JsonPropertyName("features")] IReadOnlyList<string>? Features = null);
 
 /// <summary>The save keep rule in force, so pages show the real numbers rather than assumed ones.</summary>
 /// <param name="KeepRecent">Most recent versions always kept.</param>
@@ -112,6 +114,7 @@ public sealed record ConsoleDto(
 /// <param name="IsCurrent">Whether it is the current save.</param>
 /// <param name="Origin">"browser" = merged in from the old separate DS browser list (D91); else null.</param>
 /// <param name="AfterSnapshot">The game saved it after a snapshot was loaded (D90).</param>
+/// <param name="Cheats">The game saved it while cheats were on (D143).</param>
 public sealed record SaveVersionDto(
     [property: JsonPropertyName("version")] int Version,
     [property: JsonPropertyName("size")] long Size,
@@ -124,14 +127,15 @@ public sealed record SaveVersionDto(
     [property: JsonPropertyName("restoredFrom")] int? RestoredFrom,
     [property: JsonPropertyName("isCurrent")] bool IsCurrent,
     [property: JsonPropertyName("origin")] string? Origin,
-    [property: JsonPropertyName("afterSnapshot")] bool AfterSnapshot)
+    [property: JsonPropertyName("afterSnapshot")] bool AfterSnapshot,
+    [property: JsonPropertyName("cheats")] bool Cheats = false)
 {
     /// <summary>Creates the DTO.</summary>
     /// <param name="v">Version.</param>
     /// <param name="current">Current version number.</param>
     /// <returns>The DTO, or null.</returns>
     public static SaveVersionDto? From(SaveVersion? v, int? current) =>
-        v is null ? null : new(v.Version, v.Size, v.Sha256, v.Created, v.Source, v.Device, v.Pinned, v.Label, v.RestoredFrom, current == v.Version, v.Origin, v.AfterSnapshot == true);
+        v is null ? null : new(v.Version, v.Size, v.Sha256, v.Created, v.Source, v.Device, v.Pinned, v.Label, v.RestoredFrom, current == v.Version, v.Origin, v.AfterSnapshot == true, v.Cheats == true);
 }
 
 /// <summary>A game's save history.</summary>

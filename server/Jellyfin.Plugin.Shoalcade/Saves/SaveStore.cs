@@ -47,6 +47,9 @@ public sealed partial class SaveStore : IDisposable
     /// <summary>Longest save label kept (longer ones are cut).</summary>
     public const int MaxLabelLength = 60;
 
+    /// <summary>Label put on the save kept from before the first save made with cheats on (D143).</summary>
+    public const string BeforeCheatsLabel = "Before cheats";
+
     /// <summary>Source of a version brought in by a move (never removed by the keep rule, M2).</summary>
     public const string MovedSource = "moved";
 
@@ -198,6 +201,8 @@ public sealed partial class SaveStore : IDisposable
     /// <param name="afterSnapshot">The game saved this after a snapshot was loaded (D90): marked on the new version.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="expect">With <see cref="PutMode.Force"/>: the save the person was shown; a different current save = conflict (L2).</param>
+    /// <param name="cheats">The game saved this while cheats were on (D143): marked on the new version. The first time it
+    /// replaces a save made without cheats, that save is pinned and labelled "Before cheats", so it is never tidied away.</param>
     /// <returns>The result.</returns>
     public Task<SaveWriteResult> PutAsync(
         Guid user,
@@ -212,7 +217,8 @@ public sealed partial class SaveStore : IDisposable
         bool allowBlank,
         bool afterSnapshot,
         CancellationToken cancellationToken,
-        SaveExpectation? expect = null)
+        SaveExpectation? expect = null,
+        bool cheats = false)
     {
         var warnings = new List<string>();
         var error = SaveRules.Check(console, data.Span, allowBlank, warnings, out var code);
@@ -257,8 +263,23 @@ public sealed partial class SaveStore : IDisposable
                 return new SaveWriteResult(SaveWriteStatus.Rejected, null, current, quota, "quota", warnings);
             }
 
+            // D143: the first time a clean save is replaced by one made with cheats on, keep the clean save for good.
+            if (cheats && current is not null && current.Cheats != true && !h.Versions.Exists(x => x.Label == BeforeCheatsLabel))
+            {
+                current.Label ??= BeforeCheatsLabel;
+                if (current.Pinned || h.Versions.Count(x => x.Pinned) < _options().MaxPinned)
+                {
+                    current.Pinned = true;
+                }
+                else
+                {
+                    warnings.Add("Your save from before cheats couldn't be pinned (this game has the most pinned saves allowed), so it may be tidied away later. Unpin one to keep it.");
+                }
+            }
+
             var v = await AddVersionAsync(dir, h, console.SaveExtension, data, sha, source, device, null, cancellationToken).ConfigureAwait(false);
             v.AfterSnapshot = afterSnapshot ? true : null;
+            v.Cheats = cheats ? true : null;
             if (mode != PutMode.HistoryOnly)
             {
                 h.Current = v.Version;
@@ -560,6 +581,7 @@ public sealed partial class SaveStore : IDisposable
                         nv.Label = v.Label;
                         nv.Origin = v.Origin;
                         nv.AfterSnapshot = v.AfterSnapshot;
+                        nv.Cheats = v.Cheats;
                     }
                     else
                     {

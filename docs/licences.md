@@ -37,6 +37,7 @@ A short public summary is in **`THIRD_PARTY_NOTICES.md`** (repo root). This file
 | PCSX ReARMed `r26l-119-gc881679` (libretro nightly, built 25/10/2026) | App (PS1, D137) | GPL-2.0-or-later (bundled parts below) | https://github.com/libretro/pcsx_rearmed/tree/c8816799b50388e61cfe237fe2cdbb7d8175f20a |
 | mGBA (EmulatorJS build 4.2.3) | Plugin (browser GB, GBC, GBA) | MPL-2.0 | https://github.com/EmulatorJS/mgba (npm `@emulatorjs/core-mgba` 4.2.3, hash in `server/emulatorjs.lock`) |
 | melonDS legacy (EmulatorJS build 4.2.3) | Plugin (browser DS) | GPL-3.0 | https://github.com/EmulatorJS/melonDS (npm `@emulatorjs/core-melonds` 4.2.3, hash in `server/emulatorjs.lock`) |
+| RomPatcher.js 3.2.1 core | Plugin (patcher page, `Pages/rompatcher.js`) | MIT (licence kept at the top of the file) | https://github.com/marcrobledo/RomPatcher.js/tree/v3.2.1 (archive SHA-256 `95d4ac04…128275f`, checked by `tools/vendor_rompatcher.py`) |
 | PCSX ReARMed (EmulatorJS build 4.2.3) | Plugin (browser PS1, D137) | GPL-2.0-or-later | https://github.com/EmulatorJS/pcsx_rearmed (npm `@emulatorjs/core-pcsx_rearmed` 4.2.3, hash in `server/emulatorjs.lock`) |
 
 - ✅ `About.kt` shows the PPSSPP row as commit `902e5cc` (checked 28/10/2026).

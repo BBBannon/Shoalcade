@@ -196,12 +196,14 @@
 
     /**
      * Uploads a save. Never throws for 409: returns { status: 409, body } so the caller can ask the person.
-     * opts: { base, mode: normal|force|history, keepalive, afterSnapshot (D90: the game saved after a snapshot load) }.
+     * opts: { base, mode: normal|force|history, keepalive, afterSnapshot (D90: the game saved after a snapshot load),
+     * cheats (D143: the game saved while cheats were on) }.
      */
     async putSave(id, bytes, opts) {
       opts = opts || {};
       const res = await request("/shoalcade/save/" + encodeURIComponent(id) + q({
         base: opts.base, mode: opts.mode, source: "browser", afterSnapshot: opts.afterSnapshot ? "true" : null,
+        cheats: opts.cheats ? "true" : null,
       }), {
         method: "PUT",
         headers: { "Content-Type": "application/octet-stream" },
@@ -213,6 +215,22 @@
     },
 
     history: id => json("/shoalcade/save/" + encodeURIComponent(id) + "/history"),
+
+    // ---------- cheats (D143, docs/cheats-api.md) ----------
+    /** A game's cheats: { cheats: [{ id, name, code, added }], active: [ids] }. */
+    cheats: id => json("/shoalcade/cheats/" + encodeURIComponent(id)),
+    /** Adds a cheat; the same code twice gives back the one already there. */
+    addCheat: (id, name, code) => json("/shoalcade/cheats/" + encodeURIComponent(id), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, code }),
+    }),
+    editCheat: (id, cheat, changes) => json("/shoalcade/cheats/" + encodeURIComponent(id) + "/" + encodeURIComponent(cheat), {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes),
+    }),
+    deleteCheat: (id, cheat) => request("/shoalcade/cheats/" + encodeURIComponent(id) + "/" + encodeURIComponent(cheat), { method: "DELETE" }),
+    /** Sets which cheats are on for the in-game save; answers with the whole list. */
+    setActiveCheats: (id, ids) => json("/shoalcade/cheats/" + encodeURIComponent(id) + "/active", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
   };
 
   window.SC = window.SC || {};

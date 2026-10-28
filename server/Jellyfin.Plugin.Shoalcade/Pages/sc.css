@@ -351,6 +351,14 @@ aside.recent { background: var(--surface); border: 2px solid var(--ink); border-
 .set-changed { list-style: none; margin: 0; padding: 0; }
 .set-changed li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: .88rem; flex-wrap: wrap; }
 .set-none { margin: 0; font-size: .88rem; color: var(--p-muted); }
+/* Patcher page (/shoalcade/patcher): two file pickers, a button row and a status line. */
+.pt-field { margin: 16px 0 0; }
+.pt-label { display: block; font-weight: 700; margin: 0 0 6px; }
+.pt-field input[type=file] { max-width: 100%; padding: 8px; background: var(--p-raise); border: 2px solid var(--ink); border-radius: var(--r-m); }
+.pt-field .fine { margin-top: 6px; overflow-wrap: anywhere; }
+.pt-warn { background: #F1CBD1; border-left: 6px solid var(--danger); }
+.pt-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 0; }
+.pt-status { margin: 12px 0 0; font-weight: 650; min-height: 1.5em; overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   .set-box { padding: 14px 14px 16px; }
   .app-qr-box { width: 100%; align-items: center; }

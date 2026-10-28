@@ -46,6 +46,7 @@ It is built on the work of the projects below. Thank you to all of them.
 | **Socket.IO** client 4.8.1 (inside EmulatorJS) | Not used by Shoalcade | MIT | https://github.com/socketio/socket.io |
 | **zip / 7-Zip unpackers** (inside EmulatorJS, `ejs/compression/`) | Unpacking the cores and zipped games | Shipped as part of EmulatorJS | https://github.com/EmulatorJS/EmulatorJS/tree/v4.2.3/data/compression |
 | **unRAR** (`libunrar`, inside EmulatorJS) | **Not used** (RAR games are refused) — removed from the zip (D124) | unRAR licence (freeware, source available) | https://www.rarlab.com/rar_add.htm |
+| **RomPatcher.js** 3.2.1 core (`Pages/rompatcher.js`, joined unchanged by `tools/vendor_rompatcher.py`) | Patcher page: IPS, UPS, BPS, PPF, xdelta, APS, RUP, PMSR patches | MIT | https://github.com/marcrobledo/RomPatcher.js/tree/v3.2.1 |
 | **JellyEMU** 0.9.2.4 (code ported into our scanner) | Console, region and disc detection; name cleaning | MIT | https://github.com/Jellyfin-PG/JellyEmu |
 | **Jellyfin.Controller / Jellyfin.Model** 12.3.0 | Plugin API (build only, not shipped) | GPL-3.0-only | https://github.com/jellyfin/jellyfin |
 

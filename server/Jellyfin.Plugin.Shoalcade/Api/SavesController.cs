@@ -172,6 +172,7 @@ public class SavesController : ShoalcadeControllerBase
     /// <param name="source">browser, app or upload (by hand).</param>
     /// <param name="allowBlank">Accept a blank save (all one byte).</param>
     /// <param name="afterSnapshot">The game saved this after a snapshot was loaded (D90); shown on the version.</param>
+    /// <param name="cheats">The game saved this while cheats were on (D143); shown on the version.</param>
     /// <param name="expect">With <c>mode=force</c>: the version the person was shown as Jellyfin's save (0 = none). If the
     /// save in use is no longer that one, nothing changes and the answer is 409, so they can be asked again (L2).</param>
     /// <param name="expectSha">With <c>expect</c>: that version's SHA-256, checked too.</param>
@@ -192,6 +193,7 @@ public class SavesController : ShoalcadeControllerBase
         [FromQuery] string? source,
         [FromQuery] bool allowBlank,
         [FromQuery] bool afterSnapshot,
+        [FromQuery] bool cheats,
         [FromQuery] int? expect,
         [FromQuery] string? expectSha,
         CancellationToken cancellationToken)
@@ -246,7 +248,7 @@ public class SavesController : ShoalcadeControllerBase
         }
 
         var shown = expect is null ? null : new SaveExpectation(expect.Value, expectSha);
-        var r = await Services.Saves.PutAsync(ctx.User.Id, id, ctx.Console!, ctx.Rom?.Name, data!, putMode.Value, baseVersion, src, DeviceLabel, allowBlank, afterSnapshot, cancellationToken, shown).ConfigureAwait(false);
+        var r = await Services.Saves.PutAsync(ctx.User.Id, id, ctx.Console!, ctx.Rom?.Name, data!, putMode.Value, baseVersion, src, DeviceLabel, allowBlank, afterSnapshot, cancellationToken, shown, cheats).ConfigureAwait(false);
         return ToResult(r);
     }
 
@@ -377,7 +379,7 @@ public class SavesController : ShoalcadeControllerBase
         {
             // B9: the game's browser snapshots follow it (copied, checked, then removed; a used slot is never overwritten).
             var s = await Services.States.MoveAsync(src.User.Id, id, to, cancellationToken, dst.Console!.Key, dst.Rom?.Name).ConfigureAwait(false);
-            r = r with { Warnings = [.. r.Warnings, .. SnapshotMoveNotes(s)] };
+            r = r with { Warnings = [.. r.Warnings, .. SnapshotMoveNotes(s), .. CheatMoveNotes(await Services.Cheats.MoveAsync(src.User.Id, id, to, cancellationToken).ConfigureAwait(false))] };
         }
 
         return ToResult(r);
@@ -407,6 +409,22 @@ public class SavesController : ShoalcadeControllerBase
         }
     }
 
+    /// <summary>Plain-English notes about cheats moved with a save (D143).</summary>
+    /// <param name="r">How many moved, and how many stayed (the target game's list was full).</param>
+    /// <returns>Notes.</returns>
+    internal static IEnumerable<string> CheatMoveNotes((int Moved, int Kept) r)
+    {
+        if (r.Moved > 0)
+        {
+            yield return (r.Moved == 1 ? "1 cheat" : r.Moved.ToString(CultureInfo.InvariantCulture) + " cheats") + " moved too.";
+        }
+
+        if (r.Kept > 0)
+        {
+            yield return (r.Kept == 1 ? "1 cheat" : r.Kept.ToString(CultureInfo.InvariantCulture) + " cheats") + " stayed with the old game, because this game's cheat list is full.";
+        }
+    }
+
     /// <summary>
     /// F8: a removed game with snapshots but no save. Same rules as a save move (<see cref="SaveStore.MoveRefusal"/>); the
     /// target's save is not touched. 422 <c>kept</c> if no snapshot could move (every slot used at the target, or damaged).
@@ -419,7 +437,7 @@ public class SavesController : ShoalcadeControllerBase
         }
 
         var s = await Services.States.MoveAsync(src.User.Id, id, to, cancellationToken, dst.Console!.Key, dst.Rom?.Name).ConfigureAwait(false);
-        var notes = SnapshotMoveNotes(s).ToList();
+        var notes = SnapshotMoveNotes(s).Concat(CheatMoveNotes(await Services.Cheats.MoveAsync(src.User.Id, id, to, cancellationToken).ConfigureAwait(false))).ToList();
         var current = (await Services.Saves.GetHistoryAsync(src.User.Id, to, cancellationToken).ConfigureAwait(false)).CurrentVersion();
         return ToResult(s.Moved.Count > 0
             ? new SaveWriteResult(SaveWriteStatus.Created, null, current, null, null, notes)

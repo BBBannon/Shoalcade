@@ -315,7 +315,7 @@
         this.p.status("saving", "Saving to the server…");
         let r;
         try {
-          r = await api.putSave(this.id, bytes, { base: this.base, keepalive: opts.keepalive, afterSnapshot: this.guard.after });
+          r = await api.putSave(this.id, bytes, { base: this.base, keepalive: opts.keepalive, afterSnapshot: this.guard.after, cheats: this.p.cheatsUsed });
         } catch (e) {
           if ([413, 422, 507].includes(e.status)) {
             this.refused = bytes;
@@ -335,6 +335,7 @@
         this.pending = null;
         this.lastUpload = Date.now();
         this.guard.clear(); // the game's own save is on the server: back to the normal rule
+        this.p.cheatsUsed = this.p.activeCheats().length > 0; // a later save counts as "with cheats" only while some are on
         const warn = (r.body.warnings || []).join(" ");
         this.p.status("saved", "Saved to the server (version " + this.base + ")." +
           (this.guard.after ? " Saved after loading a snapshot." : "") + (warn ? " " + warn : ""));
@@ -565,6 +566,10 @@
       this.prefsRetries = 0;
       this.prefsRetryTimer = 0;
       this.prefsReloading = null;
+      this.cheats = null;        // { cheats: [...], active: [ids] } from the server (D143), or null if not available
+      this.cheatsNote = "";      // why cheats aren't available, if they aren't
+      this.cheatsUsed = false;   // a cheat was on since the last save reached the server (that save is marked)
+      this.appliedCodes = [];    // codes the core has now (browser DS can't take one back until the game is started again)
     }
 
     /** Tries the settings load again later (5 s, 15 s, 30 s, 60 s, then every 2 minutes). */
@@ -646,6 +651,7 @@
           this.schedulePrefsRetry();
         }
         this.emit("prefs", this.prefs);
+        await this.loadCheats();
         this.rom = await api.rom(this.itemId, (got, total) => {
           this.status("loading", "Downloading game… " + (total ? Math.round(100 * got / total) + "%" : Math.round(got / 1024) + " KB")
             + (total > BIG_GAME_BYTES ? " " + bigGameNote(total) : ""));
@@ -765,8 +771,10 @@
         this.status("loading", "Loading the snapshot…");
         this.startFromSnapshot(s.slot, s.bytes);
       } else if (this.startError) {
+        this.applyCheats();
         this.status("error", this.startError);
       } else {
+        this.applyCheats();
         this.status("ok", this.sync.base ? "Playing with your server save (version " + this.sync.base + ")." : "Playing. No save on the server yet.");
       }
     }
@@ -953,6 +961,16 @@
           info.hasImage = true;
         } catch (e) { pictureFailed = true; /* picture is optional */ }
       }
+      const on = this.activeCheats();
+      if (on.length) {
+        try {
+          const r = await api.request(this.statePath(slot) + "/cheats", {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cheats: on.map(c => ({ name: c.name, code: c.code })) }),
+          });
+          info.cheats = (await r.json()).cheats;
+        } catch (e) { info.cheatsFailed = true; /* the snapshot still counts, without its cheats list */ }
+      }
       if (pictureFailed) info.pictureFailed = true; // the page says "without a picture" (L9)
       this.emit("snapshot", { slot, info });
       return info;
@@ -970,6 +988,8 @@
       this.loadingSnapshot = true;
       try {
         const bytes = await this.fetchSnapshot(slot);
+        let snapInfo = null;
+        try { snapInfo = ((await this.snapshots()).snapshots || []).find(s => s.slot === slot) || {}; } catch (e) { /* cheats stay as they are */ }
         const sent = await this.sync.flush({});
         if (this.sync.conflict || (!sent && this.sync.hasUnsaved())) {
           throw new Error("Your latest in-game save hasn't reached the server yet, so the snapshot wasn't loaded " +
@@ -977,6 +997,7 @@
         }
         this.sync.beforeSnapshotLoad();
         await this.applySnapshot(bytes);
+        if (snapInfo !== null) await this.useSnapshotCheats(snapInfo);
       } finally {
         this.loadingSnapshot = false;
       }
@@ -1014,12 +1035,14 @@
       try {
         await this.waitFrames(30, 3000);
         await this.applySnapshot(bytes);
+        await this.useSnapshotCheats((this.launchSnapshots || []).find(s => s.slot === slot));
         this.emit("snapshotLoaded", { slot });
         this.status("ok", "Started from the snapshot. Your save on the server only changes when you save in the game.");
       } catch (e) {
         // Back to the normal rule: the game is running on the server save.
         this.loadingSnapshot = false;
         this.sync.guard.reset();
+        this.applyCheats();
         this.status("error", "Couldn't load the snapshot (" + (e && e.message ? e.message : e) + "), so the game started from your save.");
       }
     }
@@ -1038,6 +1061,104 @@
         };
         check();
       });
+    }
+
+    // ---------- cheats (D143, docs/cheats-api.md) ----------
+
+    /** Reads this game's cheats from the server. Never stops the game from loading: on failure cheats are just off. */
+    async loadCheats() {
+      this.cheats = null;
+      if (!(this.info.features || []).includes("cheats")) {
+        this.cheatsNote = "This Shoalcade server is too old for cheats. Ask your Jellyfin admin to update the plugin.";
+        return;
+      }
+      try {
+        this.cheats = await api.cheats(this.itemId);
+        this.cheatsNote = "";
+      } catch (e) {
+        this.cheatsNote = "Couldn't load your cheats: " + e.message;
+      }
+      this.emit("cheats", this.cheats);
+    }
+
+    /** The cheats that are on, in order. */
+    activeCheats() {
+      if (!this.cheats) return [];
+      const byId = new Map(this.cheats.cheats.map(c => [c.id, c]));
+      return this.cheats.active.map(id => byId.get(id)).filter(Boolean);
+    }
+
+    /**
+     * Gives the core exactly the cheats that are on: clear them all, then send each with numbers 0, 1, 2…
+     * (switching one off on its own doesn't work in every emulator). A code's lines are joined with "+".
+     * Returns true if a cheat that was on couldn't be switched off (browser DS: only leaving the game and starting it again does that).
+     */
+    applyCheats() {
+      if (!this.running || !this.emu || !this.emu.gameManager) return false;
+      const codes = this.activeCheats().map(c => c.code.split("\n").join("+"));
+      const gm = this.emu.gameManager;
+      try {
+        gm.resetCheat();
+        codes.forEach((code, i) => gm.setCheat(i, 1, code));
+      } catch (e) {
+        console.warn("Shoalcade: couldn't apply cheats", e.message);
+      }
+      const stuck = this.game.console === "nds" && this.appliedCodes.some(c => !codes.includes(c));
+      this.appliedCodes = stuck ? Array.from(new Set(this.appliedCodes.concat(codes))) : codes;
+      if (codes.length) this.cheatsUsed = true;
+      this.emit("cheats", this.cheats);
+      return stuck;
+    }
+
+    /** Turns cheats on or off for this game (the in-game save's list), then applies them. */
+    async setActiveCheats(ids) {
+      this.cheats = await api.setActiveCheats(this.itemId, ids);
+      return this.applyCheats();
+    }
+
+    /** Adds a cheat to the game's list (and turns it on if asked). Returns { cheat, stuck }. */
+    async addCheat(name, code, turnOn) {
+      const c = await api.addCheat(this.itemId, name, code);
+      this.cheats = await api.cheats(this.itemId);
+      if (turnOn && !this.cheats.active.includes(c.id)) return { cheat: c, stuck: await this.setActiveCheats(this.cheats.active.concat(c.id)) };
+      this.emit("cheats", this.cheats);
+      return { cheat: c, stuck: false };
+    }
+
+    async editCheat(id, changes) {
+      await api.editCheat(this.itemId, id, changes);
+      this.cheats = await api.cheats(this.itemId);
+      if (this.cheats.active.includes(id)) return this.applyCheats();
+      this.emit("cheats", this.cheats);
+      return false;
+    }
+
+    async deleteCheat(id) {
+      const wasOn = !!this.cheats && this.cheats.active.includes(id);
+      await api.deleteCheat(this.itemId, id);
+      this.cheats = await api.cheats(this.itemId);
+      if (wasOn) return this.applyCheats();
+      this.emit("cheats", this.cheats);
+      return false;
+    }
+
+    /**
+     * After a snapshot loads: exactly the cheats that were on when it was taken (none for a snapshot without any).
+     * Any not in the game's list yet are added back. If the server can't be reached, they still go on for this play.
+     */
+    async useSnapshotCheats(info) {
+      if (!this.cheats) return;
+      const want = (info && info.cheats) || [];
+      try {
+        const ids = [];
+        for (const c of want) ids.push((await api.addCheat(this.itemId, c.name, c.code)).id);
+        this.cheats = await api.setActiveCheats(this.itemId, ids);
+      } catch (e) {
+        const extra = want.map((c, i) => ({ id: "snap" + i, name: c.name, code: c.code }));
+        this.cheats = { cheats: this.cheats.cheats.concat(extra), active: extra.map(c => c.id) };
+        console.warn("Shoalcade: couldn't store the snapshot's cheats", e.message);
+      }
+      if (this.applyCheats()) this.status("ok", "Snapshot loaded. A DS cheat that was on stays on until you leave the game and start it again.");
     }
 
     async deleteSnapshot(slot) {

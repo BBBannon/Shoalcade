@@ -81,6 +81,11 @@ public class WebController : ControllerBase
     [HttpGet("settings")]
     public ActionResult SettingsPage() => Page("settings.html", false);
 
+    /// <summary>The patcher page: applies a ROM patch in the browser; nothing is uploaded.</summary>
+    /// <returns>HTML.</returns>
+    [HttpGet("patcher")]
+    public ActionResult PatcherPage() => Page("patcher.html", false);
+
     /// <summary>Our scripts, styles and icons.</summary>
     /// <param name="name">File name.</param>
     /// <returns>The file.</returns>

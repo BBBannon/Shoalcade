@@ -13,7 +13,9 @@ import java.util.zip.ZipOutputStream
  *   Shoalcade/roms/<console>/<itemId>/<rom file>
  *   Shoalcade/saves/<userId>/<itemId>.sav
  *   Shoalcade/saves/<userId>/backups/<itemId>-<time>.sav   (last [MAX_BACKUPS] kept; also -server-<time>.sav, -clock-<time>.clock)
- *   Shoalcade/states/<userId>/<itemId>.state                (save state; phone only, previous kept as .state.bak; picture .state.png)
+ *   Shoalcade/states/<userId>/<itemId>.state                (save state; phone only, previous kept as .state.bak; picture .state.png;
+ *                                                            cheats that were on: .state.cheats.json, previous .state.cheats.json.bak)
+ *   Shoalcade/cheats/<userId>/<itemId>.json                 (the game's cheats, D143, see CheatStore)
  *   Shoalcade/memstick/<userId>/<itemId>/PSP/SAVEDATA/...      (PSP: one memory stick per game; its "save" is a zip of SAVEDATA)
  */
 object Storage {
@@ -142,7 +144,9 @@ object Storage {
     /** F9: deletes the snapshot (its picture and the previous one kept as .bak too). Never touches the save. */
     fun deleteSnapshot(userId: String, game: Game) {
         val f = stateFile(userId, game)
-        listOf(f, File(f.parentFile, f.name + ".bak"), stateImageFile(userId, game)).forEach { it.delete() }
+        val cheats = stateCheatsFile(userId, game)
+        listOf(f, File(f.parentFile, f.name + ".bak"), stateImageFile(userId, game), cheats, File(cheats.parentFile, cheats.name + ".bak"))
+            .forEach { it.delete() }
     }
 
     /** A phone backup of a save: from the phone itself, or the Jellyfin save the phone replaced ([fromJellyfin]). */
@@ -322,12 +326,33 @@ object Storage {
         if (png == null) f.delete() else writeAtomically(f, png)
     }
 
-    /** Saves a state, keeping the previous one as .state.bak so one bad press can be undone. */
-    fun writeState(userId: String, game: Game, bytes: ByteArray) {
+    /** D143: the cheats that were on when the snapshot was made (JSON list of {name, code}); no file = none were on. */
+    fun stateCheatsFile(userId: String, game: Game) = File(root, "states/$userId/${game.id}.state.cheats.json")
+
+    fun readStateCheats(userId: String, game: Game): String? =
+        stateCheatsFile(userId, game).takeIf { it.isFile }?.readText()
+
+    /**
+     * Saves a state, keeping the previous one as .state.bak so one bad press can be undone. [cheats] (D143) = the
+     * cheats that were on, as JSON (null = none); the previous snapshot's list moves to .bak with it, so the two stay together.
+     */
+    fun writeState(userId: String, game: Game, bytes: ByteArray, cheats: String? = null) {
         val f = stateFile(userId, game)
-        if (f.isFile) writeAtomically(File(f.parentFile, f.name + ".bak"), f.readBytes())
+        val c = stateCheatsFile(userId, game)
+        val cBak = File(c.parentFile, c.name + ".bak")
+        if (f.isFile) {
+            writeAtomically(File(f.parentFile, f.name + ".bak"), f.readBytes())
+            if (c.isFile) writeAtomically(cBak, c.readBytes()) else cBak.delete()
+        }
+        // Old list off first, new one after the state: if the app dies in between, a snapshot is left with no cheats
+        // (the safe side), never with another snapshot's.
+        c.delete()
         writeAtomically(f, bytes)
+        if (cheats != null) writeAtomically(c, cheats.toByteArray(Charsets.UTF_8))
     }
+
+    /** Small text files (e.g. the cheat list), written whole or not at all. */
+    fun writeText(f: File, text: String) = writeAtomically(f, text.toByteArray(Charsets.UTF_8))
 
     /**
      * All-0x00 or all-0xFF means the game never saved: never upload or keep that. Nor a PS1 memory card the emulator

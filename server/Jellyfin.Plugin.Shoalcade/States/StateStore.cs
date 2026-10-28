@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Shoalcade.Cheats;
 using Jellyfin.Plugin.Shoalcade.Common;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -58,6 +59,12 @@ public sealed class StateInfo
     [JsonPropertyName("gameName")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? GameName { get; set; }
+
+    /// <summary>Gets or sets the cheats that were on when it was taken (D143), name and code each, so loading it brings
+    /// back exactly those. Null = none (or an older snapshot).</summary>
+    [JsonPropertyName("cheats")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<SnapshotCheat>? Cheats { get; set; }
 }
 
 /// <summary>Result of storing a snapshot's screenshot.</summary>
@@ -268,6 +275,31 @@ public sealed class StateStore
             info.HasImage = true;
             await WriteInfoAsync(dir, info, cancellationToken).ConfigureAwait(false);
             return new StateImageResult(info, false);
+        }
+    }
+
+    /// <summary>Stores which cheats were on with a snapshot (D143). An empty list clears it.</summary>
+    /// <param name="user">User id.</param>
+    /// <param name="item">Item id.</param>
+    /// <param name="slot">Slot.</param>
+    /// <param name="cheats">Tidy cheats (name and code each).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Updated info, or null if the slot is empty or damaged.</returns>
+    public async Task<StateInfo?> PutCheatsAsync(Guid user, Guid item, string slot, IReadOnlyList<SnapshotCheat> cheats, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(cheats);
+        var dir = Dir(user, item);
+        using (await _locks.AcquireAsync(dir, cancellationToken).ConfigureAwait(false))
+        {
+            var info = ReadInfo(dir, slot);
+            if (info is null || info.Damaged)
+            {
+                return null;
+            }
+
+            info.Cheats = cheats.Count == 0 ? null : [.. cheats];
+            await WriteInfoAsync(dir, info, cancellationToken).ConfigureAwait(false);
+            return info;
         }
     }
 

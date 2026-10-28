@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Patch a game · Shoalcade</title>
+  <link rel="icon" href="web/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="web/sc.css">
+  <script src="web/api.js" defer></script>
+  <script src="web/rompatcher.js" defer></script>
+  <script src="web/xdelta-unpack.js" defer></script>
+  <script src="web/patcher.js" defer></script>
+</head>
+<body>
+  <div class="lib settings-page">
+    <header class="top">
+      <h1 class="brand"><a id="jf-home" class="jf-home" href="../web/#/home" aria-label="Back to Jellyfin" title="Back to Jellyfin"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h4.5v-6h4v6h4.5V10"/></svg><span>Jellyfin</span></a><img class="brand-logo" src="web/logo.svg" alt="" width="32" height="32"><a id="home" href="./">Shoalcade</a></h1>
+      <span id="who" class="who"></span>
+      <a id="back" class="btn top-back" href="settings">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><span>Back to settings</span>
+      </a>
+    </header>
+
+    <p id="loading" class="loading" role="status">Loading…</p>
+
+    <section id="signed-out" class="notice" hidden>
+      <h2>Sign in first</h2>
+      <p id="signed-out-text">Shoalcade uses your Jellyfin sign-in. Sign in to Jellyfin in this browser, then come back to this page.</p>
+      <a id="signin" class="btn primary" href="../web/">Sign in to Jellyfin</a>
+    </section>
+
+    <section id="failed" class="notice" role="alert" hidden>
+      <h2>Couldn't load this page</h2>
+      <p id="failed-text"></p>
+      <button type="button" id="retry" class="btn">Try again</button>
+    </section>
+
+    <div id="patcher" hidden>
+      <h2 class="set-title">Patch a game</h2>
+      <section class="set-box" aria-labelledby="patch-h">
+        <h2 id="patch-h" class="sec">Your files</h2>
+        <p class="fine set-intro">Add a hack, translation or fix to your own game file. Everything happens in this browser: nothing is uploaded and your games library isn't changed. The patched game is saved to your downloads.</p>
+
+        <div class="pt-field">
+          <label for="rom" class="pt-label">1. Your game file</label>
+          <input type="file" id="rom">
+          <p id="rom-info" class="fine"></p>
+        </div>
+
+        <div class="pt-field">
+          <label for="patch" class="pt-label">2. The patch file</label>
+          <input type="file" id="patch" accept=".ips,.ups,.bps,.ppf,.xdelta,.vcdiff,.delta,.aps,.rup,.mod,.bdf,.pmsr">
+          <p id="patch-info" class="fine"></p>
+        </div>
+
+        <p id="big" class="note" hidden>This is a big file. Patching may take a while and needs plenty of memory, so close other tabs if it fails.</p>
+        <p id="mismatch" class="note pt-warn" role="alert" hidden></p>
+
+        <div class="pt-actions">
+          <button type="button" id="go" class="btn primary" disabled>Patch and download</button>
+          <button type="button" id="anyway" class="btn" hidden>Patch anyway</button>
+        </div>
+        <p id="status" class="pt-status" role="status" aria-live="polite"></p>
+        <p class="fine">Works with IPS, UPS, BPS, PPF, xdelta, APS, RUP and PMSR patches. To play the patched game here and on your phone, put it in your Jellyfin games folder next to your other games.</p>
+      </section>
+    </div>
+    <footer class="ver"><span id="sc-ver"></span></footer>
+  </div>
+</body>
+</html>

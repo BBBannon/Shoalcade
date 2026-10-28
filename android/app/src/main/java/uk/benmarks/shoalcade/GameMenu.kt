@@ -79,6 +79,36 @@ object GameMenu {
         }
     }
 
+    // D143: Cheats. Words agreed with the browser player.
+    const val CHEATS = "Cheats"
+    const val ADD_CHEAT = "Add a cheat…"
+    const val EDIT_CHEATS = "Edit cheats…"
+    const val EDIT_CHEATS_HINT = "Rename or delete"
+    const val CHEATS_OFF_NOTE = "Switching a cheat off doesn't undo what it already changed."
+    const val ID_ADD_CHEAT = "cheats.add"
+    const val ID_EDIT_CHEATS = "cheats.edit"
+    private const val CHEAT_PREFIX = "cheat."
+    fun cheatId(id: String) = CHEAT_PREFIX + id
+    /** The cheat a toggle id is for (null = not a cheat toggle). */
+    fun cheatOf(id: String): String? = id.takeIf { it.startsWith(CHEAT_PREFIX) }?.removePrefix(CHEAT_PREFIX)
+
+    /** "No cheats on", "1 cheat on", "3 cheats on". */
+    fun cheatsOn(n: Int) = when (n) { 0 -> "No cheats on"; 1 -> "1 cheat on"; else -> "$n cheats on" }
+
+    /**
+     * D143: one switch per cheat in the game's list, then Add and Edit. Hidden in a link session (cheats on one phone
+     * would make the two games drift apart).
+     */
+    val CHEATS_SECTION = MenuSection("cheats", CHEATS, visible = { it.cheatsAllowed }) { c ->
+        buildList {
+            add(MenuItem.Heading("cheats.count", cheatsOn(c.cheats.count { it.on })))
+            c.cheats.forEach { add(MenuItem.Toggle(cheatId(it.id), it.name, it.on)) }
+            if (c.cheats.isNotEmpty()) add(MenuItem.Heading("cheats.note", CHEATS_OFF_NOTE))
+            add(MenuItem.Action(ID_ADD_CHEAT, ADD_CHEAT))
+            if (c.cheats.isNotEmpty()) add(MenuItem.Action(ID_EDIT_CHEATS, EDIT_CHEATS, EDIT_CHEATS_HINT))
+        }
+    }
+
     /** F5: App Mute, kept for every game (see [GameSound]). */
     val SOUND_SECTION = MenuSection("sound", SOUND) { c -> listOf(MenuItem.Toggle(ID_MUTE, APP_MUTE, c.muted)) }
 
@@ -101,11 +131,11 @@ object GameMenu {
     }
 
     /**
-     * Every section, in drawer order. Speed and Cheats go here later. Step 10: things done mid-game first (Game,
-     * Snapshots, then Sound for App Mute), then Display before Controls, so in landscape the Screen choices are the first thing below the fold.
+     * Every section, in drawer order. Speed goes here later. Step 10: things done mid-game first (Game, Snapshots,
+     * Cheats (D143), then Sound for App Mute), then Display before Controls, so in landscape the Screen choices are the first thing below the fold.
      * The Settings screen lists the same settings in the same order.
      */
-    val SECTIONS = listOf(GAME_SECTION, SNAPSHOT_SECTION, SOUND_SECTION, DISPLAY_SECTION, CONTROLS_SECTION)
+    val SECTIONS = listOf(GAME_SECTION, SNAPSHOT_SECTION, CHEATS_SECTION, SOUND_SECTION, DISPLAY_SECTION, CONTROLS_SECTION)
 
     /** The sections shown for [ctx]: visible ones with at least one item. */
     fun sections(ctx: MenuContext, registry: List<MenuSection> = SECTIONS): List<ShownSection> =
@@ -130,7 +160,14 @@ data class MenuContext(
     val muted: Boolean = false,
     /** F9: false for a game no longer in the library (played from Settings → Saves → Not in your library). */
     val canUpload: Boolean = true,
+    /** D143: cheats can be used here (not a link session). */
+    val cheatsAllowed: Boolean = true,
+    /** D143: the game's cheats, in list order, and which are on. */
+    val cheats: List<MenuCheat> = emptyList(),
 )
+
+/** One cheat as the menu shows it. */
+data class MenuCheat(val id: String, val name: String, val on: Boolean)
 
 /** One part of the drawer. [items] are worked out each time the drawer opens or a choice changes. */
 class MenuSection(

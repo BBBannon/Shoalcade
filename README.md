@@ -7,7 +7,7 @@
 <div align="center">
 
 [![Licence: GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
-![Jellyfin 12.3](https://img.shields.io/badge/Jellyfin-12.3-AA5CC3)
+![Jellyfin 12.3+](https://img.shields.io/badge/Jellyfin-12.3%2B-AA5CC3)
 ![Android 11+](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)
 ![Not an official Jellyfin project](https://img.shields.io/badge/not%20an%20official-Jellyfin%20project-lightgrey)
 [![Join us on Discord](https://img.shields.io/badge/Discord-Join%20us%20on%20Discord-5865F2?logo=discord&logoColor=white)][discord]
@@ -58,6 +58,7 @@
 
 - Shoalcade provides **no games, ROMs, BIOS, firmware or keys**.
 - It has **no piracy features**: no ROM sites, no downloads from the internet, no help finding games.
+- The **patcher** only works on files you pick, and **cheats** are codes you type yourself: there's no patch or cheat download.
 - Use only games **you own**, on **your own** server.
 - **Issues, pull requests or chat that ask for or link to ROMs will be closed.**
 
@@ -129,6 +130,7 @@
 - **PSP:** landscape, see-through controls with an **analogue stick**; each game gets its own memory stick
 - **PS1:** △ ○ ✕ □ with **L1 L2 R1 R2**; controller triggers work as L2/R2. Buttons match **by position**, so a controller's **A** (bottom on Xbox pads) is **○** — swap it in **Controls** if you prefer ✕
 - **Game Boy cartridge clock** kept with the save and backed up (e.g. Pokémon Gold, Silver, Crystal)
+- **Cheats** — side menu → **Cheats**: **Add a cheat…**, switch each one on or off, **Edit cheats…**. Shared with the browser player, and they work offline. See [Cheats](#-cheats)
 - **Snapshots** — **Save snapshot** / **Load snapshot**, one per game with a picture, kept on the phone
 - **Launch choice:** games with a snapshot ask **Continue from save** or **Or load a snapshot**
 - Side menu: **Close Game** or **Close Game (and Upload)**
@@ -139,7 +141,7 @@
 - **GBA** and **DS**, e.g. Pokémon trades and battles. One phone taps **Host**, the other **Join**
 - The host shows a **4-digit PIN**; the joining phone types it, so no one else on the Wi-Fi can join
 - Optional per-phone **DS wireless ID** switch
-- Snapshots are off during link play
+- Snapshots and cheats are off during link play
 
 **Settings** (⚙ on the games list)
 - Set **each console** without starting a game: **Screen**, **DS screens**, **Touch buttons** and **Controls**
@@ -166,6 +168,7 @@
 - **Newer-save check:** before a save would replace a newer one, you're asked, with both dates shown
 - **Backups before every overwrite:** the replaced save goes to Jellyfin's history and the phone's backups first. If that fails, nothing is replaced
 - **Snapshots are kept separate:** loading a snapshot **never changes your save** — only saving in the game does. A save made after loading one is marked **Saved after loading a snapshot**
+- **Saves made with cheats on** are marked **Made with cheats on**, and your last save from before cheats is **pinned as "Before cheats"** so it's never cleared out
 - **DS and PS1 save sizes checked** — wrong-sized files are refused, so a save can't be quietly damaged
 - **Empty PS1 memory cards** are never saved over a real save (unless you say so)
 - **Damaged files are moved aside, never deleted**
@@ -179,13 +182,14 @@
 - **Game covers**, **console tabs**, **search** and a **Played lately** row; works on phones too
 - **Sort** by **Name**, **Year**, **Platform** or **Last played** — remembered per person, on any browser
 - **Play** and **Saves** buttons on each game's own Jellyfin page
-- **⚙ Settings:** **Manage saves**, **Phone app** (QR code or download link for the app) and per-console **Browser player** settings with **Reset to defaults**
+- **⚙ Settings:** **Manage saves**, **Phone app** (QR code or download link for the app), per-console **Browser player** settings with **Reset to defaults**, and **Patch a game**
 
 **Playing** (powered by **EmulatorJS**)
 - **Keyboard, gamepad and touch** controls
 - Change your own controls **per console and per controller**, stored on the server
 - Toolbar that hides itself: **pause**, **restart**, **fast-forward**, **volume**, **full screen**, **screenshot**
 - **Quick snapshot** (F2) and **Load snapshot** (F4); snapshot slots kept on the server; **Snapshots** switch in settings
+- **Cheats** tab in the player's settings: add, switch on and off, edit and delete codes (see [Cheats](#-cheats))
 - **DS:** three **screen layouts** (plus swap), changeable while playing; **touch screen works with mouse and finger**
 - **Sideways phone:** touch buttons sit in columns **beside the game**, not over it
 - **PS1:** keyboard **E / R** or pad **LT / RT** for L2 / R2; very big discs show a note that they need a lot of memory
@@ -198,6 +202,32 @@
 - **Move to another game** — e.g. after a ROM was renamed (Game Boy ↔ Game Boy Color allowed; otherwise same console only)
 - Saves for games **Not in your library** stay reachable and movable
 - Asks first before anything that could lose data
+
+### 🎯 Cheats
+
+- **Your own codes**, per game: GameShark, Game Genie, CodeBreaker, Action Replay or CWCheat, depending on the console
+- **Several at once**, each switched on or off by itself — in the **browser player** and the **phone app**, kept in step through Jellyfin
+- **Snapshots remember which cheats were on.** Loading one turns those back on
+- **Saves stay safe:** saves made with cheats on are marked, and your save from before cheats is kept (see [Saves](#-saves))
+- Switching a cheat off **doesn't undo** what it already changed in the game
+- **No cheat database** — you add the codes yourself
+- Notes: **DS in the browser** — a cheat you switch off stays on until you leave the game and start it again. **Link play** has no cheats
+
+| Console | Codes that work |
+|---|---|
+| **GB / GBC** | GameShark, Game Genie |
+| **GBA** | CodeBreaker, GameShark, Action Replay |
+| **DS** | Action Replay |
+| **PS1** | GameShark |
+| **PSP** (app) | CWCheat |
+
+### 🩹 Patch a game
+
+- **⚙ Settings → Patch a game** in the browser: pick **your game file** and a **patch** (a hack, translation or fix), and the patched game downloads
+- Works with **IPS, UPS, BPS, PPF, xdelta, APS, RUP and PMSR** — including xdelta3's normal compressed patches
+- **Everything happens in your browser:** nothing is uploaded and your library isn't changed
+- **Wrong game file?** BPS, UPS and xdelta patches check it, so you get a warning instead of a broken game (with **Patch anyway** if you're sure)
+- To play the result, put it in your Jellyfin games folder
 
 ### 🗂️ Server and library
 
@@ -239,6 +269,7 @@
 - **No analytics, no tracking, no ads, no accounts with us**
 - The only outside contact is **your server → libretro**, for game names and box art. No ROMs, hashes, saves or user names are sent
 - The app talks **only to your Jellyfin server** (and to the other phone during link play)
+- The **patcher** never sends your files anywhere: it runs in your browser
 - Full detail: [Privacy](guides/privacy.md)
 
 ---
@@ -247,7 +278,7 @@
 
 | For | You need |
 |---|---|
-| **Server** | **Jellyfin 12.3**, an admin account, and an **HTTPS** address (the app won't use plain HTTP) |
+| **Server** | **Jellyfin 12.3 or newer** (tested on 12.3 and 12.4), an admin account, and an **HTTPS** address (the app won't use plain HTTP) |
 | **Phone app** | **Android 11+** on a **64-bit ARM** phone (almost every phone from the last few years) |
 | **Browser player** | A modern browser (Chrome, Edge, Firefox, Safari) on a computer, tablet or phone |
 | **Games** | Your own games, in a folder Jellyfin can read |
@@ -347,6 +378,12 @@ The app **asks**: **Keep the phone's**, **Keep Jellyfin's** or **Decide later**.
 
 **Do snapshots sync?**
 No. Only **in-game saves** sync. Snapshots stay where you made them (phone or browser), and loading one never changes your save.
+
+**Can I use cheats?**
+Yes — your own codes, in the browser player's **Cheats** tab or the app's side menu → **Cheats**. Saves made with cheats on are marked, and your save from before cheats is kept. See [Cheats](#-cheats).
+
+**Can I play ROM hacks and translations?**
+Yes. Patch your own game file with **⚙ Settings → Patch a game** in the browser (IPS, BPS, xdelta and more), then put the result in your games folder.
 
 **Can my kids or other people use it? Can I stop downloads?**
 Yes — it uses **Jellyfin's own users**. Each person has their own saves. Jellyfin's **library access** decides who sees the games library, and Jellyfin's **Allow media downloading** permission is needed to play (on the phone and in the browser). There's no separate kids mode.
@@ -471,6 +508,7 @@ server/build.sh                    # → dist/server/Shoalcade_s<version>.zip
 | **PPSSPP** | PSP (app) | GPL-2.0-or-later |
 | **PCSX ReARMed** | PS1 (app and browser) | GPL-2.0-or-later |
 | **EmulatorJS** | Browser player | GPL-3.0 |
+| **RomPatcher.js** | Patch a game (browser) | MIT |
 | **JellyEMU** | Code ported into our scanner | MIT |
 | **libretro-database** | Game names (downloaded by your server, not shipped) | CC-BY-SA-4.0 |
 | **libretro-thumbnails** | Box art (downloaded by your server, not shipped) | Art belongs to the games' publishers |

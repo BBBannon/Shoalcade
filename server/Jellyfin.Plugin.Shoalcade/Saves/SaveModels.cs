@@ -90,6 +90,11 @@ public sealed class SaveVersion
     [JsonPropertyName("afterSnapshot")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? AfterSnapshot { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the game saved this while cheats were on (D143). True or null.</summary>
+    [JsonPropertyName("cheats")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Cheats { get; set; }
 }
 
 /// <summary>A JellyEMU save file we already imported (D40), so it is never imported twice.</summary>

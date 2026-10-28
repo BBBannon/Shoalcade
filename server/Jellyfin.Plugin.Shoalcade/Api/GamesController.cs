@@ -81,8 +81,13 @@ public class GamesController : ShoalcadeControllerBase
             ShoalcadeServices.Config.EnableBrowserPlayer && _web.EmulatorAvailable,
             GameConsole.All.Select(ConsoleDto.From).ToList(),
             new UserDto(user.Id.ToString("N"), user.Username, user.HasPermission(PermissionKind.EnableContentDownloading), user.HasPermission(PermissionKind.IsAdministrator)),
-            SaveRulesDto.From(ShoalcadeServices.SaveOptions()));
+            SaveRulesDto.From(ShoalcadeServices.SaveOptions()),
+            Features);
     }
+
+    /// <summary>Gets what this server can do beyond its API level, so newer apps can offer it and older ones ignore it.
+    /// "cheats": the cheats routes (D143).</summary>
+    internal static IReadOnlyList<string> Features { get; } = ["cheats"];
 
     /// <summary>Every game the user can see, with their current save and last played time.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>

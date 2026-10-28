@@ -315,7 +315,7 @@ class JellyfinClient(
     suspend fun putSave(
         itemId: String, bytes: ByteArray, base: Int?, mode: String = "normal",
         source: String = "app", allowBlank: Boolean = false, afterSnapshot: Boolean = false,
-        expect: Int? = null, expectSha: String? = null,
+        expect: Int? = null, expectSha: String? = null, cheats: Boolean = false,
     ): PutResult = plugin(timeouts.saveCall) {
         val q = StringBuilder("?mode=${enc(mode)}&source=${enc(source)}")
         if (base != null) q.append("&base=").append(base)
@@ -325,6 +325,7 @@ class JellyfinClient(
         }
         if (allowBlank) q.append("&allowBlank=true")
         if (afterSnapshot) q.append("&afterSnapshot=true") // D90: the game saved this after a snapshot was loaded
+        if (cheats) q.append("&cheats=true") // D143: made while cheats were on (the first one pins "Before cheats")
         val conn = open(url("/shoalcade/save/${id(itemId)}$q"), "PUT")
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/octet-stream")
@@ -371,6 +372,54 @@ class JellyfinClient(
         o.keys().asSequence().filter { it != "global" }.toList().associateWith { k ->
             (o.optJSONObject(k)?.opt("snapshots") as? Boolean) ?: true
         }
+    }
+
+    // ---- Cheats (D143): one list per game and user, plus the in-game save's active list. See docs/cheats-api.md. ----
+
+    /** The game's cheats and the ids switched on for its in-game save (empty lists if none). */
+    suspend fun cheats(itemId: String): CheatDoc = plugin { CheatDoc.parse(JSONObject(getText("/shoalcade/cheats/${id(itemId)}"))) }
+
+    /** Adds a cheat. The same code already there (spaces, "+", line breaks and case ignored) comes back unchanged. */
+    suspend fun addCheat(itemId: String, name: String, code: String): ServerCheat = plugin {
+        ServerCheat.parse(JSONObject(sendJson("/shoalcade/cheats/${id(itemId)}", "POST", JSONObject().put("name", name).put("code", code))))
+            ?: throw BadReplyException()
+    }
+
+    /** Renames a cheat and/or changes its code. 404 ApiException "no_cheat" if it's gone. */
+    suspend fun editCheat(itemId: String, cheatId: String, name: String? = null, code: String? = null): ServerCheat = plugin {
+        val body = JSONObject()
+        if (name != null) body.put("name", name)
+        if (code != null) body.put("code", code)
+        ServerCheat.parse(JSONObject(sendJson("/shoalcade/cheats/${id(itemId)}/${cheatId(cheatId)}", "PATCH", body)))
+            ?: throw BadReplyException()
+    }
+
+    /** Deletes a cheat (and takes it off the active list). 404 ApiException "no_cheat" if it's already gone. */
+    suspend fun deleteCheat(itemId: String, cheatId: String): Unit = plugin {
+        open(url("/shoalcade/cheats/${id(itemId)}/${cheatId(cheatId)}"), "DELETE").checkOk().disconnect()
+    }
+
+    /** Sets the in-game save's active list. Unknown ids are dropped by the server. Returns the whole list. */
+    suspend fun setActiveCheats(itemId: String, ids: List<String>): CheatDoc = plugin {
+        ids.forEach { cheatId(it) }
+        CheatDoc.parse(JSONObject(sendJson("/shoalcade/cheats/${id(itemId)}/active", "PUT", JSONObject().put("ids", JSONArray(ids)))))
+    }
+
+    /** Sends a JSON body; the answer's text. Refusals become [ApiException] with the server's message. */
+    private fun sendJson(path: String, method: String, body: JSONObject): String {
+        val bytes = body.toString().toByteArray(Charsets.UTF_8)
+        val conn = open(url(path), method)
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.setFixedLengthStreamingMode(bytes.size)
+        conn.outputStream.use { it.write(bytes) }
+        return conn.readOk()
+    }
+
+    /** Cheat ids go into URLs: only the server's 12 lower-case hex digits are accepted. */
+    private fun cheatId(cheatId: String): String {
+        if (!ServerCheat.isId(cheatId)) throw IOException("Bad cheat id.")
+        return cheatId
     }
 
     // ---- helpers ----
@@ -604,6 +653,8 @@ data class SaveVersion(
     val origin: String? = null,
     /** The game saved this after a snapshot was loaded (D90). */
     val afterSnapshot: Boolean = false,
+    /** Made while cheats were on (D143). */
+    val cheats: Boolean = false,
 ) {
     /** Epoch ms, or null if the date can't be read. */
     val createdMillis: Long? get() = runCatching { java.time.OffsetDateTime.parse(created).toInstant().toEpochMilli() }.getOrNull()
@@ -622,6 +673,7 @@ data class SaveVersion(
             isCurrent = o.optBoolean("isCurrent"),
             origin = o.optString("origin").takeIf { it.isNotEmpty() && it != "null" },
             afterSnapshot = o.optBoolean("afterSnapshot"),
+            cheats = o.optBoolean("cheats"),
         )
     }
 }
@@ -664,6 +716,8 @@ data class ServerInfo(
     val maxLabelLength: Int = JellyfinClient.DEFAULT_MAX_LABEL,
     /** What to show for the plugin, e.g. "s0.2 dev 1" (D88). Empty from plugins older than s0.2. */
     val display: String = "",
+    /** Extra routes this server has, e.g. "cheats" (D143). Empty from older servers. */
+    val features: List<String> = emptyList(),
 ) {
     companion object {
         fun parse(o: JSONObject): ServerInfo {
@@ -680,7 +734,35 @@ data class ServerInfo(
                 maxLabelLength = rules?.optInt("maxLabelLength", JellyfinClient.DEFAULT_MAX_LABEL)?.takeIf { it > 0 }
                     ?: JellyfinClient.DEFAULT_MAX_LABEL,
                 display = o.optString("display"),
+                features = o.optJSONArray("features")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
             )
+        }
+    }
+}
+
+/** One cheat in Jellyfin's list (D143). */
+data class ServerCheat(val id: String, val name: String, val code: String) {
+    companion object {
+        private val ID = Regex("[0-9a-f]{12}")
+        fun isId(id: String) = ID.matches(id)
+
+        /** Null for an entry with a bad id (never used in a path). */
+        fun parse(o: JSONObject): ServerCheat? {
+            val id = o.optString("id")
+            if (!isId(id)) return null
+            return ServerCheat(id, o.optString("name"), o.optString("code"))
+        }
+    }
+}
+
+/** `/shoalcade/cheats/{itemId}`: the game's cheats and the ids switched on for its in-game save. */
+data class CheatDoc(val cheats: List<ServerCheat>, val active: List<String>) {
+    companion object {
+        fun parse(o: JSONObject): CheatDoc {
+            val c = o.optJSONArray("cheats") ?: JSONArray()
+            val a = o.optJSONArray("active") ?: JSONArray()
+            return CheatDoc((0 until c.length()).mapNotNull { ServerCheat.parse(c.getJSONObject(it)) },
+                (0 until a.length()).map { a.optString(it) }.filter { ServerCheat.isId(it) })
         }
     }
 }
