@@ -379,7 +379,7 @@ class SaveSyncCore(
         when {
             // L2: only the save the user chose; one that arrived since means asking again, and nothing changes.
             shown != null && !isShown(dl, shown) -> serverNow(game).let { SyncResult.Conflict(it, changedSinceShown(it)) }
-            dl == null -> SyncResult.Failed("There's no save on Jellyfin for this game.")
+            dl == null -> SyncResult.Failed(NO_SERVER_SAVE)
             Storage.isBlank(dl.bytes) -> SyncResult.Failed("The Jellyfin save is empty, so it wasn't used.")
             else -> {
                 keepPhoneCopy(game)
@@ -480,7 +480,8 @@ class SaveSyncCore(
     /** After a first download: pull the server save only if the phone has none. */
     suspend fun fetchIfNoLocal(game: Game): SyncResult? {
         if (phoneSave(game) != null) return null
-        return download(game)
+        // Nothing on Jellyfin yet (a new game) is normal after a download, not a failure worth showing.
+        return download(game).takeUnless { it is SyncResult.Failed && it.message == NO_SERVER_SAVE }
     }
 
     /** What the library's save dialog shows: the server's current save and whether it changed since this phone synced. */
@@ -531,3 +532,5 @@ class SaveSync(context: Context) {
 
     suspend fun fetchIfNoLocal(game: Game) = core()?.fetchIfNoLocal(game)
 }
+
+private const val NO_SERVER_SAVE = "There's no save on Jellyfin for this game."

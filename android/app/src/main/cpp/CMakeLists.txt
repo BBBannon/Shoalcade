@@ -16,6 +16,12 @@ target_compile_options(clockshim PRIVATE -Wall -Wextra -Werror -fvisibility=hidd
 target_link_libraries(clockshim log dl)
 target_link_options(clockshim PRIVATE "-Wl,-z,max-page-size=16384")
 
+# The shim LibretroDroid loads in place of mkxp-z for RPG Maker games (D147).
+add_library(rpgshim SHARED rpgshim.c)
+target_compile_options(rpgshim PRIVATE -Wall -Wextra -Werror -fvisibility=hidden)
+target_link_libraries(rpgshim log dl)
+target_link_options(rpgshim PRIVATE "-Wl,-z,max-page-size=16384")
+
 # 16 KB page alignment: required on newer Android devices that use 16 KB memory pages.
 target_link_options(sclinkstate PRIVATE "-Wl,-z,max-page-size=16384")
 target_link_options(linkshim PRIVATE "-Wl,-z,max-page-size=16384")

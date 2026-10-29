@@ -7,7 +7,10 @@
  * - "Played lately" only appears when there is real data: Jellyfin's last-played date or a save on the server.
  * - Everything is built with DOM calls and textContent (never innerHTML), because game names are metadata.
  * - Console filter and search are kept in the address (?c=&q=) so Back from the player returns to the same view;
- *   the open game is #game=<id>, so Back closes it.
+ *   the open game is #game=<id>, so Back closes it. ?c= is one console (gba) or a maker's group (nintendo, sony).
+ * - Console bar: All, then one menu button per maker (Nintendo ▾, Sony ▾, from the server's consoles[].maker) and a
+ *   plain button for a console with no maker (RPG Maker). A maker with only one console that has games is a plain
+ *   button for that console.
  * - Sort (D123): Name / Year / Platform / Last played, the same words and order rules as the app's GameSort.kt.
  *   Remembered per user in the server's settings ("global" scope, key librarySort), with this browser's
  *   localStorage as the fallback. Last played = the later of Jellyfin's last played and the current save's time.
@@ -19,15 +22,16 @@
 
   const api = window.SC.api;
   const $ = id => document.getElementById(id);
-  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP" };
+  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP", rpgmaker: "RPG Maker" };
   const RECENT_MAX = 6;
   const SORTS = ["name", "year", "platform", "played"];
   const DEFAULT_SORT = "played";
   /** Platform order (same as the app): the Game Boy family oldest first, then N64, DS, 3DS, PS1, PSP. Unknown consoles last. */
-  const PLATFORM_ORDER = ["gb", "gbc", "gba", "n64", "nds", "3ds", "psx", "psp"];
+  const PLATFORM_ORDER = ["gb", "gbc", "gba", "n64", "nds", "3ds", "psx", "psp", "rpgmaker"];
   const collator = new Intl.Collator("en-GB", { sensitivity: "base" });
 
-  const S = { info: null, games: [], byId: new Map(), cards: new Map(), con: "all", q: "", sort: DEFAULT_SORT, openedHere: false, edit: null };
+  const S = { info: null, games: [], byId: new Map(), cards: new Map(), con: "all", q: "", sort: DEFAULT_SORT, openedHere: false, edit: null,
+    groupOf: new Map(), menuBtn: null };
 
   // ---------- helpers ----------
   function h(tag, attrs, kids) {
@@ -81,9 +85,16 @@
     return best;
   }
 
+  /** A game folder's size, for RPG Maker games (D147). */
+  function sizeText(n) {
+    return n >= 1073741824 ? (n / 1073741824).toFixed(1) + " GB" : n >= 1048576 ? Math.round(n / 1048576) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
+  }
+
   /** Why Play is not offered for a game, or null if it can be played here. */
   function cantPlay(g) {
     if (!S.info.browserPlayer) return "The browser player is switched off on this server.";
+    // 3DS isn't playable anywhere yet (the app says "coming later" too), so don't point people at the app.
+    if (g.console === "3ds") return "Nintendo 3DS games can't be played yet, here or in the Shoalcade app. Support is coming later.";
     if (!g.browserPlayable) return consoleName(g.console) + " games can't be played in the browser. Use the Shoalcade app.";
     if (!S.info.user.canDownload) return "Your Jellyfin account isn't allowed to download, so games can't be played here. Ask the server admin.";
     return null;
@@ -223,19 +234,119 @@
     for (const k of counts.keys()) if (!keys.includes(k)) keys.push(k);
     const rank = k => { const i = PLATFORM_ORDER.indexOf(k); return i < 0 ? PLATFORM_ORDER.length : i; };
     keys.sort((a, b) => rank(a) - rank(b));
-    if (S.con !== "all" && !counts.has(S.con)) S.con = "all";
+
+    // Bar items in platform order: a maker's consoles share one item, placed where its first console is.
+    const groups = new Map(), items = [];
+    S.groupOf = new Map();
+    for (const k of keys) {
+      const c = (S.info.consoles || []).find(x => x.key === k);
+      if (!c || !c.maker) { items.push({ keys: [k] }); continue; }
+      const gk = c.maker.toLowerCase();
+      if (!groups.has(gk)) { const grp = { gk, name: c.maker, keys: [] }; groups.set(gk, grp); items.push(grp); }
+      groups.get(gk).keys.push(k);
+      S.groupOf.set(k, gk);
+    }
+    // A group with one console is a plain button for it, so a ?c=sony link then means that console.
+    if (groups.has(S.con) && groups.get(S.con).keys.length === 1) S.con = groups.get(S.con).keys[0];
+    if (S.con !== "all" && !counts.has(S.con) && !groups.has(S.con)) S.con = "all";
+
+    S.menuBtn = null;
+    const chip = (k, name, n) => h("button", { type: "button", class: "chip", "data-con": k, "aria-pressed": String(S.con === k) }, [
+      h("span", { class: "chip-n", text: name }),
+      h("span", { class: "chip-k", text: String(n) }),
+    ]);
     const f = $("filters");
-    f.replaceChildren(...[["all", "All games", S.games.length]].concat(keys.map(k => [k, consoleName(k), counts.get(k)]))
-      .map(([k, name, n]) => h("button", { type: "button", class: "chip", "data-con": k, "aria-pressed": String(S.con === k) }, [
-        h("span", { class: "chip-n", text: name }),
-        h("span", { class: "chip-k", text: String(n) }),
-      ])));
+    f.replaceChildren(chip("all", "All games", S.games.length), ...items.map(it => it.keys.length > 1
+      ? groupMenu(it, counts)
+      : chip(it.keys[0], consoleName(it.keys[0]), counts.get(it.keys[0]))));
     f.hidden = keys.length < 2; // one console: the strip would only say "All"
+  }
+
+  /** "Nintendo ▾" (or "Nintendo: GBA ▾" while one of its consoles is picked) and its menu: All Nintendo, then each console. */
+  function groupMenu(grp, counts) {
+    const id = "menu-" + grp.gk;
+    const total = grp.keys.reduce((t, k) => t + counts.get(k), 0);
+    const cur = grp.keys.includes(S.con) ? S.con : null;
+    const item = (k, name, n) => h("li", { role: "none" }, [
+      h("button", { type: "button", role: "menuitemradio", tabindex: "-1", "data-con": k, "aria-checked": String(S.con === k) }, [
+        h("span", { text: name }),
+        h("span", { class: "chip-k", text: String(n) }),
+      ]),
+    ]);
+    return h("div", { class: "con-grp" }, [
+      h("button", { type: "button", class: "chip", "data-grp": grp.gk, "data-on": (cur || S.con === grp.gk) ? "true" : null,
+        "aria-haspopup": "menu", "aria-expanded": "false", "aria-controls": id }, [
+        h("span", { class: "chip-n", text: grp.name + (cur ? ": " + (SHORT[cur] || consoleName(cur)) : "") }),
+        h("span", { class: "chip-k", text: String(cur ? counts.get(cur) : total) }),
+        h("span", { class: "chip-v", "aria-hidden": "true", text: "▾" }),
+      ]),
+      h("ul", { class: "con-menu", role: "menu", id, "aria-label": grp.name + " consoles", hidden: true },
+        [item(grp.gk, "All " + grp.name, total)].concat(grp.keys.map(k => item(k, consoleName(k), counts.get(k))))),
+    ]);
+  }
+
+  function menuItems(btn) { return [...$(btn.getAttribute("aria-controls")).querySelectorAll("[role=menuitemradio]")]; }
+
+  function openMenu(btn, last) {
+    closeMenu(false);
+    const m = $(btn.getAttribute("aria-controls"));
+    m.hidden = false;
+    // Fixed, so the bar's sideways scroll never clips it; kept on screen at phone width.
+    const r = btn.getBoundingClientRect();
+    m.style.left = Math.max(8, Math.min(r.left, innerWidth - m.offsetWidth - 8)) + "px";
+    m.style.top = (r.bottom + 4) + "px";
+    btn.setAttribute("aria-expanded", "true");
+    S.menuBtn = btn;
+    const list = menuItems(btn);
+    (last ? list[list.length - 1] : list.find(b => b.getAttribute("aria-checked") === "true") || list[0]).focus({ preventScroll: true });
+  }
+
+  function closeMenu(refocus) {
+    const btn = S.menuBtn;
+    if (!btn) return;
+    S.menuBtn = null;
+    $(btn.getAttribute("aria-controls")).hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    if (refocus) btn.focus();
+  }
+
+  /** Arrow keys open the menu from its button and move between its items; Escape closes it (focus back on the button). */
+  function menuKeys(e) {
+    const t = e.target;
+    if (t.dataset.grp && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      openMenu(t, e.key === "ArrowUp");
+      return;
+    }
+    if (t.getAttribute("role") !== "menuitemradio" || !S.menuBtn) return;
+    const list = menuItems(S.menuBtn), i = list.indexOf(t);
+    const to = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: list.length - 1 }[e.key];
+    if (to !== undefined) {
+      e.preventDefault();
+      list[(to + list.length) % list.length].focus({ preventScroll: true });
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeMenu(true);
+    } else if (e.key === "Tab") {
+      closeMenu(false);
+    }
+  }
+
+  function pickConsole(t) {
+    const fromMenu = t.getAttribute("role") === "menuitemradio" && S.menuBtn ? S.menuBtn.dataset.grp : null;
+    S.con = t.dataset.con;
+    closeMenu(false);
+    renderFilters();
+    writeAddress();
+    renderGrid();
+    // The bar is rebuilt: focus goes back to the button just used (the group button after a menu pick).
+    const again = $("filters").querySelector(fromMenu ? '[data-grp="' + fromMenu + '"]' : '[data-con="' + S.con + '"]');
+    if (again) again.focus({ preventScroll: true });
   }
 
   function renderGrid() {
     const q = fold(S.q.trim());
-    const list = sortGames(S.games, S.sort).filter(g => (S.con === "all" || g.console === S.con) && (!q || fold(g.name).includes(q) || fold(g.sortName).includes(q)));
+    const list = sortGames(S.games, S.sort).filter(g => (S.con === "all" || g.console === S.con || S.groupOf.get(g.console) === S.con) && (!q || fold(g.name).includes(q) || fold(g.sortName).includes(q)));
     const grid = $("grid");
     const kids = list.map(g => S.cards.get(g.id));
     if (!list.length) {
@@ -290,7 +401,9 @@
     $("sheet-edit").hidden = !(S.info.user && S.info.user.isAdmin);
 
     const facts = [
-      ["Console", consoleName(g.console)],
+      ["Console", consoleName(g.console) + (g.engine ? " " + g.engine : "")],
+      ["Size", g.size ? sizeText(g.size) : null],
+      ["Warning", g.mayNotWork ? "May not work: this game comes with Windows add-ons that may not run here." : null],
       ["Region", g.region],
       ["Year", g.year],
       ["Series", g.series],
@@ -580,17 +693,23 @@
     readAddress();
 
     document.addEventListener("click", e => {
-      const t = e.target.closest("[data-open],[data-con]");
+      const t = e.target.closest("[data-open],[data-con],[data-grp]");
+      // A tap anywhere outside the open menu (and its button) closes it.
+      if (S.menuBtn && !S.menuBtn.parentNode.contains(e.target)) closeMenu(false);
       if (!t) return;
-      if (t.dataset.con) {
-        S.con = t.dataset.con;
-        for (const b of $("filters").children) b.setAttribute("aria-pressed", String(b.dataset.con === S.con));
-        writeAddress();
-        renderGrid();
+      if (t.dataset.grp) {
+        if (S.menuBtn === t) closeMenu(true);
+        else openMenu(t, false);
+      } else if (t.dataset.con) {
+        pickConsole(t);
       } else {
         openGame(t.dataset.open);
       }
     });
+    $("filters").addEventListener("keydown", menuKeys);
+    // The menu is placed by its button's position: scrolling or resizing closes it rather than leave it behind.
+    document.addEventListener("scroll", e => { if (S.menuBtn && !S.menuBtn.parentNode.contains(e.target)) closeMenu(false); }, true);
+    window.addEventListener("resize", () => closeMenu(false));
     $("search").addEventListener("input", e => { S.q = e.target.value; writeAddress(); renderGrid(); });
     $("search").addEventListener("keydown", e => {
       if (e.key === "Escape" && e.target.value) { e.target.value = ""; S.q = ""; writeAddress(); renderGrid(); }

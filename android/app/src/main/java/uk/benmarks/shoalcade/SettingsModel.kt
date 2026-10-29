@@ -27,6 +27,8 @@ object SettingsModel {
     /** F6: one switch for every buzz the app makes, the touch buttons included. */
     const val HAPTICS = "Haptics (vibrate on touch)"
     const val ID_HAPTICS = "app.haptics"
+    const val WIFI_ONLY = "Download games on Wi-Fi only"
+    const val ID_WIFI_ONLY = "app.wifiOnly"
     const val SERVER = "Server"
     const val ACCOUNT = "Account"
     const val LOG_OUT = "Log out"
@@ -35,7 +37,7 @@ object SettingsModel {
     const val ABOUT = "About and licences"
 
     /** Consoles the app plays, in the library's platform order (3DS isn't playable yet, so it has no settings). */
-    val CONSOLES = listOf(Console.GB, Console.GBC, Console.GBA, Console.N64, Console.NDS, Console.PSX, Console.PSP)
+    val CONSOLES = listOf(Console.GB, Console.GBC, Console.GBA, Console.N64, Console.NDS, Console.PSX, Console.PSP, Console.RPGMAKER)
 
     // Ids. Screen and touch buttons use the in-game menu's own ids; the DS has one set per way up here.
     fun dsId(landscape: Boolean, l: DsLayout) = "ds.${way(landscape)}.${l.key}"

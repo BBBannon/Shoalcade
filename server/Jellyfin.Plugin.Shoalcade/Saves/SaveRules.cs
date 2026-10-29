@@ -51,6 +51,22 @@ internal static class SaveRules
             return "That save is blank (every byte is the same), so the game has probably never saved.";
         }
 
+        // RPG Maker (D147): a readable zip of the save folder with safe names; one with no saved data is never stored.
+        if (console.FolderGame)
+        {
+            if (RpgMakerSave.Check(data, out var blank) is string bad)
+            {
+                errorCode = "format";
+                return bad;
+            }
+
+            if (!allowBlank && blank)
+            {
+                errorCode = "blank";
+                return "That save folder is empty (nothing is saved in it), so the game has probably never saved.";
+            }
+        }
+
         if (!allowBlank && console.Key == "psx" && PsxCard.IsEmptyCard(data))
         {
             errorCode = "blank";

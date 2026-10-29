@@ -251,6 +251,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Runs in [DownloadService], so it carries on with the app closed. */
     fun download(game: Game) = Downloads.start(getApplication(), game)
 
+    /** A folder game's file list, for the size question before it downloads (D147). */
+    suspend fun folderList(game: Game): FolderList = client().folderFiles(game.id)
+
     fun cancelDownload(game: Game) = Downloads.cancel(getApplication(), game.id)
 
     /** On return to the library (e.g. from a game whose upload hit a conflict): recheck badges and ⚠️ marks. */

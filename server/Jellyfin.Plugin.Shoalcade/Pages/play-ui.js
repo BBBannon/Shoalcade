@@ -27,6 +27,9 @@
   ];
   const HOTKEY_NAMES = HOTKEYS.map(x => x[0]);
   const DEFAULT_HOTKEYS = Object.fromEntries(HOTKEYS.map(x => [x[0], x[2]]));
+  /** RPG Maker (D147): letters and Space are game keys (typing a name, Space = confirm), so its shortcuts are F keys and Tab. */
+  const HOTKEYS_BY_CONSOLE = { rpgmaker: { pause: ["F1"], ff: ["Tab"], quickSave: [], quickLoad: [], screenshot: ["F8"], fullscreen: ["F11"] } };
+  function defaultHotkeys(scope) { return Object.assign({}, DEFAULT_HOTKEYS, HOTKEYS_BY_CONSOLE[scope]); }
 
   /** DS layouts -> melonDS "melonds_screen_layout" values [normal, swapped]. */
   const DS_LAYOUT = {
@@ -35,7 +38,7 @@
     big: ["Hybrid Top", "Hybrid Bottom"],
   };
 
-  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", psx: "PS1" };
+  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", psx: "PS1", rpgmaker: "RPG Maker" };
   const BUTTON_LABEL = { Up: "Up", Down: "Down", Left: "Left", Right: "Right", A: "A", B: "B", X: "X", Y: "Y", L: "L", R: "R", L2: "L2", R2: "R2", Z: "Z", Start: "Start", Select: "Select" };
   /** N64 names (D146): the stick and C buttons in words; the D-pad is "D-pad up" so it can't be taken for the stick. */
   const N64_LABEL = {
@@ -49,6 +52,9 @@
   const PSX_LABEL = { X: "△", A: "○", B: "✕", Y: "□", L: "L1", R: "R1", L2: "L2", R2: "R2" };
   /** What a button is called on a console's controller. */
   function buttonLabel(consoleKey, b) {
+    // RPG Maker: the game's own name for a button (mkxp.json bindingNames), e.g. "C (Action)".
+    const own = consoleKey === "rpgmaker" && window.SC.player && window.SC.player.buttonNames && window.SC.player.buttonNames[b];
+    if (own) return b + " (" + own + ")";
     return (consoleKey === "psx" && PSX_LABEL[b]) || (consoleKey === "n64" && N64_LABEL[b]) || BUTTON_LABEL[b] || b;
   }
   const KEY_NAMES = {
@@ -401,7 +407,7 @@
 
   /** Shortcut keys. Registered before the engine's game keys, so a shortcut never reaches the game. */
   function hotkeyFor(code) {
-    const hk = Object.assign({}, DEFAULT_HOTKEYS, (player.prefs && player.prefs.controls && player.prefs.controls.hotkeys) || {});
+    const hk = Object.assign({}, defaultHotkeys(player.game && player.game.console), (player.prefs && player.prefs.controls && player.prefs.controls.hotkeys) || {});
     return HOTKEY_NAMES.find(n => Array.isArray(hk[n]) && hk[n].includes(code)) || null;
   }
 
@@ -783,9 +789,9 @@
   player.on("cheats", () => { if (panelOpen() && S.tab === "cheats") renderCheats(); });
 
   // ----- Controls tab -----
-  function hotkeysOf(prefs) {
+  function hotkeysOf(prefs, scope) {
     const saved = (prefs && prefs.controls && prefs.controls.hotkeys) || {};
-    return C.buildMap(HOTKEY_NAMES, DEFAULT_HOTKEYS, saved);
+    return C.buildMap(HOTKEY_NAMES, defaultHotkeys(scope || (player.game && player.game.console)), saved);
   }
 
   function firstPad() {
@@ -829,7 +835,7 @@
       h("p", { class: "fine", text: "Click a key, then press the new key. Esc cancels." }));
       reset.textContent = "Reset " + name + " keys to defaults";
     } else if (S.ctlTab === "hot") {
-      const map = hotkeysOf(prefs);
+      const map = hotkeysOf(prefs, scope);
       out.replaceChildren(h("ul", { class: "binds" }, HOTKEYS.map(([k, label]) => h("li", {},
         h("span", { text: label }),
         keyButton(map[k].map(keyName).join(" / ") || "Not set", el => startListen({ kind: "hot", scope, name: k, el }), "Change the key for " + label.toLowerCase())))),
@@ -983,7 +989,7 @@
     const prefs = await prefsFor(L.scope);
     const controls = prefs.controls = Object.assign({}, prefs.controls);
     const keys = C.buildMap(C.BUTTONS[L.scope], C.defaultKeys(L.scope), controls.keyboard);
-    const hot = hotkeysOf(prefs);
+    const hot = hotkeysOf(prefs, L.scope);
     const lost = [];
     // One key does one thing: take it off anything else first.
     for (const [map, labelOf] of [[keys, b => buttonLabel(L.scope, b)], [hot, k => HOTKEYS.find(x => x[0] === k)[1].toLowerCase()]]) {
@@ -1054,19 +1060,24 @@
     pad.dataset.console = player.game.console;
     const has = C.BUTTONS[player.game.console] || C.BUTTONS.gba;
     const n64 = player.game.console === "n64";
-    const btn = (b, cls) => h("div", { class: "tp-b " + cls, data: { b }, text: (n64 && N64_TOUCH[b]) || buttonLabel(player.game.console, b) });
+    const rpg = player.game.console === "rpgmaker";
+    // RPG Maker: the game's own word for the button where it has one (mkxp.json bindingNames), else the letter.
+    const own = b => rpg && player.buttonNames && player.buttonNames[b];
+    const btn = (b, cls) => h("div", { class: "tp-b " + cls + (own(b) ? " tp-word" : ""), data: { b }, title: buttonLabel(player.game.console, b),
+      text: own(b) || (n64 && N64_TOUCH[b]) || buttonLabel(player.game.console, b) });
     pad.classList.toggle("ps", player.game.console === "psx"); // PS1: four shoulder buttons, L1 L2 left and R2 R1 right
     pad.classList.toggle("n64", n64); // N64: stick + small D-pad left, C buttons over A/B right, L Z left, R right
+    pad.classList.toggle("rpg", rpg); // RPG Maker: C right, B bottom, A top, X left; L R shoulders; Y Z small
 
     const dpad = h("div", { class: "tp-dpad" }, ["Up", "Down", "Left", "Right"].map(d => h("span", { data: { d } })));
-    const faces = (n64 ? ["CUp", "CLeft", "CRight", "CDown", "B", "A"] : ["X", "Y", "A", "B"]).filter(b => has.includes(b));
+    const faces = (n64 ? ["CUp", "CLeft", "CRight", "CDown", "B", "A"] : rpg ? ["A", "X", "C", "B"] : ["X", "Y", "A", "B"]).filter(b => has.includes(b));
     const face = h("div", { class: "tp-face" + (faces.length <= 2 ? " two" : "") + (n64 ? " n64" : "") }, faces.map(b => btn(b, "")));
     const kids = [dpad, face];
     const knob = h("span", { class: "tp-knob" });
     const stick = has.includes("StickUp") ? h("div", { class: "tp-stick" }, knob) : null;
     if (stick) kids.push(stick);
     for (const b of ["L", "Z", "L2", "R2", "R"]) if (has.includes(b)) kids.push(btn(b, "tp-sh"));
-    for (const b of ["Select", "Start"]) if (has.includes(b)) kids.push(btn(b, "tp-sm"));
+    for (const b of rpg ? ["Y", "Z"] : ["Select", "Start"]) if (has.includes(b)) kids.push(btn(b, "tp-sm"));
     pad.replaceChildren(...kids);
 
     // Buttons: each finger holds what it pressed until it lifts.
@@ -1196,7 +1207,9 @@
       const hk = hotkeysOf(p);
       const k = b => (keys[b] || []).map(keyName)[0] || "?";
       const n = b => buttonLabel(g.console, b);
-      $("intro-keys").textContent = "Keys: arrows (or your own) to move, " + k("A") + " = " + n("A") + ", " + k("B") + " = " + n("B") + ", " + k("Start") + " = Start. "
+      $("intro-keys").textContent = (g.console === "rpgmaker"
+        ? "Keys: arrows (or your own) to move, " + k("C") + " = " + n("C") + ", " + k("B") + " = " + n("B") + ", " + k("A") + " = " + n("A") + ". Type names on your keyboard. "
+        : "Keys: arrows (or your own) to move, " + k("A") + " = " + n("A") + ", " + k("B") + " = " + n("B") + ", " + k("Start") + " = Start. ")
         + keyName(hk.pause[0] || "") + " pauses, hold " + keyName(hk.ff[0] || "") + " to fast-forward. Change them in Settings, Controls.";
       $("intro-keys").hidden = false;
     }
@@ -1322,6 +1335,133 @@
   $("sc-retry").addEventListener("click", () => location.reload());
   document.addEventListener("fullscreenchange", relayout);
   window.addEventListener("orientationchange", relayout);
+
+  // ---------------------------------------------------------------------------------------------
+  // Loading bar (every console): on the start card once a loading step has taken more than a second, and kept up
+  // after Play until the game draws its first picture that isn't all black. Real progress where the player knows it
+  // (status done/total), otherwise a moving bar. Never 100% before the game shows.
+  // ---------------------------------------------------------------------------------------------
+  (function loadingBar() {
+    const SHOW_AFTER_MS = 1000, SLOW_MS = 10000;
+    const SAFETY_MS = 180000;  // safety net only: never leave the card over a running game for good
+    const EJS_FRAMES = 600;    // an EmulatorJS core that has run this many frames is clearly going, even on a black screen
+    const what = h("p", { class: "pl-load-what", "aria-hidden": "true" });
+    const fill = h("span", { class: "pl-bar-fill" });
+    const bar = h("div", { class: "pl-bar", role: "progressbar", "aria-label": "Loading the game" }, fill);
+    const time = h("p", { class: "fine pl-load-time", "aria-hidden": "true" });
+    const box = h("div", { id: "sc-load", class: "pl-load", hidden: true }, what, bar, time);
+    $("sc-status").after(box);
+    let since = 0, showTimer = 0, tick = 0, step = null, watching = false;
+
+    function render() {
+      if (!step) return;
+      what.textContent = step.text;
+      const known = step.total > 0 && step.done >= 0;
+      bar.classList.toggle("busy", !known);
+      bar.setAttribute("aria-valuetext", step.text);
+      if (known) {
+        const pct = Math.min(99, Math.floor(100 * step.done / step.total));
+        fill.style.width = pct + "%";
+        bar.setAttribute("aria-valuemin", "0");
+        bar.setAttribute("aria-valuemax", "100");
+        bar.setAttribute("aria-valuenow", String(pct));
+        bar.removeAttribute("aria-busy");
+      } else {
+        fill.style.width = "";
+        for (const a of ["aria-valuemin", "aria-valuemax", "aria-valuenow"]) bar.removeAttribute(a);
+        bar.setAttribute("aria-busy", "true");
+      }
+      const secs = Math.floor((Date.now() - since) / 1000);
+      time.textContent = Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0")
+        + (secs * 1000 >= SLOW_MS ? ". Still going. Big games can take up to a minute the first time." : "");
+    }
+    function show() {
+      if (!since || !box.hidden) return;
+      box.hidden = false;
+      $("intro").classList.add("is-loading");
+      render();
+      tick = setInterval(render, 1000);
+    }
+    function begin(s) {
+      step = s;
+      if (!since) { since = Date.now(); showTimer = setTimeout(show, SHOW_AFTER_MS); }
+      render();
+    }
+    function stop() {
+      clearTimeout(showTimer);
+      clearInterval(tick);
+      since = 0;
+      step = null;
+      box.hidden = true;
+      $("intro").classList.remove("is-loading");
+    }
+    function shown(why) {
+      if (body.classList.contains("game-shown")) return;
+      watching = false;
+      console.debug("Shoalcade: game picture showing (" + why + ")");
+      body.classList.add("game-shown");
+      body.dataset.shownBy = why; // for the test-bed gates
+      stop();
+    }
+
+    /** Watches the game canvas until it shows something that isn't black (checked after the core's own frame). */
+    function watchPicture() {
+      if (watching) return;
+      watching = true;
+      const W = 64, H = 48;
+      const probe = document.createElement("canvas");
+      probe.width = W; probe.height = H;
+      const ctx = probe.getContext("2d", { willReadFrequently: true });
+      const t0 = Date.now();
+      let n = 0, frames0 = null;
+      const look = () => {
+        if (!watching) return;
+        if (++n % 3 === 0) {
+          const c = document.querySelector("#sc-game canvas");
+          if (c && c.width && c.height) {
+            try {
+              ctx.clearRect(0, 0, W, H);
+              ctx.drawImage(c, 0, 0, W, H);
+              const d = ctx.getImageData(0, 0, W, H).data;
+              let lit = 0;
+              for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && Math.max(d[i], d[i + 1], d[i + 2]) > 16 && ++lit >= 2) return shown("picture");
+            } catch (e) { /* unreadable this frame: try the next */ }
+          }
+          const gm = player.emu && player.emu.gameManager;
+          if (gm) {
+            try {
+              const f = gm.getFrameNum();
+              if (frames0 === null) frames0 = f;
+              else if (f - frames0 >= EJS_FRAMES) return shown("frames");
+            } catch (e) { /* no frame count */ }
+          }
+          if (Date.now() - t0 > SAFETY_MS && S.status.kind !== "error") return shown("safety");
+        }
+        requestAnimationFrame(look);
+      };
+      requestAnimationFrame(look);
+    }
+
+    player.on("status", s => {
+      if (s.kind === "loading" && !body.classList.contains("game-shown")) {
+        begin({ text: s.text.replace(/ This is a big game.*$/, ""), done: s.done, total: s.total });
+      } else if (s.kind === "error" && !body.classList.contains("game-shown")) {
+        // The error message replaces the bar (the card stays, showing it, unless the game then shows after all).
+        stop();
+      }
+    });
+    player.on("state", s => {
+      if (s.state === "playing") {
+        if (!body.classList.contains("game-shown")) {
+          if (!(S.status && S.status.kind === "error")) begin({ text: "Starting the game…" });
+          watchPicture();
+        }
+      } else if (s.state !== "loading" && s.state !== "starting") {
+        watching = false;
+        stop(); // ready (waiting for Play) or error
+      }
+    });
+  })();
 
   // ---------------------------------------------------------------------------------------------
   // Go

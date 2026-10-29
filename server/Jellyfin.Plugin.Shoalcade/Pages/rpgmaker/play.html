@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Shoalcade</title>
+  <link rel="icon" href="web/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="web/sc.css">
+  <link rel="stylesheet" href="web/play.css">
+  <link rel="stylesheet" href="web/rpgmaker/rpgmaker.css">
+  <!-- RPG Maker player (D147): the normal player page and UI (play.js, play-ui.js) with mkxp-z underneath
+       (rpgmaker.js = the engine, player.js = SC.Player for RPG Maker, loaded before play-ui.js creates it). -->
+  <script src="web/api.js" defer></script>
+  <script src="web/play.js" defer></script>
+  <script src="web/rpgmaker/rpgmaker.js" defer></script>
+  <script src="web/rpgmaker/player.js" defer></script>
+  <script src="web/play-ui.js" defer></script>
+  <script src="web/rpgmaker/ui.js" defer></script>
+</head>
+<body class="sc-play rpgmaker" data-state="idle">
+  <main id="player" class="player chrome-on" aria-label="Game player">
+    <div id="stage" class="stage">
+      <div id="sc-game" class="game"><canvas id="canvas" tabindex="-1" aria-label="Game picture"></canvas></div>
+      <div id="paused" class="paused-badge" hidden>
+        <img id="paused-pic" alt="" hidden>
+        <span>Paused</span>
+      </div>
+    </div>
+
+    <div id="touchpad" class="touchpad" hidden></div>
+
+    <div id="toolbar" class="toolbar" role="toolbar" aria-label="Game controls">
+      <div class="tb-group">
+        <a id="tb-jf" class="tb-btn tb-jf" href="../web/#/home" title="Back to Jellyfin" aria-label="Back to Jellyfin">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h4.5v-6h4v6h4.5V10"/></svg><span class="lbl" aria-hidden="true">Jellyfin</span>
+        </a>
+        <a id="tb-back" class="tb-btn" href="./" title="Back to library">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><span class="lbl">Library</span>
+        </a>
+        <span id="tb-title" class="tb-title"></span>
+      </div>
+      <div class="tb-group tb-main">
+        <button type="button" class="tb-btn" data-act="pause" title="Pause (F1)" disabled>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path class="i-pause" d="M8 5v14M16 5v14"/><path class="i-play" d="M7 5l12 7-12 7z"/></svg><span class="lbl">Pause</span>
+        </button>
+        <button type="button" class="tb-btn tb-wide" data-act="restart" title="Restart the game" disabled>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg><span class="lbl">Restart</span>
+        </button>
+        <button type="button" class="tb-btn" data-act="ff" title="Fast-forward (hold Tab)" aria-pressed="false" disabled>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l8 6-8 6zM12 6l8 6-8 6z"/></svg><span class="lbl" id="tb-ff-lbl">2×</span>
+        </button>
+        <label class="tb-vol" title="Volume">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg>
+          <span class="sr">Volume</span><input id="tb-vol" type="range" min="0" max="100" step="5" value="50">
+        </label>
+        <button type="button" class="tb-btn snap-only" data-act="qsave" title="Quick snapshot to slot 1 (F2)" disabled>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg><span class="lbl">Quick snapshot</span>
+        </button>
+        <button type="button" class="tb-btn snap-only" data-act="qload" title="Load snapshot from slot 1 (F4)" disabled>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/></svg><span class="lbl">Load snapshot</span>
+        </button>
+        <button type="button" class="tb-btn tb-kb" id="tb-kb" title="Keyboard for typing names" aria-pressed="false" disabled>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></svg><span class="lbl">Keyboard</span>
+        </button>
+        <button type="button" class="tb-btn tb-wide" data-act="shot" title="Screenshot (F8)" disabled>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span class="lbl">Screenshot</span>
+        </button>
+      </div>
+      <div class="tb-group">
+        <button type="button" class="tb-btn" data-act="full" title="Full screen (F11)">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span class="lbl">Full screen</span>
+        </button>
+        <button type="button" class="tb-btn tb-set" data-act="settings" title="Settings" aria-expanded="false" aria-controls="panel">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span class="lbl">Settings</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Before the game starts: title, progress, Play -->
+    <section id="intro" class="pl-card" aria-labelledby="intro-title">
+      <p id="intro-console" class="pl-k"></p>
+      <h1 id="intro-title">Shoalcade</h1>
+      <p id="sc-status" class="pl-status" role="status" aria-live="polite">Loading…</p>
+      <div class="pl-acts">
+        <button type="button" id="sc-start" class="btn primary" hidden>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg><span id="sc-start-lbl">Play</span>
+        </button>
+      </div>
+      <!-- Launch choice (D90): shown only when the game has snapshots. "Continue from save" (above) stays the default. -->
+      <section id="launch" class="launch" aria-labelledby="launch-h" hidden>
+        <h2 id="launch-h" class="pl-k">Or load a snapshot</h2>
+        <ul id="launch-snaps" class="launch-snaps"></ul>
+        <p class="fine">Loading a snapshot never changes your save. Only saving in the game does.</p>
+      </section>
+      <p id="intro-keys" class="fine" hidden></p>
+    </section>
+
+    <!-- Save conflict (D60): the game is paused until the person picks -->
+    <section id="sc-conflict" class="pl-card warn" role="alertdialog" aria-modal="true" aria-labelledby="sc-conflict-title" aria-describedby="sc-conflict-why" hidden>
+      <p class="pl-k">Save clash</p>
+      <h2 id="sc-conflict-title">Which save do you keep?</h2>
+      <p id="sc-conflict-why">This game's save was changed somewhere else while you were playing. The game is paused. The one you don't keep stays in the list, so nothing is lost.</p>
+      <dl class="facts">
+        <dt>Server</dt><dd id="sc-conflict-server"></dd>
+        <dt>This browser</dt><dd id="sc-conflict-local">The game you are playing now.</dd>
+      </dl>
+      <div class="pl-acts">
+        <button type="button" id="sc-keep-browser" class="btn primary">Keep this browser's save</button>
+        <button type="button" id="sc-keep-server" class="btn">Keep Jellyfin's save (restarts the game)</button>
+      </div>
+      <p id="sc-conflict-err" class="pl-err" role="alert" hidden></p>
+    </section>
+
+    <!-- Leaving while the save hasn't reached the server (Back to library, Jellyfin logo, Saves) -->
+    <section id="sc-leave" class="pl-card warn" role="alertdialog" aria-modal="true" aria-labelledby="sc-leave-title" aria-describedby="sc-leave-why" hidden>
+      <p class="pl-k">Not saved yet</p>
+      <h2 id="sc-leave-title">Your save hasn't reached the server yet</h2>
+      <p id="sc-leave-why">If you leave now, your latest progress may be lost. Stay and Shoalcade keeps trying to send it.</p>
+      <div class="pl-acts">
+        <button type="button" id="sc-leave-stay" class="btn primary">Stay</button>
+        <button type="button" id="sc-leave-go" class="btn">Leave anyway</button>
+      </div>
+    </section>
+
+    <section id="sc-error" class="pl-card warn" role="alert" aria-labelledby="sc-error-title" hidden>
+      <p class="pl-k">Problem</p>
+      <h2 id="sc-error-title">Couldn't play this game</h2>
+      <p id="sc-error-text"></p>
+      <div class="pl-acts">
+        <a id="sc-signin" class="btn primary" href="../web/" hidden>Sign in to Jellyfin</a>
+        <a id="sc-error-back" class="btn" href="./">Back to library</a>
+        <button type="button" id="sc-retry" class="btn">Try again</button>
+      </div>
+    </section>
+  </main>
+
+  <aside id="panel" class="panel" hidden aria-labelledby="panel-title">
+    <div class="panel-head">
+      <div><h2 id="panel-title">Settings</h2><p id="panel-sub"></p></div>
+      <button type="button" id="panel-x" class="x" title="Close (Esc)">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg><span class="sr">Close</span>
+      </button>
+    </div>
+    <nav class="panel-tabs" role="tablist" aria-label="Settings">
+      <button type="button" role="tab" id="tab-display" data-tab="display" aria-controls="pt-display" aria-selected="true">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/></svg><span class="lbl">Display</span>
+      </button>
+      <button type="button" role="tab" id="tab-saves" data-tab="saves" aria-controls="pt-saves" aria-selected="false" tabindex="-1">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4"/></svg><span class="lbl">Saves</span>
+      </button>
+      <button type="button" role="tab" id="tab-snaps" data-tab="snaps" aria-controls="pt-snaps" aria-selected="false" tabindex="-1">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M8 6l2-2h4l2 2"/><circle cx="12" cy="12.5" r="3"/></svg><span class="lbl">Snapshots</span>
+      </button>
+      <button type="button" role="tab" id="tab-cheats" data-tab="cheats" aria-controls="pt-cheats" aria-selected="false" tabindex="-1">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20 15 9M14 4v3M18 6l-2 2M20 10h-3M12 8l4 4"/></svg><span class="lbl">Cheats</span>
+      </button>
+      <button type="button" role="tab" id="tab-controls" data-tab="controls" aria-controls="pt-controls" aria-selected="false" tabindex="-1">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8h12a4 4 0 0 1 4 4v1a4 4 0 0 1-7 2.6L14 14h-4l-1 1.6A4 4 0 0 1 2 13v-1a4 4 0 0 1 4-4z"/><path d="M7 10.5v3M5.5 12h3"/><circle cx="16" cy="11" r=".6"/><circle cx="18" cy="13" r=".6"/></svg><span class="lbl">Controls</span>
+      </button>
+    </nav>
+    <div class="panel-body">
+      <div id="pt-display" role="tabpanel" aria-labelledby="tab-display">
+        <section id="ds-sec" class="ps" hidden>
+          <h4>DS screens</h4>
+          <div class="lays" role="group" aria-label="DS screen layout">
+            <button type="button" class="lay" data-layout="side" aria-pressed="false">
+              <svg viewBox="0 0 48 36" aria-hidden="true"><rect x="2" y="11" width="21" height="15" rx="1"/><rect x="25" y="11" width="21" height="15" rx="1"/></svg><span>Side by side</span>
+            </button>
+            <button type="button" class="lay" data-layout="stack" aria-pressed="false">
+              <svg viewBox="0 0 48 36" aria-hidden="true"><rect x="13" y="2" width="22" height="15.5" rx="1"/><rect x="13" y="18.5" width="22" height="15.5" rx="1"/></svg><span>Stacked</span>
+            </button>
+            <button type="button" class="lay" data-layout="big" aria-pressed="false">
+              <svg viewBox="0 0 48 36" aria-hidden="true"><rect x="2" y="4" width="34" height="26" rx="1"/><rect x="37.5" y="20" width="9" height="10" rx="1"/></svg><span>One big, one small</span>
+            </button>
+          </div>
+          <label class="tog"><span>Swap the two screens</span><input type="checkbox" role="switch" id="ds-swap"><span class="tog-ui" aria-hidden="true"></span></label>
+          <p class="fine">Click the touch screen with the mouse (or tap it) to touch it.</p>
+        </section>
+        <section class="ps">
+          <h4>Game</h4>
+          <div class="game-acts">
+            <button type="button" class="btn" data-act="restart" disabled>
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg><span>Restart</span>
+            </button>
+            <button type="button" class="btn" data-act="shot" disabled>
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Screenshot</span>
+            </button>
+          </div>
+          <p class="fine">Restart goes back to the title screen. Your save on the server isn't touched.</p>
+        </section>
+        <section class="ps">
+          <h4 id="ff-h">Fast-forward speed</h4>
+          <div class="seg" role="group" aria-labelledby="ff-h">
+            <button type="button" data-ff="2" aria-pressed="true">2×</button>
+            <button type="button" data-ff="3" aria-pressed="false">3×</button>
+            <button type="button" data-ff="4" aria-pressed="false">4×</button>
+          </div>
+        </section>
+        <section class="ps">
+          <h4><label for="vol">Volume</label></h4>
+          <input id="vol" class="range" type="range" min="0" max="100" step="5" value="50">
+        </section>
+        <section class="ps">
+          <h4>Toolbar</h4>
+          <label class="tog"><span>Always show the toolbar</span><input type="checkbox" role="switch" id="tb-pin"><span class="tog-ui" aria-hidden="true"></span></label>
+          <p class="fine">Otherwise it shows when you move the mouse or tap, and hides after a moment.</p>
+        </section>
+      </div>
+
+      <div id="pt-saves" role="tabpanel" aria-labelledby="tab-saves" hidden>
+        <section class="ps">
+          <h4>This game's save</h4>
+          <p id="save-state" class="sv-when"></p>
+          <p id="save-detail" class="sv-meta"></p>
+          <div class="sv-top">
+            <button type="button" id="sc-save" class="btn primary" disabled>
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V9M7 14l5-5 5 5M5 4h14"/></svg><span>Save to the server now</span>
+            </button>
+            <a id="saves-link" class="btn" href="saves-manager">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4"/></svg><span>Manage saves</span>
+            </a>
+          </div>
+          <p class="fine">The game saves to your Jellyfin server by itself a few seconds after it saves in-game. Manage saves to see history, go back to an older save (“Use this save”) or upload one.</p>
+        </section>
+        <section class="ps" id="keep-sec" hidden>
+          <h4>Keep in this browser</h4>
+          <label class="tog"><span>Keep this game in this browser</span><input type="checkbox" role="switch" id="keep-on"><span class="tog-ui" aria-hidden="true"></span></label>
+          <p id="keep-state" class="sv-meta"></p>
+          <p class="fine">A big game's files are fetched from your server as the game needs them. Kept, they stay in this browser, so the next start is quicker and needs less from the server. Switch off to free the space. Your saves always go to the server.</p>
+        </section>
+      </div>
+
+      <div id="pt-snaps" role="tabpanel" aria-labelledby="tab-snaps" hidden>
+        <section class="ps">
+          <label class="tog"><span id="snap-on-lbl">Snapshots</span><input type="checkbox" role="switch" id="snap-on" checked><span class="tog-ui" aria-hidden="true"></span></label>
+          <p class="fine">A snapshot freezes the game at this exact moment. Loading a snapshot never changes your save. Only saving in the game does. This switch is shared with the phone app, but phone snapshots stay on the phone.</p>
+        </section>
+        <p id="snap-msg" class="empty" hidden></p>
+        <ul id="snaps" class="snaps"></ul>
+      </div>
+
+      <div id="pt-cheats" role="tabpanel" aria-labelledby="tab-cheats" hidden>
+        <section class="ps">
+          <h4 id="cheats-h">This game's cheats</h4>
+          <p id="cheat-msg" class="fine" hidden></p>
+          <ul id="cheats" class="cheats" aria-labelledby="cheats-h"></ul>
+        </section>
+        <section class="ps">
+          <h4 id="cheat-form-h">Add a cheat</h4>
+          <label class="fld" for="cheat-name"><span>Name</span></label>
+          <input id="cheat-name" class="txt" type="text" maxlength="60" autocomplete="off" spellcheck="false">
+          <label class="fld" for="cheat-code"><span>Code</span></label>
+          <textarea id="cheat-code" class="txt code" rows="3" autocomplete="off" spellcheck="false" autocapitalize="characters"></textarea>
+          <p id="cheat-hint" class="fine"></p>
+          <p id="cheat-err" class="fine cheat-err" role="alert" hidden></p>
+          <div class="sv-top">
+            <button type="button" id="cheat-add" class="btn primary">Add and turn on</button>
+            <button type="button" id="cheat-cancel" class="btn" hidden>Cancel</button>
+          </div>
+        </section>
+        <section class="ps">
+          <p class="fine">Cheats change the game while it plays. Switching one off doesn't undo what it already changed. Saves made with cheats on are marked, and your save from before your first cheat is kept. Snapshots remember which cheats were on.</p>
+          <p id="cheat-ds" class="fine" hidden>DS in the browser: a cheat you switch off stays on until you leave the game and start it again.</p>
+        </section>
+      </div>
+
+      <div id="pt-controls" role="tabpanel" aria-labelledby="tab-controls" hidden>
+        <section class="ps">
+          <h4 id="cc-h">Console</h4>
+          <div id="cc" class="seg" role="group" aria-labelledby="cc-h"></div>
+        </section>
+        <section class="ps">
+          <div id="ctab" class="seg" role="group" aria-label="Kind of control">
+            <button type="button" data-ctab="keys" aria-pressed="true">Keyboard</button>
+            <button type="button" data-ctab="pad" aria-pressed="false">Controller</button>
+            <button type="button" data-ctab="touch" aria-pressed="false">Touch</button>
+            <button type="button" data-ctab="hot" aria-pressed="false">Shortcuts</button>
+          </div>
+          <div id="ctl-body" class="ctl-body"></div>
+        </section>
+        <div class="ps-foot">
+          <button type="button" id="ctl-reset" class="btn">Reset to defaults</button>
+          <p class="fine">Saved to your Jellyfin account, so they stick on every browser you sign in to.</p>
+        </div>
+      </div>
+      <p id="sc-ver" class="ver"></p>
+    </div>
+  </aside>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <!-- Touch keyboard for typing names: whatever is typed here goes to the game, key by key. -->
+  <input id="kb-in" class="kb-in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type into the game" tabindex="-1">
+</body>
+</html>

@@ -76,6 +76,11 @@ public static partial class ConsoleDetector
         { "pc-fx", "PC-FX" }, { "pcfx", "PC-FX" }, { "nec pc-fx", "PC-FX" }, { "pc-fx & pc-fxga", "PC-FX" },
         { "3ds", "Nintendo 3DS" }, { "nintendo 3ds", "Nintendo 3DS" }, { "nintendo3ds", "Nintendo 3DS" },
         { "pico-8", "PICO-8" }, { "pico8", "PICO-8" }, { "pico 8", "PICO-8" }, { "pico", "PICO-8" },
+
+        // RPG Maker XP / VX / VX Ace (D147, ours, not JellyEMU's): only ever the exact folder name (never a word inside a
+        // longer folder name, see MatchAliasFromFolders), as the folder holding the game folders.
+        { "rpg maker", RpgMakerGame.Tag }, { "rpgmaker", RpgMakerGame.Tag }, { "rpg maker xp", RpgMakerGame.Tag }, { "rpg maker vx", RpgMakerGame.Tag },
+        { "rpg maker vx ace", RpgMakerGame.Tag }, { "rpgxp", RpgMakerGame.Tag }, { "rpgvx", RpgMakerGame.Tag }, { "rpgvxace", RpgMakerGame.Tag },
     };
 
     /// <summary>Consoles JellyEMU only lists (not playable); kept so their folders never match one of ours.</summary>
@@ -379,7 +384,8 @@ public static partial class ConsoleDetector
             var folderCollapsed = SpacesRegex().Replace(folderClean, string.Empty);
             foreach (var kvp in AliasesLongestFirst)
             {
-                if (kvp.Key.Length > 2 && KeywordMatch(folderClean, folderCollapsed, kvp.Key))
+                // RPG Maker folders only count by their exact name: "RPG Maker hacks" inside a gba folder stays GBA.
+                if (kvp.Key.Length > 2 && kvp.Value != RpgMakerGame.Tag && KeywordMatch(folderClean, folderCollapsed, kvp.Key))
                 {
                     return kvp.Value;
                 }

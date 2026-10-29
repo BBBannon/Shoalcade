@@ -287,7 +287,7 @@ public class StatesController : ShoalcadeControllerBase
         if (Library.GetRom(id, user) is RomItem r)
         {
             rom = r;
-            return r.Console.BrowserCore is null ? GameNotFound() : null;
+            return r.Console.UsesEmulatorJs ? null : GameNotFound(); // no snapshots for RPG Maker (D147)
         }
 
         // Removed from the library (not just hidden from this user), and this user has snapshots of it.

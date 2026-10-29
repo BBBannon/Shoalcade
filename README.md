@@ -20,8 +20,27 @@
 
 ---
 
+## Why Shoalcade?
+
+**Your games already live on your Jellyfin server. Shoalcade makes them playable everywhere, and makes sure your progress is never lost.**
+
+- 🎮 **One library, every screen:** play on your **Android phone** or in **any browser** that can reach your Jellyfin, and pick up exactly where you left off on the other
+- ✈️ **Truly offline on the phone:** games download and run **natively** on the phone, not streamed. Plane, car, no signal: it still plays
+- 💾 **Saves you can't lose:** every save is kept on your server with **full history**. **Pin** the ones that matter. If the phone and the server disagree, Shoalcade **asks you**; it never quietly picks a winner
+- 📂 **Drop in, scan, play:** put your games in folders, press **Scan**, and they appear with **official names and box art**. From **Game Boy to PS1, N64, DS, PSP and RPG Maker**
+- 👨‍👩‍👧 **Uses your Jellyfin as it is:** the same logins, users and libraries. Each person has their own saves, and a child only sees the libraries you give them
+- 🤝 **Play together:** link two phones on the same Wi-Fi for **Pokémon trades and battles** (GBA and DS), or up to **four controllers** on N64
+- 🧩 **The extras you'd expect:** snapshots, cheats, a built-in **patcher** for fan translations and hacks, Bluetooth controllers and button remapping
+- 🔒 **Private by design:** no accounts, no adverts, no tracking, no cloud. **Everything stays on your server**
+- 🆓 **Free and open source** (GPL-3.0)
+
+> Shoalcade is for **games you own**. It never downloads games for you.
+
+---
+
 ## Contents
 
+- [Why Shoalcade?](#why-shoalcade)
 - [What it is](#what-it-is)
 - [Your own games only](#your-own-games-only)
 - [Supported consoles](#supported-consoles)
@@ -74,10 +93,14 @@
 | **Nintendo DS** | ✅ melonDS DS | ✅ melonDS | ✅ local wireless |
 | **PlayStation (PS1)** | ✅ PCSX ReARMed | ✅ PCSX ReARMed | ❌ |
 | **PSP** | ✅ PPSSPP (landscape) | ❌ not yet | ❌ |
+| **RPG Maker XP / VX / VX Ace** | ✅ mkxp-z | ✅ mkxp-z | ❌ |
 | **Nintendo 3DS** | 🗓️ Listed as **"3DS support coming later"** — not downloadable or playable yet | ❌ | ❌ |
 
 - **PS1:** one `.chd` or `.pbp` file per game. **No BIOS needed** (a built-in stand-in is used; some games may need a real BIOS, not supported yet). Save = one **memory card**, shared by the phone and the browser.
 - **N64:** `.z64`, `.n64` or `.v64` files (or a `.zip`/`.7z` holding one). Save = the cartridge save plus **Controller Pak 1**, shared by the phone and the browser.
+- **RPG Maker:** the game's **Windows folder** (the one with `Game.ini`), **not a zip**. Fan games you own, e.g. Pokémon Reborn, work. Save = the game's save files, shared by the phone and the browser.
+  - **Not supported:** RPG Maker **MV / MZ** (`index.html` + `js/` folder) and **2000 / 2003** (`RPG_RT.exe`).
+  - Games that ship **Windows add-ons** (DLLs) Shoalcade doesn't know are marked **⚠️ May not work**. Common add-ons in older Windows games (e.g. Pokémon Z) get a built-in stand-in.
 - **Other consoles are not shown.** Their files stay on your server, untouched.
 
 ---
@@ -116,12 +139,15 @@
 **Your games list**
 - **Box art** cached on the phone, so it shows offline
 - **Sort** by **Name**, **Year**, **Platform** or **Last played** — remembered; **Last played** is the default and counts browser play too
-- Console filter chips
+- **Console bar:** **All**, **Nintendo ▾**, **Sony ▾** and **RPG Maker**. Each menu lists that maker's consoles that have games
+- **⚠️ May not work** on RPG Maker games that ship Windows add-ons Shoalcade doesn't know
 - **Background downloads** with a progress notification and **Cancel**
 - **Remove from phone (keeps save)**
+- **RPG Maker:** shows the game's size and asks before a big download. **Update from Jellyfin** (game menu) fetches **only the files that changed**
 
 **Playing**
 - **Offline play** — once downloaded, a game needs no network at all
+- **Loading bar** while a game starts
 - **Portrait or landscape** — turn the phone and the game turns with it, **without restarting**; touch buttons move to either side of the game. Or fix a console to **Portrait** or **Landscape**
 - **Side menu** — swipe in from the left edge, tap **☰ Menu**, press **Back** or the controller's **Home** button. The game **pauses** while it's open, and it works fully with a controller
 - **On-screen touch buttons** (multi-touch) and **Bluetooth controllers**
@@ -132,9 +158,10 @@
 - **PSP:** landscape, see-through controls with an **analogue stick**; each game gets its own memory stick
 - **N64:** landscape, with an **analogue stick** and the four **C buttons**. On a controller: left stick = N64 stick, right stick = C buttons, trigger = **Z**. **Players 2–4:** each extra controller is the next player, in the order you connect them
 - **PS1:** △ ○ ✕ □ with **L1 L2 R1 R2**; controller triggers work as L2/R2. Buttons match **by position**, so a controller's **A** (bottom on Xbox pads) is **○** — swap it in **Controls** if you prefer ✕
+- **RPG Maker:** touch buttons use **the game's own button names**. When the game asks you to type (e.g. a name), the **phone keyboard opens**
 - **Game Boy cartridge clock** kept with the save and backed up (e.g. Pokémon Gold, Silver, Crystal)
 - **Cheats** — side menu → **Cheats**: **Add a cheat…**, switch each one on or off, **Edit cheats…**. Shared with the browser player, and they work offline. See [Cheats](#-cheats)
-- **Snapshots** — **Save snapshot** / **Load snapshot**, one per game with a picture, kept on the phone
+- **Snapshots** — **Save snapshot** / **Load snapshot**, one per game with a picture, kept on the phone (not RPG Maker)
 - **Launch choice:** games with a snapshot ask **Continue from save** or **Or load a snapshot**
 - Side menu: **Close Game** or **Close Game (and Upload)**
 - Warns (**Keep playing** / **Close anyway**) if your latest save couldn't be kept
@@ -148,6 +175,7 @@
 
 **Settings** (⚙ on the games list)
 - Set **each console** without starting a game: **Screen**, **DS screens**, **Touch buttons** and **Controls**
+- **Download games on Wi-Fi only** — off unless you switch it on
 - The side menu changes the **same settings** while you play, so the two always agree
 - **Push all** / **Pull all**, your server and account, **Log out** (also ends the app's sign-in on Jellyfin; phone saves stay), storage used, and **About**
 - **Saves → Not in your library:** phone saves for games that left your library — **Save a copy to a file…** or **Upload to another game…** (nothing is deleted)
@@ -182,7 +210,8 @@
 **Library**
 - Open it from the **Shoalcade** link in Jellyfin's menu, or at **`/shoalcade/`** on your server
 - Uses your **Jellyfin web login** — no extra sign-in
-- **Game covers**, **console tabs**, **search** and a **Played lately** row; works on phones too
+- **Game covers**, **search** and a **Played lately** row; works on phones too
+- **Console bar:** **All**, **Nintendo ▾**, **Sony ▾** and **RPG Maker** — the menus list each console that has games
 - **Sort** by **Name**, **Year**, **Platform** or **Last played** — remembered per person, on any browser
 - **Play** and **Saves** buttons on each game's own Jellyfin page
 - **⚙ Settings:** **Manage saves**, **Phone app** (QR code or download link for the app), per-console **Browser player** settings with **Reset to defaults**, and **Patch a game**
@@ -197,9 +226,18 @@
 - **Sideways phone:** touch buttons sit in columns **beside the game**, not over it
 - **N64:** keyboard **arrows** = stick, **I J K L** = C buttons, **A** = Z, **Y G H B** = D-pad. On a pad: left stick = N64 stick, right stick = C buttons, triggers = Z. Up to **4 pads** = players 1–4
 - **PS1:** keyboard **E / R** or pad **LT / RT** for L2 / R2; very big discs show a note that they need a lot of memory
+- **Loading bar** while a game starts
 - **Saves upload by themselves** a few seconds after the game saves
 - **Leaving too soon?** It asks: **Your save hasn't reached the server yet** → **Stay** or **Leave anyway**
 - If another device changed the save: **Keep this browser's save** or **Keep Jellyfin's save (restarts the game)**
+
+**RPG Maker in the browser** (powered by **mkxp-z**)
+- Game files load **as the game needs them**
+- **First start can take up to a minute** — big games take about **40–60 seconds** to reach the title screen (the loading bar shows progress)
+- **Keep in browser** for big games: keeps the game's files in this browser, so later starts are quicker
+- Keys: **arrows** = move, **Enter** = C (Go), **Esc** = B (Back), **Left Shift** = A. **Type names** on your keyboard. **F1** = pause, **hold Tab** = fast-forward. Change them in **Settings → Controls**
+- **Needs a lot of memory:** about **1 GB** once running, with a short peak of up to **~4 GB** while it starts (desktop Chrome). On a low-memory device, use the phone app
+- No snapshots, cheats or patcher for RPG Maker
 
 **Saves manager**
 - Every version of a game's save: **Use this save**, **Pin**, **Name**, **Download**, **Upload a save file**, **Delete**, **Start fresh**
@@ -215,7 +253,7 @@
 - **Saves stay safe:** saves made with cheats on are marked, and your save from before cheats is kept (see [Saves](#-saves))
 - Switching a cheat off **doesn't undo** what it already changed in the game
 - **No cheat database** — you add the codes yourself
-- Notes: **DS in the browser** — a cheat you switch off stays on until you leave the game and start it again. **Link play** has no cheats
+- Notes: **DS in the browser** — a cheat you switch off stays on until you leave the game and start it again. **Link play** and **RPG Maker** have no cheats
 
 | Console | Codes that work |
 |---|---|
@@ -233,10 +271,12 @@
 - **Everything happens in your browser:** nothing is uploaded and your library isn't changed
 - **Wrong game file?** BPS, UPS and xdelta patches check it, so you get a warning instead of a broken game (with **Patch anyway** if you're sure)
 - To play the result, put it in your Jellyfin games folder
+- Not for RPG Maker games
 
 ### 🗂️ Server and library
 
-- **Own game scanner** — finds GB, GBC, GBA, N64, DS, PS1, PSP and 3DS games, including zipped games and multi-disc sets (not PS1)
+- **Own game scanner** — finds GB, GBC, GBA, N64, DS, PS1, PSP and 3DS games, including zipped games and multi-disc sets (not PS1), and **RPG Maker XP / VX / VX Ace game folders**
+- A zipped RPG Maker game is not listed: the scan log says to **unzip it**
 - A file is only listed if its type fits its folder's console (e.g. a `.gba` in a `PSP` folder is skipped)
 - **Official names, year, developer, publisher and genre** from **libretro-database** (downloaded by your server, checked weekly, works from its own copy)
 - **Box art** from libretro — your own pictures next to the ROMs and `.nfo` files still come first
@@ -275,6 +315,7 @@
 - The only outside contact is **your server → libretro**, for game names and box art. No ROMs, hashes, saves or user names are sent
 - The app talks **only to your Jellyfin server** (and to the other phone during link play)
 - The **patcher** never sends your files anywhere: it runs in your browser
+- **RPG Maker games can't go online:** a game's own web requests or updater fail as if you were offline
 - Full detail: [Privacy](guides/privacy.md)
 
 ---
@@ -285,7 +326,7 @@
 |---|---|
 | **Server** | **Jellyfin 12.3 or newer** (tested on 12.3 and 12.4), an admin account, and an **HTTPS** address (the app won't use plain HTTP) |
 | **Phone app** | **Android 11+** on a **64-bit ARM** phone (almost every phone from the last few years) |
-| **Browser player** | A modern browser (Chrome, Edge, Firefox, Safari) on a computer, tablet or phone |
+| **Browser player** | A modern browser (Chrome, Edge, Firefox, Safari) on a computer, tablet or phone. **RPG Maker** needs plenty of memory (up to ~4 GB while a game starts) |
 | **Games** | Your own games, in a folder Jellyfin can read |
 
 ---
@@ -324,7 +365,7 @@
 
 ### 2. Make a games library
 
-1. Put your games in **one folder per console** (short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`):
+1. Put your games in **one folder per console** (short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`, `rpgmaker`):
 
 ```
 /media/games/
@@ -334,7 +375,8 @@
 ├── Nintendo 64/         .z64 .n64 .v64
 ├── Nintendo DS/         .nds
 ├── PS1/                 .chd .pbp   (one file per game)
-└── PSP/                 .iso .cso .pbp .chd
+├── PSP/                 .iso .cso .pbp .chd
+└── RPG Maker/           one folder per game, e.g. Pokemon Reborn/Game.ini
 ```
 
 2. **Dashboard → Plugins → Shoalcade → Add a games library**
@@ -343,6 +385,7 @@
 
 - A `.zip` or `.7z` holding one game is fine (not PS1). **Nothing is ever written into your ROM folder.**
 - **PS1:** not yet `.bin/.cue`, `.iso`, archives or multi-disc games — see the [Install guide](guides/install.md).
+- **RPG Maker:** game **folders only**, not zips — see the [Install guide](guides/install.md).
 
 ### 3. Install the app on your Android phone
 
@@ -386,7 +429,7 @@ The app **asks**: **Keep the phone's**, **Keep Jellyfin's** or **Decide later**.
 No. Only **in-game saves** sync. Snapshots stay where you made them (phone or browser), and loading one never changes your save.
 
 **Can I use cheats?**
-Yes — your own codes, in the browser player's **Cheats** tab or the app's side menu → **Cheats**. Saves made with cheats on are marked, and your save from before cheats is kept. See [Cheats](#-cheats).
+Yes (not RPG Maker) — your own codes, in the browser player's **Cheats** tab or the app's side menu → **Cheats**. Saves made with cheats on are marked, and your save from before cheats is kept. See [Cheats](#-cheats).
 
 **Can I play ROM hacks and translations?**
 Yes. Patch your own game file with **⚙ Settings → Patch a game** in the browser (IPS, BPS, xdelta and more), then put the result in your games folder.
@@ -395,7 +438,10 @@ Yes. Patch your own game file with **⚙ Settings → Patch a game** in the brow
 Yes — it uses **Jellyfin's own users**. Each person has their own saves. Jellyfin's **library access** decides who sees the games library, and Jellyfin's **Allow media downloading** permission is needed to play (on the phone and in the browser). There's no separate kids mode.
 
 **Which consoles? Why not SNES?**
-**GB, GBC, GBA, N64, DS, PS1 and PSP.** Each console is a lot of work to make safe for saves, so the list is small for now. Other consoles may come later; their files stay on your server untouched.
+**GB, GBC, GBA, N64, DS, PS1 and PSP**, plus **RPG Maker XP, VX and VX Ace** games. Each console is a lot of work to make safe for saves, so the list is small for now. Other consoles may come later; their files stay on your server untouched.
+
+**Which RPG Maker games work?**
+Games made with **RPG Maker XP, VX or VX Ace** (Windows), as a folder with `Game.ini`. Not MV, MZ, 2000 or 2003. Some games ship Windows add-ons that can't run here; those show **⚠️ May not work**. Games packed into one encrypted archive (`Game.rgssad`, `.rgss2a`, `.rgss3a`) should work but are untested. Tell us how a game runs with the [RPG Maker game report](https://github.com/BBBannon/Shoalcade/issues/new?template=rpg_maker_report.yml) form.
 
 **Will 3DS work?**
 **Not yet.** 3DS games appear in the app as **"3DS support coming later"**. 3DS is too heavy for the built-in emulators, so it's planned for later with no date.
@@ -445,6 +491,8 @@ Yes, if you're a Jellyfin admin: browser library → game → **Edit game**. Use
 | **Download button greyed out** | You're offline, the game is 3DS, or your Jellyfin user isn't allowed to download — ask your admin |
 | **No box art** | Wait for the next scan. Some games have no libretro art — an admin can use **Find a cover** or **Upload a picture** |
 | **Browser player won't load** | Refresh with **Ctrl+F5**. Check an admin hasn't turned the browser player off |
+| **RPG Maker game not listed** | Unzip it: put the game's folder (with `Game.ini`) in the `RPG Maker` folder, then scan. MV, MZ, 2000 and 2003 games aren't supported |
+| **RPG Maker game slow to start, or the tab crashes (browser)** | The first start can take up to a minute. Close other tabs, or play it in the phone app — the browser needs a lot of memory while it starts |
 
 ---
 
@@ -485,6 +533,7 @@ server/build.sh                    # → dist/server/Shoalcade_s<version>.zip
 - 💬 **Chat and help:** [Join us on Discord][discord]
 - 🐞 **Bugs and ideas:** [Discord][discord] — the quickest way to get them looked at
 - 🔒 **Security problems:** privately, as in [SECURITY.md](SECURITY.md)
+- 🎮 **How does an RPG Maker game run?** Use the [RPG Maker game report](https://github.com/BBBannon/Shoalcade/issues/new?template=rpg_maker_report.yml) form
 
 ⚠️ **Never post** server addresses, Jellyfin tokens, passwords, ROMs or saves — on Discord, GitHub or anywhere else.
 
@@ -513,6 +562,7 @@ server/build.sh                    # → dist/server/Shoalcade_s<version>.zip
 | **gpSP** | GBA link play (app) | GPL-2.0-or-later |
 | **PPSSPP** | PSP (app) | GPL-2.0-or-later |
 | **PCSX ReARMed** | PS1 (app and browser) | GPL-2.0-or-later |
+| **mkxp-z** | RPG Maker XP, VX and VX Ace (app and browser) | GPL-2.0-or-later (GPL-3.0 as built) |
 | **EmulatorJS** | Browser player | GPL-3.0 |
 | **RomPatcher.js** | Patch a game (browser) | MIT |
 | **JellyEMU** | Code ported into our scanner | MIT |
@@ -527,8 +577,8 @@ server/build.sh                    # → dist/server/Shoalcade_s<version>.zip
 
 ## Disclaimer
 
-- Shoalcade is **not affiliated with or endorsed by** Jellyfin, Nintendo or Sony.
-- Jellyfin is a trademark of Jellyfin, Inc. Nintendo, Game Boy, Nintendo 64, Nintendo DS, Nintendo 3DS, Sony, PlayStation and PSP are trademarks of their owners.
+- Shoalcade is **not affiliated with or endorsed by** Jellyfin, Nintendo, Sony or the makers of RPG Maker.
+- Jellyfin is a trademark of Jellyfin, Inc. Nintendo, Game Boy, Nintendo 64, Nintendo DS, Nintendo 3DS, Sony, PlayStation, PSP and RPG Maker are trademarks of their owners.
 - Shoalcade is provided **as is, with no warranty** (see [LICENSE](LICENSE)). **Back up your saves.**
 
 <!-- Discord invite: change it here only. -->

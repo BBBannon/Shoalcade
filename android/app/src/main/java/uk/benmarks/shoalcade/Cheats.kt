@@ -86,6 +86,7 @@ object CheatRules {
         Console.PSP -> "PSP: CWCheat codes, one per line, like _L 0x2xxxxxxx 0xyyyyyyyy."
         Console.N64 -> "Nintendo 64: GameShark codes, like 8XXXXXXX YYYY. One code per line."
         Console.N3DS -> "3DS games can't be played on the phone yet."
+        Console.RPGMAKER -> "RPG Maker games don't use cheat codes."
     }
 }
 

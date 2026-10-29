@@ -88,17 +88,19 @@ public sealed record UserDto(
 /// <param name="BrowserCore">Browser core or null.</param>
 /// <param name="BrowserSaves">none/shared/separate.</param>
 /// <param name="SaveFormat">Save format family: saves move only between consoles with the same value (gb and gbc share "gb").</param>
+/// <param name="Maker">Maker the library's console bar groups it under ("Nintendo", "Sony"), or null (its own button).</param>
 public sealed record ConsoleDto(
     [property: JsonPropertyName("key")] string Key,
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("browserCore")] string? BrowserCore,
     [property: JsonPropertyName("browserSaves")] string BrowserSaves,
-    [property: JsonPropertyName("saveFormat")] string SaveFormat)
+    [property: JsonPropertyName("saveFormat")] string SaveFormat,
+    [property: JsonPropertyName("maker")] string? Maker)
 {
     /// <summary>Creates the DTO.</summary>
     /// <param name="c">Console.</param>
     /// <returns>The DTO.</returns>
-    public static ConsoleDto From(GameConsole c) => new(c.Key, c.DisplayName, c.BrowserCore, c.BrowserSaves.ToString().ToLowerInvariant(), c.SaveFormat);
+    public static ConsoleDto From(GameConsole c) => new(c.Key, c.DisplayName, c.BrowserCore, c.BrowserSaves.ToString().ToLowerInvariant(), c.SaveFormat, c.Maker);
 }
 
 /// <summary>A save version.</summary>
@@ -189,6 +191,10 @@ public sealed record SaveWriteDto(
 /// <param name="LastPlayed">Last played (Jellyfin play data).</param>
 /// <param name="BrowserPlayable">Whether it plays in the browser.</param>
 /// <param name="Save">Current save, if any.</param>
+/// <param name="Engine">RPG Maker only (D147): "XP", "VX" or "VX Ace" (null when it can't be told); left out for others.</param>
+/// <param name="MayNotWork">RPG Maker only: the game ships Windows DLLs we don't recognise; left out for others.</param>
+/// <param name="Size">RPG Maker only: bytes of all its listed files (the download size); left out for others.</param>
+/// <param name="FileCount">RPG Maker only: files listed; left out for others.</param>
 public sealed record GameDto(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("name")] string Name,
@@ -200,7 +206,11 @@ public sealed record GameDto(
     [property: JsonPropertyName("imageTag")] string? ImageTag,
     [property: JsonPropertyName("lastPlayed")] DateTime? LastPlayed,
     [property: JsonPropertyName("browserPlayable")] bool BrowserPlayable,
-    [property: JsonPropertyName("save")] SaveVersionDto? Save);
+    [property: JsonPropertyName("save")] SaveVersionDto? Save,
+    [property: JsonPropertyName("engine"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Engine = null,
+    [property: JsonPropertyName("mayNotWork"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? MayNotWork = null,
+    [property: JsonPropertyName("size"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Size = null,
+    [property: JsonPropertyName("fileCount"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? FileCount = null);
 
 /// <summary>One entry in the save manager list.</summary>
 /// <param name="ItemId">Item id.</param>

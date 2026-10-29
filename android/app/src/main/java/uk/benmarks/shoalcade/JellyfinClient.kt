@@ -36,26 +36,45 @@ data class Game(
     val year: Int? = null,
     /** Last played on Jellyfin (epoch ms): the later of Jellyfin's last-played date and the current save's time. */
     val serverPlayed: Long? = null,
-)
+    /** RPG Maker only (D147): "XP", "VX" or "VX Ace" (null = not known). */
+    val engine: String? = null,
+    /** RPG Maker only: the game ships Windows add-ons that may not work here. */
+    val mayNotWork: Boolean = false,
+    /** RPG Maker only: the whole folder's size in bytes. */
+    val size: Long? = null,
+) {
+    /** RPG Maker: the game is a whole folder, downloaded file by file. */
+    val isFolderGame get() = console?.isFolderGame == true
+}
+
+/** A JSON text field, or null when it's missing, empty or JSON null. */
+internal fun JSONObject.textOrNull(key: String): String? = optString(key).takeIf { it.isNotEmpty() && it != "null" }
+
+/** A JSON number field, or null when it's missing or JSON null. */
+internal fun JSONObject.longOrNull(key: String): Long? = if (isNull(key)) null else optLong(key)
 
 /** Game ↔ JSON, for the offline game list and for passing a game to the download service. */
 object GameJson {
     fun toJson(g: Game): JSONObject = JSONObject().put("id", g.id).put("name", g.name).put("console", g.console?.name)
         .put("file", g.fileName).put("dl", g.canDownload).put("img", g.imageTag)
         .put("year", g.year).put("played", g.serverPlayed)
+        .put("engine", g.engine).put("mayNotWork", g.mayNotWork).put("size", g.size)
 
     fun fromJson(s: String) = fromJson(JSONObject(s))
 
     fun fromJson(o: JSONObject) = Game(
         id = o.getString("id"),
         name = o.getString("name"),
-        console = o.optString("console").takeIf { it.isNotEmpty() && it != "null" }
+        console = o.textOrNull("console")
             ?.let { runCatching { Console.valueOf(it) }.getOrNull() },
         fileName = o.optString("file", ""),
         canDownload = o.optBoolean("dl", true),
-        imageTag = o.optString("img").takeIf { it.isNotEmpty() && it != "null" },
+        imageTag = o.textOrNull("img"),
         year = if (o.has("year") && !o.isNull("year")) o.optInt("year") else null,
-        serverPlayed = if (o.has("played") && !o.isNull("played")) o.optLong("played") else null,
+        serverPlayed = o.longOrNull("played"),
+        engine = o.textOrNull("engine"),
+        mayNotWork = o.optBoolean("mayNotWork", false),
+        size = o.longOrNull("size"),
     )
 }
 
@@ -275,6 +294,41 @@ class JellyfinClient(
             if (!part.renameTo(dest)) throw IOException("Couldn't save the download.")
             dest
         }
+
+    /** A folder game's file list (RPG Maker, D147): paths, sizes and SHA-256s. Same checks as every Shoalcade route. */
+    suspend fun folderFiles(itemId: String): FolderList = plugin(limit = null) {
+        FolderList.parse(getText("/shoalcade/games/${id(itemId)}/files"))
+    }
+
+    /**
+     * Streams one file of a folder game to [dest] (via a .part file, renamed when complete), checking its size and
+     * SHA-256 against the list on the way. A mismatch fails the download rather than keeping a wrong file.
+     */
+    suspend fun fetchFolderFile(itemId: String, file: FolderFile, dest: File) = plugin(limit = null) {
+        val conn = open(url("/shoalcade/games/${id(itemId)}/file?path=${enc(file.path)}")).checkOk()
+        val part = File(dest.parentFile, dest.name + ".part")
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        var done = 0L
+        conn.inputStream.use { input ->
+            part.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    ensureActive()
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    md.update(buf, 0, n)
+                    done += n
+                }
+            }
+        }
+        conn.disconnect()
+        if (done != file.size || (file.sha256.isNotEmpty() && md.digest().toHex() != file.sha256)) {
+            part.delete()
+            throw IOException("${file.path} arrived damaged. Try the download again.")
+        }
+        if (!FolderDownload.replace(part, dest)) { part.delete(); throw IOException("Couldn't save ${file.path}.") }
+    }
 
     /** One game's save history: one list per game, DS too (D91). */
     suspend fun history(itemId: String): SaveHistory = plugin {
@@ -622,9 +676,12 @@ data class RemoteGame(val game: Game, val save: SaveVersion?) {
                     console = Console.fromKey(o.optString("console")),
                     fileName = "",
                     canDownload = canDownload,
-                    imageTag = o.optString("imageTag").takeIf { it.isNotEmpty() && it != "null" },
+                    imageTag = o.textOrNull("imageTag"),
                     year = year,
                     serverPlayed = GameSort.lastPlayed(lastPlayed, save?.createdMillis),
+                    engine = o.textOrNull("engine"),
+                    mayNotWork = o.optBoolean("mayNotWork", false),
+                    size = o.longOrNull("size")?.takeIf { it >= 0 },
                 ),
                 save,
             )
@@ -666,12 +723,12 @@ data class SaveVersion(
             sha256 = o.optString("sha256").lowercase(),
             created = o.optString("created"),
             source = o.optString("source"),
-            device = o.optString("device").takeIf { it.isNotEmpty() && it != "null" },
+            device = o.textOrNull("device"),
             pinned = o.optBoolean("pinned"),
-            label = o.optString("label").takeIf { it.isNotEmpty() && it != "null" },
+            label = o.textOrNull("label"),
             restoredFrom = if (o.has("restoredFrom") && !o.isNull("restoredFrom")) o.getInt("restoredFrom") else null,
             isCurrent = o.optBoolean("isCurrent"),
-            origin = o.optString("origin").takeIf { it.isNotEmpty() && it != "null" },
+            origin = o.textOrNull("origin"),
             afterSnapshot = o.optBoolean("afterSnapshot"),
             cheats = o.optBoolean("cheats"),
         )

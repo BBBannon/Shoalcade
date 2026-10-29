@@ -112,6 +112,8 @@
     hasLogin: () => !!(login || (login = findLogin())),
     /** Low-level call (login header added) for page scripts with their own routes, e.g. the player's snapshots. */
     request,
+    /** The login header value, for requests a page has to make itself (the RPG Maker player's file reads). Never logged. */
+    authHeader,
 
     info: () => json("/shoalcade/info"),
     /** Puts the plugin version ("s0.2 dev 1", D88) into the page's small #sc-ver line, if it has one. */

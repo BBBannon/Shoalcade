@@ -109,6 +109,13 @@ public sealed class RomLibrary
     public bool IsRomOutsideItsLibrary(Guid itemId) =>
         itemId != Guid.Empty && _library.GetItemById(itemId) is BaseItem item && ToRom(item) is not null && !IsInItsLibrary(item);
 
+    /// <summary>True if the item is an RPG Maker game folder (D147): Jellyfin's own download route can't send a folder, so
+    /// it answers 404 for one (the app and browser use <c>/shoalcade/games/{id}/files</c> and <c>/file</c>).</summary>
+    /// <param name="itemId">Item id.</param>
+    /// <returns>Whether it is a folder game.</returns>
+    public bool IsFolderGame(Guid itemId) =>
+        itemId != Guid.Empty && _library.GetItemById(itemId) is BaseItem item && ToRom(item) is { Console.FolderGame: true };
+
     /// <summary>True if the path is strictly inside one of the folders (after resolving <c>..</c>).</summary>
     /// <param name="path">Item path.</param>
     /// <param name="folders">Library folders.</param>
@@ -137,8 +144,9 @@ public sealed class RomLibrary
             return null;
         }
 
+        // Never a file or folder inside an RPG Maker game folder (D147): an item another scanner made for one is not a game.
         var console = GameConsole.Detect(tags, item.Path);
-        if (console is null || !console.AcceptsItemPath(item.Path))
+        if (console is null || !console.AcceptsItemPath(item.Path) || Scanner.RpgMakerGame.IsInsideGameFolder(item.Path))
         {
             return null;
         }

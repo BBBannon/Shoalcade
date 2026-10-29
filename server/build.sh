@@ -25,6 +25,15 @@ while read -r name ver sha; do
   echo "$sha  $f" | sha256sum -c --quiet - || { echo "SHA-256 mismatch for $name - refusing to build"; exit 1; }
 done < emulatorjs.lock
 
+# 1b. mkxp-z for the RPG Maker browser player (D147; pinned + checked, see mkxpz.lock). GitHub Actions artifacts
+#     expire, so the zip is kept in .testbed/dl; it is fetched with the gh CLI only if it isn't there yet.
+while read -r name ver sha art; do
+  case "$name" in ''|\#*) continue ;; esac
+  f="$DL/mkxpz-$name-$ver.zip"
+  [ -f "$f" ] || gh api "repos/white-axe/mkxp-z/actions/artifacts/$art/zip" > "$f" || { rm -f "$f"; echo "Couldn't fetch mkxp-z $name ($ver): put the artifact zip at $f - refusing to build"; exit 1; }
+  echo "$sha  $f" | sha256sum -c --quiet - || { echo "SHA-256 mismatch for mkxp-z $name - refusing to build"; exit 1; }
+done < mkxpz.lock
+
 # 2. Plugin DLL (warnings are errors)
 "$DOTNET" build Jellyfin.Plugin.Shoalcade -c Release -warnaserror -nologo -v q
 
@@ -47,6 +56,18 @@ while read -r name ver sha; do
     cp "$TMP/$name/package/reports/"*.json "$OUT/ejs/cores/reports/"
   fi
 done < emulatorjs.lock
+# mkxp-z core -> ejs/mkxp-z/ (served at /shoalcade/ejs/mkxp-z/ like the EmulatorJS cores)
+while read -r name ver sha art; do
+  case "$name" in ''|\#*) continue ;; esac
+  mkdir -p "$OUT/ejs/mkxp-z"
+  python - "$DL/mkxpz-$name-$ver.zip" "$OUT/ejs/mkxp-z" <<'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as z:
+    for n in ("mkxp-z_libretro.js", "mkxp-z_libretro.wasm"):
+        with z.open(n) as src, open(sys.argv[2] + "/" + n, "wb") as dst:
+            dst.write(src.read())
+PY
+done < mkxpz.lock
 cp "$ROOT/LICENSE" "$OUT/LICENSE.txt"
 cp "$ROOT/THIRD_PARTY_NOTICES.md" "$OUT/THIRD_PARTY_NOTICES.md"   # incl. the JellyEMU MIT notice for the ported scanner code
 cp "$ROOT/server/assets/thumb.png" "$OUT/thumb.png"               # plugin picture in Jellyfin's dashboard (imagePath)

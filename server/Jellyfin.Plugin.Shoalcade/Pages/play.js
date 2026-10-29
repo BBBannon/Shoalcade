@@ -47,6 +47,8 @@
     nds: DPAD.concat(["A", "B", "X", "Y", "L", "R", "Start", "Select"]),
     // PS1 (D137), same order as the app: D-pad, triangle circle cross square (by position, as PSP: X A B Y), L1 R1 L2 R2.
     psx: DPAD.concat(["X", "A", "B", "Y", "L", "R", "L2", "R2", "Start", "Select"]),
+    // RPG Maker XP/VX/VX Ace (D147): the engine's own buttons. C = confirm, B = cancel/menu, A = run (Shift).
+    rpgmaker: DPAD.concat(["C", "B", "A", "X", "Y", "Z", "L", "R"]),
   };
   /**
    * N64 buttons -> RetroPad ids (Mupen64Plus-Next's default map, plan-n64 Step 0): A = RetroPad B, B = Y, Z = L2,
@@ -57,6 +59,8 @@
   const RETRO_BY_CONSOLE = {
     n64: { A: 0, B: 1, Start: 3, Up: 4, Down: 5, Left: 6, Right: 7, L: 10, R: 11, Z: 12,
       StickRight: 16, StickLeft: 17, StickDown: 18, StickUp: 19, CRight: 20, CLeft: 21, CDown: 22, CUp: 23 },
+    // mkxp-z's pad map (src/input/input-retro.cpp): RetroPad A = C, B = B, X = A, Y = X, L3 = Y, R3 = Z.
+    rpgmaker: { C: 8, B: 0, A: 9, X: 1, Y: 14, Z: 15, L: 10, R: 11, Up: 4, Down: 5, Left: 6, Right: 7 },
   };
   const ANALOG_FULL = 0x7fff;
   const STICK_DEADZONE = 0.1; // below this a controller stick sends 0 (the core adds its own 15 % dead zone)
@@ -84,11 +88,16 @@
     n64: { StickUp: ["ArrowUp"], StickDown: ["ArrowDown"], StickLeft: ["ArrowLeft"], StickRight: ["ArrowRight"],
       Up: ["KeyY"], Down: ["KeyB"], Left: ["KeyG"], Right: ["KeyH"], A: ["KeyX"], B: ["KeyZ"], Z: ["KeyA"],
       CUp: ["KeyI"], CDown: ["KeyK"], CLeft: ["KeyJ"], CRight: ["KeyL"] },
+    // RPG Maker's own PC keys: Enter/Space/Z = C, Esc/X = B, Shift = A, A S D = X Y Z, Q W = L R.
+    rpgmaker: { C: ["Enter", "Space", "KeyZ"], B: ["Escape", "KeyX"], A: ["ShiftLeft", "ShiftRight"], X: ["KeyA"], Y: ["KeyS"],
+      Z: ["KeyD"], L: ["KeyQ", "PageUp"], R: ["KeyW", "PageDown"] },
   };
   const DEFAULT_PAD_BY_CONSOLE = {
     n64: { StickUp: ["a1-"], StickDown: ["a1+"], StickLeft: ["a0-"], StickRight: ["a0+"],
       Up: ["up"], Down: ["down"], Left: ["left"], Right: ["right"], A: ["south"], B: ["west"], Z: ["l2", "r2"],
       CUp: ["a3-"], CDown: ["a3+"], CLeft: ["a2-"], CRight: ["a2+"] },
+    // As RetroArch on the phone: right face button = C (confirm), bottom = B, top = A, left = X, triggers = Y and Z.
+    rpgmaker: { C: ["east"], B: ["south"], A: ["north"], X: ["west"], Y: ["l2"], Z: ["r2"], L: ["l1"], R: ["r1"] },
   };
   /** Default keys for a console. */
   function defaultKeys(consoleKey) { return Object.assign({}, DEFAULT_KEYS, DEFAULT_KEYS_BY_CONSOLE[consoleKey]); }
@@ -630,6 +639,23 @@
     "quickLoad", "screenshot", "cacheManager", "exitEmulation", "netplay", "diskButton"]
     .reduce((o, k) => { o[k] = false; return o; }, {});
 
+  /** "12 of 54 MB" */
+  function mbOf(done, total) {
+    const m = n => n / (1024 * 1024);
+    return (total < 10 * 1024 * 1024 ? m(done).toFixed(1) : Math.round(m(done))) + " of " + Math.max(1, Math.round(m(total))) + " MB";
+  }
+  window.SC.mbOf = mbOf;
+
+  /** EmulatorJS's own loading text (hidden under our card) -> [our words, done, total] for the loading bar. */
+  function ejsStep(t) {
+    const m = /(\d+)%/.exec(t);
+    const pct = m ? Math.min(100, Number(m[1])) : undefined;
+    const what = /Download Game Core/i.test(t) ? "Downloading the emulator"
+      : /Decompress Game Core/i.test(t) ? "Unpacking the emulator"
+        : /Game Data|Decompress/i.test(t) ? "Loading the game" : "Starting the emulator";
+    return [what + (pct === undefined ? "…" : " (" + pct + "%)"), pct, pct === undefined ? undefined : 100];
+  }
+
   /** A big game (a PS1 disc) is held in the browser's memory while it plays: say so, so a phone that runs out isn't a mystery. */
   function bigGameNote(bytes) {
     return "This is a big game (" + Math.round(bytes / (1024 * 1024)) + " MB). It is kept in this browser's memory while you play, so on a phone it may be slow to start or not start. The phone app plays it straight from storage.";
@@ -713,7 +739,8 @@
 
     on(evt, fn) { (this.handlers[evt] = this.handlers[evt] || []).push(fn); }
     emit(evt, data) { (this.handlers[evt] || []).forEach(fn => { try { fn(data); } catch (e) { console.error(e); } }); }
-    status(kind, text) { this.emit("status", { kind, text }); }
+    /** done/total (optional, any unit): how far a loading step has got, for the loading bar (play-ui.js). */
+    status(kind, text, done, total) { this.emit("status", { kind, text, done, total }); }
     setState(s, extra) { this.state = s; this.emit("state", Object.assign({ state: s }, extra || {})); }
 
     fail(e) {
@@ -735,6 +762,8 @@
         workerTag = info.serverVersion || "0";
         api.showVersion(info);
         this.game = game;
+        // RPG Maker games (a folder, mkxp-z) play on their own page (rpgmaker/play.html, same look).
+        if (game.console === "rpgmaker" && !this.isRpgMaker) { location.replace("play-rpgmaker" + location.search); return; }
         this.emit("game", game);
         const c = (info.consoles || []).find(x => x.key === game.console);
         if (!info.browserPlayer) throw new Error("The browser player is switched off on this server.");
@@ -755,8 +784,8 @@
         this.emit("prefs", this.prefs);
         await this.loadCheats();
         this.rom = await api.rom(this.itemId, (got, total) => {
-          this.status("loading", "Downloading game… " + (total ? Math.round(100 * got / total) + "%" : Math.round(got / 1024) + " KB")
-            + (total > BIG_GAME_BYTES ? " " + bigGameNote(total) : ""));
+          this.status("loading", "Downloading the game " + (total ? "(" + mbOf(got, total) + ")" : "(" + Math.round(got / 1024) + " KB)")
+            + (total > BIG_GAME_BYTES ? " " + bigGameNote(total) : ""), got, total);
         });
         this.launchSnapshots = await this.launchChoices();
         this.setState("ready");
@@ -835,6 +864,17 @@
         defaultOptions: Object.assign({}, CORE_DEFAULTS[this.game.console], this.coreOptions, CORE_FORCED[this.game.console]),
       });
       this.emu = emu;
+      // EmulatorJS's loading words (engine download %, unpacking) drive our loading bar until the game starts.
+      let lastStep = "";
+      const steps = new MutationObserver(() => {
+        const el = this.container.querySelector(".ejs_loading_text");
+        const t = el ? el.textContent : "";
+        if (!t || t === lastStep || this.state !== "starting") return;
+        lastStep = t;
+        this.status("loading", ...ejsStep(t));
+      });
+      steps.observe(this.container, { childList: true, subtree: true, characterData: true });
+      emu.on("start", () => steps.disconnect());
       emu.storage.states = new window.EJS_DUMMYSTORAGE();
 
       emu.on("saveDatabaseLoaded", FS => {
@@ -1317,6 +1357,7 @@
   }
 
   window.SC.Player = Player;
-  window.SC.controls = { RETRO, RETRO_BY_CONSOLE, BUTTONS, DEFAULT_KEYS, DEFAULT_PAD, defaultKeys, defaultPad, MULTIPLAYER, STANDARD, buildMap, isHeld: Input.isHeld };
+  window.SC.SaveSync = SaveSync; // reused by the RPG Maker player (rpgmaker/player.js)
+  window.SC.controls = { RETRO, RETRO_BY_CONSOLE, BUTTONS, DEFAULT_KEYS, DEFAULT_PAD, defaultKeys, defaultPad, MULTIPLAYER, STANDARD, buildMap, isHeld: Input.isHeld, Input };
   window.SC._test = { meaningfulChange, sameBytes, buildMap, Input, SnapshotGuard, cheatForCore };
 })();

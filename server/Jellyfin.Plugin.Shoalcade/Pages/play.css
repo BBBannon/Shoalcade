@@ -7,6 +7,8 @@
 #sc-game .ejs_menu_bar, #sc-game .ejs_context_menu, #sc-game .ejs_virtualGamepad_parent, #sc-game .ejs_virtualGamepad_open,
 #sc-game .ejs_settings_parent, #sc-game .ejs_popup_container, #sc-game .ejs_start_button { display: none !important; }
 #sc-game { background: #000; }
+/* Its loading words are shown in our loading bar instead (play.js reads them); its error text stays. */
+#sc-game .ejs_loading_text:not(.ejs_error_text) { visibility: hidden; }
 #sc-game, #sc-game .ejs_canvas_parent { width: 100%; height: 100%; }
 #sc-game canvas { display: block; width: 100% !important; height: 100% !important; outline: 0; touch-action: none; }
 
@@ -46,7 +48,23 @@
 .pl-acts .btn { flex: 1 1 auto; }
 .pl-card .pl-err { color: var(--danger); font-weight: 650; margin-top: 12px; }
 .pl-card .facts { margin: 4px 0 0; }
-body[data-state=playing] #intro { display: none; }
+/* The start card stays up after Play until the game shows its first picture (play-ui.js adds .game-shown). */
+body.game-shown #intro { display: none; }
+
+/* Loading bar on the start card: real progress where known, otherwise a block that keeps sliding (.busy). */
+.pl-load { margin: 4px 0 0; }
+.pl-load .pl-load-what { margin: 0 0 8px; font-weight: 650; }
+.pl-bar { position: relative; height: 14px; border: 2px solid var(--ink); border-radius: var(--r-m); background: var(--p-well); overflow: hidden; }
+.pl-bar-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); transition: width .3s; }
+.pl-bar.busy .pl-bar-fill { width: 35%; animation: pl-slide 1.6s ease-in-out infinite alternate; }
+@keyframes pl-slide { from { left: 0; } to { left: 65%; } }
+/* No sliding for reduced motion: a still, striped bar; the clock under it still counts every second. */
+@media (prefers-reduced-motion: reduce) {
+  .pl-bar.busy .pl-bar-fill { width: 100%; left: 0; background: repeating-linear-gradient(135deg, var(--accent) 0 10px, var(--p-well) 10px 20px); }
+}
+.pl-load .pl-load-time { margin: 8px 0 0; font-variant-numeric: tabular-nums; }
+/* While the bar shows, it says what is happening; the status line stays for screen readers only. */
+#intro.is-loading #sc-status { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: 0; }
 
 /* ---------- settings panel contents ---------- */
 .sc-play .sv-top { border-bottom: 0; padding: 12px 0 0; }

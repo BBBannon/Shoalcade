@@ -112,7 +112,7 @@ class GameActivity : ComponentActivity() {
             if (link == null) { toast("The link was lost before the game started. Try again."); finish(); return }
         }
         // From boot until the state is in, nothing the game does counts as a save (the person chose the snapshot).
-        startFromState = link == null && intent.getBooleanExtra(EXTRA_SNAPSHOT, false) && Storage.stateFile(userId, game).isFile
+        startFromState = link == null && console.hasSnapshots && intent.getBooleanExtra(EXTRA_SNAPSHOT, false) && Storage.stateFile(userId, game).isFile
         if (startFromState) { startPrior = guard.begin(); loadingState = true }
 
         // Keep a copy of the save as it was before this session, so a bad session can be undone.
@@ -129,7 +129,7 @@ class GameActivity : ComponentActivity() {
             saveDisabled = true
             toast(SAVE_NOT_LOADED)
         }
-        if (link == null) loadCheats() // D143: none in a link session
+        if (link == null && console.hasCheats) loadCheats() // D143: none in a link session; none for RPG Maker (D147)
 
         val libDir = applicationInfo.nativeLibraryDir
         val realCore = File(libDir, if (link != null && console == Console.GBA) LinkRules.GPSP_CORE else console.core!!).absolutePath
@@ -160,6 +160,15 @@ class GameActivity : ComponentActivity() {
             }
         }
 
+        if (console == Console.RPGMAKER) {
+            RpgMaker.loadNames(rom.parentFile!!) // the game's own button names (its mkxp.json), for the touch buttons
+            coreVars += RpgMaker.gameVariables(runCatching { File(rom.parentFile!!, Storage.FOLDER_LIST).readText() }.getOrNull())
+            try { RpgMaker.installCompat(this, PspAssets.systemDir(this).apply { mkdirs() }) } catch (e: Exception) {
+                toast("Couldn't set up the RPG Maker engine: ${e.message}"); finish(); return
+            }
+            Os.setenv("SC_REAL_CORE", realCore, true) // mkxp-z always goes through its shim (rpgshim.c)
+        }
+
         // Cartridge clock (Gen 2 Pokémon): load through the clock shim so the clock is saved with the game.
         clockMode = link == null && (console == Console.GB || console == Console.GBC) && GbClock.hasClock(rom)
         if (clockMode) Os.setenv("SC_REAL_CORE", realCore, true)
@@ -168,6 +177,7 @@ class GameActivity : ComponentActivity() {
             coreFilePath = when {
                 link != null -> File(libDir, LinkRules.SHIM).absolutePath
                 clockMode -> File(libDir, GbClock.SHIM).absolutePath
+                console == Console.RPGMAKER -> File(libDir, RPG_SHIM).absolutePath
                 else -> realCore
             }
             gameFilePath = rom.absolutePath
@@ -184,8 +194,12 @@ class GameActivity : ComponentActivity() {
             preferLowLatencyAudio = GameSound.LOW_LATENCY // F4: low latency loses sound after a call
         }
         retroView = GLRetroView(this, data).apply { isFocusable = true; isFocusableInTouchMode = true }
-        applySound() // F5: a game started with App Mute on never makes a sound
         lifecycle.addObserver(retroView)
+        // F5 App Mute: the core only exists once it runs, and a setting made before then is lost, so the sound is set
+        // again on the first frame (below) and each time the game comes back to the front.
+        lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onResume(owner: androidx.lifecycle.LifecycleOwner) { if (ready) applySound() }
+        })
 
         // Orientation (D128/D129): PSP is always landscape; the rest follow the menu's Screen choice (Turn with the phone at first).
         requestedOrientation = screenOrientation(console, display.screen)
@@ -237,7 +251,12 @@ class GameActivity : ComponentActivity() {
             root.addView(status, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END))
             watchLink(status)
         }
+        if (console == Console.RPGMAKER) {
+            // Typing for names and the like (RpgTyping): the keyboard opens when the game asks for text.
+            typing = RpgTyping.Receiver(this, Storage.savedataDir(userId, game)).also { root.addView(it, FrameLayout.LayoutParams(1, 1)); it.start() }
+        }
         setContentView(root)
+        startLoading()
         startWatchers()
         syncCheats() // in the background: the game never waits for the server
     }
@@ -245,7 +264,12 @@ class GameActivity : ComponentActivity() {
     // --- Screen layout (D128) --------------------------------------------------------------------
 
     private lateinit var root: FrameLayout
+    /** RPG Maker only: takes the phone keyboard's typing while the game wants text. */
+    private var typing: RpgTyping.Receiver? = null
     private lateinit var menuHandle: TextView
+    /** The loading screen while the game starts (GameLoading.kt); null once the game shows. */
+    private var loadingView: ComposeView? = null
+    private var loading: LoadingState? = null
     /** The layout now on screen (null until the root has a size). */
     private var layout: GameLayout? = null
     /** DS screen layout (and swap) the core is using, and one waiting for the game to be ready. */
@@ -334,6 +358,50 @@ class GameActivity : ComponentActivity() {
         retroView.updateVariables(*ds.variables(swap).map { (k, v) -> Variable(k, v) }.toTypedArray())
     }
 
+    // --- Loading screen (GameLoading.kt) ----------------------------------------------------------
+
+    /** Shows the loading screen if the game hasn't shown a picture within a second (fast games never flash it). */
+    private fun startLoading() {
+        val state = LoadingState(game.name.ifBlank { "Starting" }).also { loading = it }
+        root.postDelayed({
+            Log.i("Shoalcade", "Loading screen: " + if (loading === state) "shown" else "not needed")
+            if (loading !== state || isFinishing) return@postDelayed
+            val v = ComposeView(this).apply { setContent { GameLoading(state) } }
+            root.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            // Touches pass through it, so the Menu button (and Back) still work while it loads.
+            loadingView = v
+        }, LoadingWords.SHOW_AFTER_MS)
+    }
+
+    /** Looks at a small copy of the screen until the game shows something that isn't black, then drops the loading screen. */
+    private suspend fun watchFirstPicture() {
+        val bmp = Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888)
+        val px = IntArray(64 * 48)
+        val t0 = System.currentTimeMillis()
+        while (loading != null) {
+            val done = CompletableDeferred<Boolean>()
+            val asked = runCatching {
+                PixelCopy.request(retroView, bmp, { r -> done.complete(r == PixelCopy.SUCCESS) }, Handler(Looper.getMainLooper()))
+            }.isSuccess
+            val got = asked && withTimeoutOrNull(2_000) { done.await() } == true
+            if (got) bmp.getPixels(px, 0, 64, 0, 0, 64, 48)
+            // Safety net only: never leave the loading screen over a running game for good.
+            val lit = got && FirstPicture.lit(px)
+            if (lit || System.currentTimeMillis() - t0 > LOADING_SAFETY_MS) {
+                Log.i("Shoalcade", "Game picture showing after ${System.currentTimeMillis() - t0} ms (${if (lit) "picture" else "safety"})")
+                break
+            }
+            delay(250)
+        }
+        endLoading()
+    }
+
+    private fun endLoading() {
+        loading = null
+        loadingView?.let { root.removeView(it) }
+        loadingView = null
+    }
+
     /** Error watch, save-load check and 30 s autosave, shared by both screen layouts. */
     private fun startWatchers() {
         setUpControllers()
@@ -350,6 +418,9 @@ class GameActivity : ComponentActivity() {
         }
         lifecycleScope.launch {
             retroView.getGLRetroEvents().filterIsInstance<GLRetroView.GLRetroEvents.FrameRendered>().first()
+            applySound() // F5: now the core exists, App Mute holds from the very start
+            loading?.stage = LoadingWords.GAME
+            launch { watchFirstPicture() }
             // If we gave the core a real save but it reads back blank, the core rejected it
             // (e.g. wrong size). Switch saving off so the good file on disk is never overwritten.
             val now = splitSave(readSramOnEmuThread()).first
@@ -469,6 +540,7 @@ class GameActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        typing?.stop()
         if (deviceListenerOn) getSystemService(InputManager::class.java)?.unregisterInputDeviceListener(deviceListener)
         if (link != null && owner === this) LinkHolder.end()
         if (owner === this) owner = null
@@ -591,6 +663,7 @@ class GameActivity : ComponentActivity() {
     // Lint flags super.dispatchKeyEvent on ComponentActivity as restricted; overriding it is the documented way to read keys.
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (typing?.key(event) == true) return true // RPG Maker asking for text: a physical keyboard types
         if (!::retroView.isInitialized) return super.dispatchKeyEvent(event)
         val down = event.action == KeyEvent.ACTION_DOWN
         // Menu open: controller (and keyboard) keys move around it. The phone's own Back goes to the Back handler,
@@ -747,12 +820,12 @@ class GameActivity : ComponentActivity() {
             console = console,
             // States would break a link session (the other phone wouldn't jump back with us).
             // Snapshots on/off per console comes from the server settings, shared with the browser (D38).
-            states = link == null && SnapshotSetting.enabled(this, console),
+            states = link == null && console.hasSnapshots && SnapshotSetting.enabled(this, console),
             hasState = Storage.stateFile(userId, game).isFile,
             touch = autoHide.mode, screen = display.screen,
             ds = display.ds(land), dsSwap = display.swap(land), muted = muted,
             canUpload = !intent.getBooleanExtra(EXTRA_OFF_LIST, false),
-            cheatsAllowed = link == null,
+            cheatsAllowed = link == null && console.hasCheats,
             cheats = cheatBook.cheats.map { MenuCheat(it.id, it.name, cheatBook.isOn(it.id)) },
         )
     }
@@ -1290,6 +1363,10 @@ class GameActivity : ComponentActivity() {
     private fun toast(msg: String) = Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show()
 
     companion object {
+        /** Loaded in place of mkxp-z for RPG Maker games (cpp/rpgshim.c). */
+        const val RPG_SHIM = "librpgshim.so"
+        /** The loading screen goes after this even if the game still shows only black (safety net, not the signal). */
+        const val LOADING_SAFETY_MS = 180_000L
         private const val EXTRA_ID = "id"
         private const val EXTRA_NAME = "name"
         private const val EXTRA_CONSOLE = "console"

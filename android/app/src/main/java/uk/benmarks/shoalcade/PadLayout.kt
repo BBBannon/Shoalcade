@@ -81,13 +81,26 @@ object PadLayout {
             b += PadButton("R", KeyEvent.KEYCODE_BUTTON_R1, W * 0.87f, H * 0.11f, unit, wide = true)
         }
         b += faceButtons(console, W * 0.77f, H * 0.52f, unit)
-        b += PadButton("SELECT", KeyEvent.KEYCODE_BUTTON_SELECT, W * 0.38f, H * 0.9f, unit * 0.6f, wide = true)
-        b += PadButton("START", KeyEvent.KEYCODE_BUTTON_START, W * 0.62f, H * 0.9f, unit * 0.6f, wide = true)
+        b += bottomButtons(console, W * 0.38f, W * 0.62f, H * 0.9f, unit * 0.6f)
         val m = unit * 0.55f
         return PadSpec(b, dpadCx = W * 0.25f, dpadCy = H * 0.52f, dpadR = min(W * 0.2f, H * 0.3f), textSize = unit * 0.7f,
             menu = Area(W / 2 - m * 1.6f, H * 0.11f - m, W / 2 + m * 1.6f, H * 0.11f + m),
             hint = HintSpot(W / 2, H / 2, W), background = true) // full width: one line wherever dev 2 fitted it
     }
+
+    /** The two small buttons at the bottom: Select and Start, or RPG Maker's Y and Z (no Start/Select there). */
+    private fun bottomButtons(console: Console, leftX: Float, rightX: Float, y: Float, r: Float): List<PadButton> =
+        if (console == Console.RPGMAKER) listOf(
+            PadButton(name(console, KeyEvent.KEYCODE_BUTTON_THUMBL, "Y"), KeyEvent.KEYCODE_BUTTON_THUMBL, leftX, y, r, wide = true),
+            PadButton(name(console, KeyEvent.KEYCODE_BUTTON_THUMBR, "Z"), KeyEvent.KEYCODE_BUTTON_THUMBR, rightX, y, r, wide = true),
+        ) else listOf(
+            PadButton("SELECT", KeyEvent.KEYCODE_BUTTON_SELECT, leftX, y, r, wide = true),
+            PadButton("START", KeyEvent.KEYCODE_BUTTON_START, rightX, y, r, wide = true),
+        )
+
+    /** A button's name: an RPG Maker game's own (or OK / Back / ...), else [plain]. */
+    private fun name(console: Console, keyCode: Int, plain: String) =
+        if (console == Console.RPGMAKER) RpgMaker.label(keyCode) ?: plain else plain
 
     /** Hint text size, sp. */
     const val HINT_SP = 14f
@@ -190,8 +203,7 @@ object PadLayout {
                 b += PadButton("R", KeyEvent.KEYCODE_BUTTON_R1, rc, H * 0.22f, unit * 0.8f, wide = true)
             }
             b += faceButtons(console, rc, H * 0.56f, unit)
-            b += PadButton("SELECT", KeyEvent.KEYCODE_BUTTON_SELECT, lc, H * 0.88f, unit * 0.6f, wide = true)
-            b += PadButton("START", KeyEvent.KEYCODE_BUTTON_START, rc, H * 0.88f, unit * 0.6f, wide = true)
+            b += bottomButtons(console, lc, rc, H * 0.88f, unit * 0.6f)
         }
         val full = Area(12f * density, 10f * density, (12f + 96f) * density, (10f + 40f) * density)
         val menu = if (!full.intersects(game)) full else compactMenu(game, density)
@@ -226,14 +238,14 @@ object PadLayout {
      * (by position, as PSP: △ = X, ○ = A, ✕ = B, □ = Y). Same shapes in every layout.
      */
     private fun faceButtons(console: Console, fx: Float, fy: Float, unit: Float): List<PadButton> =
-        if (console == Console.NDS || console == Console.PSX) {
+        if (console == Console.NDS || console == Console.PSX || console == Console.RPGMAKER) {
             val d = unit * 1.45f
             val ps = console == Console.PSX
             listOf(
-                PadButton(if (ps) "△" else "X", KeyEvent.KEYCODE_BUTTON_X, fx, fy - d, unit),
-                PadButton(if (ps) "○" else "A", KeyEvent.KEYCODE_BUTTON_A, fx + d, fy, unit),
-                PadButton(if (ps) "✕" else "B", KeyEvent.KEYCODE_BUTTON_B, fx, fy + d, unit),
-                PadButton(if (ps) "□" else "Y", KeyEvent.KEYCODE_BUTTON_Y, fx - d, fy, unit),
+                PadButton(if (ps) "△" else name(console, KeyEvent.KEYCODE_BUTTON_X, "X"), KeyEvent.KEYCODE_BUTTON_X, fx, fy - d, unit),
+                PadButton(if (ps) "○" else name(console, KeyEvent.KEYCODE_BUTTON_A, "A"), KeyEvent.KEYCODE_BUTTON_A, fx + d, fy, unit),
+                PadButton(if (ps) "✕" else name(console, KeyEvent.KEYCODE_BUTTON_B, "B"), KeyEvent.KEYCODE_BUTTON_B, fx, fy + d, unit),
+                PadButton(if (ps) "□" else name(console, KeyEvent.KEYCODE_BUTTON_Y, "Y"), KeyEvent.KEYCODE_BUTTON_Y, fx - d, fy, unit),
             )
         } else listOf(
             PadButton("A", KeyEvent.KEYCODE_BUTTON_A, fx + unit * 0.9f, fy - unit * 0.6f, unit * 1.1f),

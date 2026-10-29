@@ -40,8 +40,18 @@ object Storage {
     /** The playable ROM file if this game is downloaded, else null. */
     fun romFile(game: Game): File? {
         val exts = game.console?.romExtensions ?: return null
+        // RPG Maker: the game is the whole folder; the core is pointed at its Game.ini (never another .ini in it).
+        if (game.console.isFolderGame) return File(gameDir(game), "Game.ini").takeIf { it.isFile && folderListFile(game).isFile }
         return gameDir(game).listFiles()?.firstOrNull { it.isFile && it.extension.lowercase() in exts }
     }
+
+    /**
+     * Folder games (RPG Maker): the server's file list is written here only once every file has arrived, so a
+     * half-finished download never counts as downloaded. It also says which files the next update can skip.
+     */
+    const val FOLDER_LIST = ".shoalcade-files.json"
+
+    fun folderListFile(game: Game) = File(gameDir(game), FOLDER_LIST)
 
     fun isDownloaded(game: Game) = romFile(game) != null
 
@@ -92,8 +102,23 @@ object Storage {
     /** PSP: the folder the emulator uses as this game's memory stick. */
     fun memstickDir(userId: String, game: Game) = File(root, "memstick/$userId/${game.id}")
 
-    /** Only the game saves on the memory stick; the emulator keeps its own housekeeping files elsewhere on it. */
-    private fun savedataDir(userId: String, game: Game) = File(memstickDir(userId, game), "PSP/SAVEDATA")
+    /**
+     * The part of the per-game folder that is the save. PSP: the game saves on the memory stick (the emulator keeps its
+     * own housekeeping files elsewhere on it). RPG Maker: everything the game writes (mkxp-z keeps it under
+     * mkxp-z/Saves/<game title>/, so the zip's entries look like "Pokemon Reborn-/Game.rxdata", the same as the browser).
+     */
+    fun savedataDir(userId: String, game: Game) =
+        File(memstickDir(userId, game), if (game.console == Console.RPGMAKER) RPG_SAVES else PSP_SAVES)
+    private const val PSP_SAVES = "PSP/SAVEDATA"
+    private const val RPG_SAVES = "mkxp-z/Saves"
+
+    /** Files in a save folder that aren't the save: hidden ones (.nomedia) and RPG Maker games' own logs. */
+    internal fun notSave(f: File) = f.name.startsWith(".") || f.name.endsWith(".log", true) || f.name.equals("errorlog.txt", true)
+
+    /** The files under [dir] that are the save: not [notSave] ones, and nothing inside a hidden folder (an RPG Maker
+     *  game's scratch folder, .shoalcade-temp), as the browser does. */
+    internal fun savedFiles(dir: File): Sequence<File> =
+        dir.walkTopDown().onEnter { it == dir || !it.name.startsWith(".") }.filter { it.isFile && !notSave(it) }
 
     /** The save as bytes: the save file, or for folder-save consoles a zip of the memory stick. */
     fun readSave(userId: String, game: Game): ByteArray? =
@@ -103,20 +128,24 @@ object Storage {
     /** When the save last changed on the phone (newest file for folder saves). */
     fun saveTime(userId: String, game: Game): Long? =
         if (game.console?.hasFolderSaves == true)
-            savedataDir(userId, game).walkTopDown().filter { it.isFile && !it.name.startsWith(".") }.maxOfOrNull { it.lastModified() }
+            savedFiles(savedataDir(userId, game)).maxOfOrNull { it.lastModified() }
         else saveFile(userId, game).takeIf { it.isFile }?.lastModified()
 
     /** Ids of every game with a save on this phone (save files and PSP memory sticks), whether or not it's still listed. */
     fun savedGameIds(userId: String): Set<String> {
         val files = saveDir(userId).listFiles { f -> f.isFile && f.name.endsWith(".sav") }?.map { it.name.removeSuffix(".sav") } ?: emptyList()
         val sticks = File(root, "memstick/$userId").listFiles { f -> f.isDirectory }
-            ?.filter { File(it, "PSP/SAVEDATA").walkTopDown().any { f -> f.isFile && !f.name.startsWith(".") } }?.map { it.name } ?: emptyList()
+            ?.filter { hasSaveIn(it) }?.map { it.name } ?: emptyList()
         return (files + sticks).toSet()
     }
 
     /** True if this game's phone save is a PSP memory stick (a folder), not a save file. Reads only. */
-    fun hasSaveFolder(userId: String, gameId: String) =
-        File(root, "memstick/$userId/$gameId/PSP/SAVEDATA").walkTopDown().any { it.isFile && !it.name.startsWith(".") }
+    fun hasSaveFolder(userId: String, gameId: String) = hasSaveIn(File(root, "memstick/$userId/$gameId"))
+
+    /** A PSP or RPG Maker save on this memory stick. */
+    private fun hasSaveIn(stick: File) = listOf(PSP_SAVES, RPG_SAVES).any { sub ->
+        savedFiles(File(stick, sub)).any()
+    }
 
     /** A ROM still on the phone for [gameId] (any console), e.g. for a game Jellyfin no longer lists. Reads only. */
     fun findRom(gameId: String): Pair<Console, File>? = Console.entries.firstNotNullOfOrNull { c ->
@@ -218,9 +247,9 @@ object Storage {
     /** Fixed entry time, so the same files always give the same zip (lets "unchanged" checks work). */
     private const val ZIP_TIME = 315_532_800_000L // 01/01/1980, the earliest zip time
 
-    /** Zips every file under [dir] in name order, skipping hidden ones (.nomedia). Null if nothing is saved yet. */
+    /** Zips every file under [dir] in name order, skipping hidden ones (.nomedia) and game logs ([notSave]). Null if nothing is saved yet. */
     fun zipFolder(dir: File): ByteArray? {
-        val files = dir.walkTopDown().filter { it.isFile && !it.name.startsWith(".") }.map { it.relativeTo(dir).invariantSeparatorsPath to it }
+        val files = savedFiles(dir).map { it.relativeTo(dir).invariantSeparatorsPath to it }
             .sortedBy { it.first }.toList()
         if (files.isEmpty()) return null
         val out = java.io.ByteArrayOutputStream()

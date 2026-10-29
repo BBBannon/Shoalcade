@@ -1,0 +1,115 @@
+name: RPG Maker game report
+description: Tell us how an RPG Maker XP, VX or VX Ace game runs in Shoalcade (works, partly works, or doesn't start).
+title: "[RPG Maker] <game name>: "
+labels: ["rpg maker", "compatibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing an RPG Maker game. Every report helps other people know what plays.
+
+        **Please don't attach or link game files, saves, or download sites.** Remove your server address and any tokens from logs.
+        Shoalcade only plays games you already own, from your own Jellyfin server.
+
+  - type: input
+    id: game
+    attributes:
+      label: Game name and version
+      description: As shown on the game's title screen or in its Readme.
+      placeholder: "e.g. Pokémon Reborn E19.5"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: RPG Maker version
+      description: Shoalcade shows it on the game's page. Not sure? Pick "Don't know".
+      options:
+        - XP
+        - VX
+        - VX Ace
+        - Don't know
+    validations:
+      required: true
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: How well does it run?
+      options:
+        - Plays fully (start to save and load)
+        - Plays, with problems (please describe below)
+        - Starts, but stops or freezes
+        - Doesn't start
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: where
+    attributes:
+      label: Where did you play it?
+      options:
+        - label: Phone app
+        - label: Browser player
+
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: What did you try?
+      description: Tick everything that worked.
+      options:
+        - label: Title screen appears
+        - label: New game and typing a name
+        - label: Walking around and menus
+        - label: Saving in the game
+        - label: Loading that save after closing the game
+        - label: The same save on the other device (phone ↔ browser)
+        - label: Sound and music
+
+  - type: dropdown
+    id: badge
+    attributes:
+      label: Did Shoalcade show "May not work" for this game?
+      options:
+        - "No"
+        - "Yes"
+        - Don't know
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what you saw instead. Screenshots are welcome (no personal details).
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message
+      description: |
+        If the game showed an error box, copy its text here. The game's own error log (errorlog.txt) is in its save folder; paste the last part.
+      render: text
+
+  - type: input
+    id: versions
+    attributes:
+      label: Shoalcade versions
+      description: App (Settings → About) and plugin (Jellyfin Dashboard → Plugins).
+      placeholder: "e.g. app 0.9.0, plugin 0.6.0.0"
+
+  - type: input
+    id: device
+    attributes:
+      label: Phone or browser
+      description: Phone model and Android version, or browser and computer.
+      placeholder: "e.g. Pixel 8, Android 15 / Chrome on Windows"
+
+  - type: checkboxes
+    id: own
+    attributes:
+      label: Confirmation
+      options:
+        - label: I own this game, and this report contains no game files or download links.
+          required: true

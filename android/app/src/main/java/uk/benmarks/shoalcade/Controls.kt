@@ -41,6 +41,12 @@ enum class GameButton(val label: String, val keyCode: Int, val dx: Int = 0, val 
     C_DOWN("C▼", -102, cy = 1),
     C_LEFT("C◀", -103, cx = -1),
     C_RIGHT("C▶", -104, cx = 1),
+    /**
+     * RPG Maker only (D147), after the others so stored maps read as before. mkxp-z's default libretro map: RPG Maker's
+     * Y = RetroPad L3, Z = R3 (and C = RetroPad A, B = B, A = X, X = Y, as the A/B/X/Y entries above send).
+     */
+    RPG_Y("Y", KeyEvent.KEYCODE_BUTTON_THUMBL),
+    RPG_Z("Z", KeyEvent.KEYCODE_BUTTON_THUMBR),
     ;
 
     val isDirection get() = dx != 0 || dy != 0
@@ -50,13 +56,18 @@ enum class GameButton(val label: String, val keyCode: Int, val dx: Int = 0, val 
 
     /**
      * Name on screen for this console: PSP and PS1 face buttons by their symbols, as on the touch buttons
-     * (by position on the libretro pad: △ = X, ○ = A, ✕ = B, □ = Y). PS1 shoulders are L1/R1/L2/R2.
+     * (by position on the libretro pad: △ = X, ○ = A, ✕ = B, □ = Y). PS1 shoulders are L1/R1/L2/R2. RPG Maker: the
+     * game's own names, as on the touch buttons.
      */
-    fun labelFor(console: Console): String = if (console != Console.PSP && console != Console.PSX) label else when (this) {
-        X -> "△"; A -> "○"; B -> "✕"; Y -> "□"
-        L -> if (console == Console.PSX) "L1" else label
-        R -> if (console == Console.PSX) "R1" else label
-        else -> label
+    fun labelFor(console: Console): String {
+        if (console == Console.RPGMAKER) return RpgMaker.label(keyCode) ?: label
+        if (console != Console.PSP && console != Console.PSX) return label
+        return when (this) {
+            X -> "△"; A -> "○"; B -> "✕"; Y -> "□"
+            L -> if (console == Console.PSX) "L1" else label
+            R -> if (console == Console.PSX) "R1" else label
+            else -> label
+        }
     }
 
     companion object {
@@ -71,6 +82,7 @@ enum class GameButton(val label: String, val keyCode: Int, val dx: Int = 0, val 
             Console.GBA -> listOf(A, B, L, R, START, SELECT)
             Console.PSX -> listOf(X, A, B, Y, L, R, L2, R2, START, SELECT) // △ ○ ✕ □ L1 R1 L2 R2
             Console.N64 -> listOf(N64_A, N64_B, Z, L, R, START, C_UP, C_DOWN, C_LEFT, C_RIGHT) // no Select on an N64
+            Console.RPGMAKER -> listOf(A, B, X, Y, RPG_Y, RPG_Z, L, R) // OK, Back, A, X, Y, Z, L, R; no Start/Select
             else -> listOf(A, B, X, Y, L, R, START, SELECT) // DS, PSP (3DS isn't playable in the app)
         }
     }

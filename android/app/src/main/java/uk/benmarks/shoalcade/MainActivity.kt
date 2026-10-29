@@ -35,6 +35,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -160,7 +161,7 @@ private fun SettingsCog(connected: Boolean, onClick: () -> Unit) {
 private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val snackbar = remember { SnackbarHostState() }
-    var filter by remember { mutableStateOf<Console?>(null) }
+    var filter by remember { mutableStateOf<ConsoleFilter>(ConsoleFilter.All) }
     var lastPlay by remember { mutableStateOf(0L) } // ignore double-taps on Play
     var getSaveGame by remember { mutableStateOf<Game?>(null) }
     var savesPanelGame by remember { mutableStateOf<Game?>(null) }
@@ -185,12 +186,33 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
     // Android 13+: ask once so the download progress notification can show. Downloads work either way.
     val notifPermission = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
-    fun download(g: Game) {
+    // D147: a folder game (RPG Maker) says how big it is first; Wi-Fi only (Settings) stops downloads on mobile data.
+    var sizeAsk by remember { mutableStateOf<Pair<Game, FolderList>?>(null) }
+    val scope = rememberCoroutineScope()
+    fun download(g: Game, asked: Boolean = false) {
+        DownloadPrefs.blocked(DownloadPrefs.wifiOnly(ctx), DownloadPrefs.onWifi(ctx))?.let { vm.message = it; return }
+        if (g.isFolderGame && !asked) {
+            scope.launch {
+                try { sizeAsk = g to vm.folderList(g) } catch (e: Exception) { vm.message = "Couldn't get ${g.name}'s file list: ${e.message}" }
+            }
+            return
+        }
         if (android.os.Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
             != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
         vm.download(g)
+    }
+
+    sizeAsk?.let { (g, list) ->
+        val have = remember(g.id) { list.total - FolderDownload.stillToFetch(Storage.downloadFolder(g), list) }
+        AlertDialog(
+            onDismissRequest = { sizeAsk = null },
+            title = { Text("Download ${g.name}?") },
+            text = { Text(DownloadPrefs.folderQuestion(g.name, list, have, DownloadPrefs.onWifi(ctx))) },
+            confirmButton = { TextButton(onClick = { sizeAsk = null; download(g, asked = true) }) { Text("Download") } },
+            dismissButton = { TextButton(onClick = { sizeAsk = null }) { Text("Cancel") } },
+        )
     }
 
     Scaffold(
@@ -227,9 +249,17 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 12.dp)) {
-                    FilterChip(filter == null, { filter = null }, { Text("All") }, Modifier.padding(end = 6.dp))
-                    Console.entries.filter { c -> vm.games.any { it.console == c } }.forEach { c ->
-                        FilterChip(filter == c, { filter = c }, { Text(c.shortName) }, Modifier.padding(end = 6.dp))
+                    FilterChip(filter == ConsoleFilter.All, { filter = ConsoleFilter.All }, { Text("All") }, Modifier.padding(end = 6.dp))
+                    // Nintendo ▾ / Sony ▾ menus and plain chips (RPG Maker), only consoles that have games.
+                    val bar = remember(vm.games) { ConsoleBar.items(vm.games.mapNotNull { it.console }.toSet()) }
+                    bar.forEach { item ->
+                        when (item) {
+                            is ConsoleBar.Item.Chip -> {
+                                val f = ConsoleFilter.One(item.console)
+                                FilterChip(filter == f, { filter = f }, { Text(item.console.shortName) }, Modifier.padding(end = 6.dp))
+                            }
+                            is ConsoleBar.Item.Menu -> MakerChip(item, filter, vm.games) { filter = it }
+                        }
                     }
                 }
                 SortButton(vm.sort) { vm.chooseSort(it) }
@@ -237,7 +267,7 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
 
             // diskVersion: bumped on return from a game, so a game just played moves up under "Last played".
             val shown = remember(vm.games, filter, vm.sort, vm.diskVersion) {
-                vm.sorted(vm.games.filter { filter == null || it.console == filter })
+                vm.sorted(vm.games.filter { filter.matches(it.console) })
             }
             if (shown.isEmpty() && !vm.loading) {
                 Text(
@@ -276,6 +306,33 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
             launchGame = null
             ctx.startActivity(GameActivity.intent(ctx, game, vm.session!!.userId, snapshot = snapshot))
         }, onDismiss = { launchGame = null })
+    }
+}
+
+/** "Nintendo ▾" (or "Nintendo: GBA ▾" while one of its consoles is picked): a menu of All Nintendo and each console, with counts. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MakerChip(menu: ConsoleBar.Item.Menu, filter: ConsoleFilter, games: List<Game>, onPick: (ConsoleFilter) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box(Modifier.padding(end = 6.dp)) {
+        FilterChip(
+            ConsoleBar.isOn(menu, filter), { open = true }, { Text(ConsoleBar.label(menu, filter) + " ▾", maxLines = 1) },
+            Modifier.semantics { contentDescription = ConsoleBar.description(menu, filter) },
+        )
+        DropdownMenu(open, { open = false }) {
+            val choices = listOf(ConsoleFilter.Group(menu.maker) to "All ${menu.maker.label}") +
+                menu.consoles.map { ConsoleFilter.One(it) to it.shortName }
+            choices.forEach { (f, name) ->
+                val n = games.count { f.matches(it.console) }
+                DropdownMenuItem(
+                    text = { Text(name) },
+                    onClick = { open = false; onPick(f) },
+                    leadingIcon = { if (f == filter) Icon(Icons.Default.Check, null) else Spacer(Modifier.size(24.dp)) },
+                    trailingIcon = { Text("$n", style = MaterialTheme.typography.bodySmall) },
+                    modifier = Modifier.semantics { selected = f == filter; contentDescription = "$name, $n ${if (n == 1) "game" else "games"}" },
+                )
+            }
+        }
     }
 }
 
@@ -319,11 +376,13 @@ private fun GameRow(
             Column {
                 Text(
                     listOfNotNull(
-                        g.console?.shortName ?: "Unknown console",
+                        (g.console?.shortName ?: "Unknown console") + (g.engine?.let { " $it" } ?: ""),
+                        g.size?.takeIf { !downloaded && g.isFolderGame }?.let { FolderDownload.sizeText(it) },
                         if (downloaded) "On phone" else null,
                         if (g.console == Console.N3DS) "3DS support coming later" else null,
                     ).joinToString(" · ")
                 )
+                if (g.mayNotWork) Text("⚠️ May not work", color = MaterialTheme.colorScheme.error)
                 if (conflict) {
                     TextButton(onClick = { vm.askConflict(g) }, contentPadding = PaddingValues(0.dp)) {
                         Text("⚠️ Phone and Jellyfin saves differ: choose", color = MaterialTheme.colorScheme.error)
@@ -355,6 +414,11 @@ private fun GameRow(
                             }
                             DropdownMenuItem({ Text("Upload save to Jellyfin") }, { menu = false; onUpload() })
                             DropdownMenuItem({ Text("Get save from Jellyfin") }, { menu = false; onGetSave() })
+                            // D147: a folder game updates file by file, so only new or changed files download.
+                            if (g.isFolderGame) {
+                                DropdownMenuItem({ Text("Update from Jellyfin") }, { menu = false; onDownload() },
+                                    enabled = prog == null && !vm.offline && vm.serverProblem == null && g.canDownload)
+                            }
                             DropdownMenuItem({ Text("Remove from phone (keeps save)") }, { menu = false; vm.deleteDownload(g) })
                         }
                     }

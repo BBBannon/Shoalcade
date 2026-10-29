@@ -79,6 +79,20 @@ public sealed class RomInfoProvider : ILocalMetadataProvider<Book>
             ReadNfo(nfo, item);
         }
 
+        // RPG Maker (D147): the name is Game.ini's title (unless an .nfo names it); there is no game database to look a
+        // folder up in and no MD5 to show, so no box art either (people upload their own cover).
+        if (rom.Console.FolderGame)
+        {
+            if (string.IsNullOrWhiteSpace(item.Name))
+            {
+                item.Name = rom.Name;
+            }
+
+            result.Item = item;
+            result.HasMetadata = true;
+            return result;
+        }
+
         var md5 = await _md5.GetAsync(rom.HashPath, cancellationToken).ConfigureAwait(false);
         if (md5 is not null)
         {
@@ -216,7 +230,7 @@ public sealed class Md5ExternalId : IExternalId
 
     /// <inheritdoc />
     public bool Supports(IHasProviderIds item) =>
-        !_guard.StandDown && item is Book b && Library.RomLibrary.ToRom(b) is not null;
+        !_guard.StandDown && item is Book b && Library.RomLibrary.ToRom(b) is { Console.FolderGame: false }; // no MD5 for RPG Maker folders
 }
 
 /// <summary>Saves the MD5 cache after every library scan.</summary>
