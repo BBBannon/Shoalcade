@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Jellyfin.Plugin.Shoalcade.Saves;
 
 namespace Jellyfin.Plugin.Shoalcade.Consoles;
 
@@ -32,6 +33,10 @@ public sealed class GameConsole
     /// <summary>A PS1 memory card image: 16 blocks of 8 KB (PCSX ReARMed's <c>MCD_SIZE</c>).</summary>
     private const long PsxCardSize = 128 * 1024;
 
+    /// <summary>A Nintendo 64 save: Mupen64Plus-Next's whole save RAM (EEPROM 2 KB + four Controller Paks of 32 KB + SRAM
+    /// 32 KB + FlashRAM 128 KB, <c>sizeof(saved_memory)</c>), the same block in the app and the browser (D146).</summary>
+    private const long N64SaveSize = N64Save.Size;
+
     private static readonly GameConsole[] AllConsoles =
     [
         new("gb", "Game Boy", ["Game Boy"], [".gb"], "mgba", BrowserSaveMode.Shared, "sav", 256 * 1024 + 64,
@@ -40,6 +45,11 @@ public sealed class GameConsole
             [512, 2048, 8192, 32768, 65536, 131072], GbFooters),
         new("gba", "Game Boy Advance", ["Game Boy Advance"], [".gba"], "mgba", BrowserSaveMode.Shared, "sav", 256 * 1024 + 64,
             [512, 8192, 32768, 65536, 131072], [0, 16]),
+
+        // Nintendo 64 (D146): the core's whole save RAM, one exact size. JellyEMU's tag is "N64". Cartridges, so a
+        // .zip/.7z holding one is a game too (like GBA). Listed in the platform order GB, GBC, GBA, N64, DS.
+        new("n64", "Nintendo 64", ["N64"], [".z64", ".n64", ".v64"], "mupen64plus_next", BrowserSaveMode.Shared, "sav", N64SaveSize,
+            [N64SaveSize], [0], exactSizes: true, filesOnly: true),
         new("nds", "Nintendo DS", ["Nintendo DS"], [".nds"], "melonds", BrowserSaveMode.Shared, "sav", 16 * 1024 * 1024,
             NdsSaveSizes, [0], exactSizes: true),
         new("3ds", "Nintendo 3DS", ["Nintendo 3DS"], [".3ds", ".cci", ".cia"], null, BrowserSaveMode.None, "sav", 64L * 1024 * 1024,
@@ -68,7 +78,8 @@ public sealed class GameConsole
         long[] typicalSaveSizes,
         long[] footerSizes,
         bool exactSizes = false,
-        bool singleFileOnly = false)
+        bool singleFileOnly = false,
+        bool filesOnly = false)
     {
         Key = key;
         DisplayName = displayName;
@@ -82,12 +93,13 @@ public sealed class GameConsole
         FooterSizes = footerSizes;
         ExactSaveSizes = exactSizes;
         SingleFileOnly = singleFileOnly;
+        FilesOnly = filesOnly || singleFileOnly;
     }
 
     /// <summary>Gets every known console.</summary>
     public static IReadOnlyList<GameConsole> All => AllConsoles;
 
-    /// <summary>Gets the short key used in URLs and folders (gb, gbc, gba, nds, 3ds, psp, psx).</summary>
+    /// <summary>Gets the short key used in URLs and folders (gb, gbc, gba, n64, nds, 3ds, psp, psx).</summary>
     public string Key { get; }
 
     /// <summary>Gets the name shown to people.</summary>
@@ -127,6 +139,14 @@ public sealed class GameConsole
     public bool SingleFileOnly { get; }
 
     /// <summary>
+    /// Gets a value indicating whether a game of this console is always one file: one of <see cref="Extensions"/>, or a
+    /// .zip/.7z unless <see cref="SingleFileOnly"/>; never a .cue/.bin, discs folder or .j3u list. PS1 (D137) and N64
+    /// (D146, new, so no item ids to keep): an item another scanner (JellyEMU) made for some other file in such a
+    /// console's folder (a .gb or a PS1 disc in an "n64" folder) is never served.
+    /// </summary>
+    public bool FilesOnly { get; }
+
+    /// <summary>
     /// Gets the save format family. Saves can only move between games of the same family: Game Boy and Game Boy Color
     /// share one (same core, same .sav layout); every other console is its own.
     /// </summary>
@@ -161,14 +181,24 @@ public sealed class GameConsole
     }
 
     /// <summary>
-    /// True if a library item at <paramref name="path"/> can be a game of this console. Only single-file consoles (PS1)
-    /// are strict: their file must have one of the console's extensions, so an item another scanner (JellyEMU) made for
-    /// a PS1 .iso, .bin or folder is never served. Other consoles keep every item they had (D89).
+    /// True if a library item at <paramref name="path"/> can be a game of this console. Only <see cref="FilesOnly"/>
+    /// consoles (PS1, N64) are strict: their file must have one of the console's extensions (or, N64, be a .zip/.7z),
+    /// so an item another scanner (JellyEMU) made for a PS1 .iso, .bin or folder, or for a stray file in an N64 folder,
+    /// is never served. Other consoles keep every item they had (D89).
     /// </summary>
     /// <param name="path">Item path.</param>
     /// <returns>Whether the item can be this console's game.</returns>
-    public bool AcceptsItemPath(string? path) =>
-        !SingleFileOnly || (!string.IsNullOrEmpty(path) && Extensions.Contains(Path.GetExtension(path).ToLowerInvariant(), StringComparer.Ordinal));
+    public bool AcceptsItemPath(string? path)
+    {
+        if (!FilesOnly)
+        {
+            return true;
+        }
+
+        var ext = string.IsNullOrEmpty(path) ? string.Empty : Path.GetExtension(path).ToLowerInvariant();
+        return ext.Length > 0
+            && (Extensions.Contains(ext, StringComparer.Ordinal) || (!SingleFileOnly && ext is ".zip" or ".7z"));
+    }
 
     /// <summary>True if a save of this console can be moved to a game of <paramref name="other"/>.</summary>
     /// <param name="other">Console of the target game.</param>

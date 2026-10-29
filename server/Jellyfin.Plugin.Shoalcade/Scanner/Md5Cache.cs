@@ -157,15 +157,48 @@ public sealed class Md5Cache : IDisposable
                     var inner = rom.Open();
                     await using (inner.ConfigureAwait(false))
                     {
-                        return Convert.ToHexStringLower(await MD5.HashDataAsync(inner, cancellationToken).ConfigureAwait(false));
+                        return N64ByteOrder.IsN64Name(rom.Name)
+                            ? await HashAsZ64Async(inner, cancellationToken).ConfigureAwait(false)
+                            : Convert.ToHexStringLower(await MD5.HashDataAsync(inner, cancellationToken).ConfigureAwait(false));
                     }
                 }
 
                 fs.Position = 0;
             }
 
-            return Convert.ToHexStringLower(await MD5.HashDataAsync(fs, cancellationToken).ConfigureAwait(false));
+            return N64ByteOrder.IsN64Name(path)
+                ? await HashAsZ64Async(fs, cancellationToken).ConfigureAwait(false)
+                : Convert.ToHexStringLower(await MD5.HashDataAsync(fs, cancellationToken).ConfigureAwait(false));
         }
+    }
+
+    /// <summary>
+    /// MD5 of an N64 ROM in big-endian (.z64) order, whatever order the file is in (D146): No-Intro and libretro list
+    /// .z64 hashes, so a .v64 or .n64 dump gets the same name and box art. The order comes from the first 4 bytes.
+    /// </summary>
+    /// <param name="stream">ROM bytes from the start.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Lower-case hex MD5.</returns>
+    internal static async Task<string> HashAsZ64Async(Stream stream, CancellationToken cancellationToken)
+    {
+        using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
+        var buffer = new byte[1024 * 1024]; // a multiple of 4, so every piece starts on a word
+        var order = N64Order.Unknown;
+        var first = true;
+        int n;
+        while ((n = await stream.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (first)
+            {
+                order = N64ByteOrder.Detect(buffer.AsSpan(0, n));
+                first = false;
+            }
+
+            N64ByteOrder.ToZ64(buffer.AsSpan(0, n), order);
+            md5.AppendData(buffer, 0, n);
+        }
+
+        return Convert.ToHexStringLower(md5.GetHashAndReset());
     }
 #pragma warning restore CA5351
 

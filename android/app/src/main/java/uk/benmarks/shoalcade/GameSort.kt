@@ -20,8 +20,8 @@ enum class GameSort(val key: String, val label: String) {
 
         fun fromKey(key: String?): GameSort = entries.firstOrNull { it.key == key } ?: DEFAULT
 
-        /** Platform order: the Game Boy family oldest first, then DS, 3DS, PS1, PSP. */
-        val PLATFORM_ORDER = listOf(Console.GB, Console.GBC, Console.GBA, Console.NDS, Console.N3DS, Console.PSX, Console.PSP)
+        /** Platform order: the Game Boy family oldest first, then N64, DS, 3DS, PS1, PSP. */
+        val PLATFORM_ORDER = listOf(Console.GB, Console.GBC, Console.GBA, Console.N64, Console.NDS, Console.N3DS, Console.PSX, Console.PSP)
 
         private val collator: Collator = Collator.getInstance(Locale.UK).apply { strength = Collator.PRIMARY }
         private val byName = Comparator<Game> { a, b -> collator.compare(a.name, b.name) }.thenBy { it.id }

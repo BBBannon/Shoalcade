@@ -57,6 +57,12 @@ internal static class SaveRules
             return "That memory card is empty (nothing is saved on it), so the game has probably never saved.";
         }
 
+        if (!allowBlank && console.Key == "n64" && N64Save.IsUntouched(data))
+        {
+            errorCode = "blank";
+            return "That save is untouched (it is just what the emulator makes before a game saves), so the game has probably never saved.";
+        }
+
         if (console.ExactSaveSizes && !console.IsTypicalSize(data.Length))
         {
             errorCode = "size";

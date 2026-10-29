@@ -35,13 +35,21 @@
     big: ["Hybrid Top", "Hybrid Bottom"],
   };
 
-  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", nds: "DS", psx: "PS1" };
-  const BUTTON_LABEL = { Up: "Up", Down: "Down", Left: "Left", Right: "Right", A: "A", B: "B", X: "X", Y: "Y", L: "L", R: "R", L2: "L2", R2: "R2", Start: "Start", Select: "Select" };
+  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", psx: "PS1" };
+  const BUTTON_LABEL = { Up: "Up", Down: "Down", Left: "Left", Right: "Right", A: "A", B: "B", X: "X", Y: "Y", L: "L", R: "R", L2: "L2", R2: "R2", Z: "Z", Start: "Start", Select: "Select" };
+  /** N64 names (D146): the stick and C buttons in words; the D-pad is "D-pad up" so it can't be taken for the stick. */
+  const N64_LABEL = {
+    StickUp: "Stick up", StickDown: "Stick down", StickLeft: "Stick left", StickRight: "Stick right",
+    Up: "D-pad up", Down: "D-pad down", Left: "D-pad left", Right: "D-pad right",
+    CUp: "C up", CDown: "C down", CLeft: "C left", CRight: "C right",
+  };
+  /** N64 touch buttons are small: C buttons get arrows. */
+  const N64_TOUCH = { CUp: "C↑", CDown: "C↓", CLeft: "C←", CRight: "C→" };
   /** PS1 names (D137, docs/wording.md "PS1 buttons"): face buttons by position, as the app: △ = X, ○ = A, ✕ = B, □ = Y. */
   const PSX_LABEL = { X: "△", A: "○", B: "✕", Y: "□", L: "L1", R: "R1", L2: "L2", R2: "R2" };
   /** What a button is called on a console's controller. */
   function buttonLabel(consoleKey, b) {
-    return (consoleKey === "psx" && PSX_LABEL[b]) || BUTTON_LABEL[b] || b;
+    return (consoleKey === "psx" && PSX_LABEL[b]) || (consoleKey === "n64" && N64_LABEL[b]) || BUTTON_LABEL[b] || b;
   }
   const KEY_NAMES = {
     ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→", Space: "Space", Enter: "Enter", NumpadEnter: "Num Enter",
@@ -664,6 +672,7 @@
     gba: "Game Boy Advance: CodeBreaker, GameShark or Action Replay codes, like 82025CE4 03E7. Put each line of a long code on its own line.",
     nds: "DS: Action Replay codes, like 02000000 0000270F. Put each line on its own line.",
     psx: "PlayStation: GameShark codes, like 800A1234 03E7. Put each line on its own line.",
+    n64: "Nintendo 64: GameShark codes, like 8XXXXXXX YYYY. Put each code on its own line.",
   };
   const CODE_OK = /^[A-Za-z0-9 +\-:_.,\n]+$/;
   const cheatForm = { editing: null };
@@ -813,7 +822,7 @@
     const reset = $("ctl-reset");
 
     if (S.ctlTab === "keys") {
-      const map = C.buildMap(buttons, C.DEFAULT_KEYS, controls.keyboard);
+      const map = C.buildMap(buttons, C.defaultKeys(scope), controls.keyboard);
       out.replaceChildren(h("ul", { class: "binds" }, buttons.map(b => h("li", {},
         h("span", { text: buttonLabel(scope, b) }),
         keyButton(map[b].map(keyName).join(" / ") || "Not set", el => startListen({ kind: "key", scope, name: b, el }), "Change the key for " + buttonLabel(scope, b))))),
@@ -838,7 +847,7 @@
       }
       reset.disabled = false;
       const saved = controls.gamepads && controls.gamepads[pad.id];
-      const map = C.buildMap(buttons, C.DEFAULT_PAD, saved);
+      const map = C.buildMap(buttons, C.defaultPad(scope), saved);
       out.replaceChildren(
         h("p", { class: "device" }, icon("pad"), h("span", {},
           h("strong", { text: pad.id }), h("br"),
@@ -867,7 +876,8 @@
         h("label", { class: "tog" }, h("span", { text: "Show touch buttons" }), show, h("span", { class: "tog-ui", "aria-hidden": "true" })),
         h("h4", {}, h("label", { for: "touch-size", text: "Button size" })), sz,
         h("h4", {}, h("label", { for: "touch-see", text: "See-through" })), op,
-        h("p", { class: "fine", text: "Buttons shown: D-pad, " + buttons.filter(b => !/^(Up|Down|Left|Right)$/.test(b)).join(", ") + "." }));
+        h("p", { class: "fine", text: "Buttons shown: " + (buttons.includes("StickUp") ? "stick, " : "") + "D-pad, "
+          + buttons.filter(b => !/^(Stick)?(Up|Down|Left|Right)$/.test(b)).map(b => buttonLabel(scope, b)).join(", ") + "." }));
       reset.textContent = "Reset " + name + " touch buttons";
     }
     reset.disabled = false;
@@ -972,7 +982,7 @@
   async function bindKey(L, code) {
     const prefs = await prefsFor(L.scope);
     const controls = prefs.controls = Object.assign({}, prefs.controls);
-    const keys = C.buildMap(C.BUTTONS[L.scope], C.DEFAULT_KEYS, controls.keyboard);
+    const keys = C.buildMap(C.BUTTONS[L.scope], C.defaultKeys(L.scope), controls.keyboard);
     const hot = hotkeysOf(prefs);
     const lost = [];
     // One key does one thing: take it off anything else first.
@@ -1001,11 +1011,11 @@
     const prefs = await prefsFor(L.scope);
     const controls = prefs.controls = Object.assign({}, prefs.controls);
     controls.gamepads = Object.assign({}, controls.gamepads);
-    const map = C.buildMap(C.BUTTONS[L.scope], C.DEFAULT_PAD, controls.gamepads[L.padId]);
+    const map = C.buildMap(C.BUTTONS[L.scope], C.defaultPad(L.scope), controls.gamepads[L.padId]);
     for (const k of Object.keys(map)) if (k !== L.name) map[k] = map[k].filter(x => x !== bind);
     // A direction keeps its stick when given a new button (and the other way round).
     const isAxis = x => /^a\d+[+-]$/.test(x);
-    const keep = /^(Up|Down|Left|Right)$/.test(L.name) ? map[L.name].filter(x => isAxis(x) !== isAxis(bind)) : [];
+    const keep = /^(Up|Down|Left|Right|Stick(Up|Down|Left|Right)|C(Up|Down|Left|Right))$/.test(L.name) ? map[L.name].filter(x => isAxis(x) !== isAxis(bind)) : [];
     map[L.name] = [bind].concat(keep);
     controls.gamepads[L.padId] = map;
     afterControlsChange(L.scope, prefs);
@@ -1043,15 +1053,20 @@
     if (pad.dataset.console === player.game.console && pad.childElementCount) return;
     pad.dataset.console = player.game.console;
     const has = C.BUTTONS[player.game.console] || C.BUTTONS.gba;
-    const btn = (b, cls) => h("div", { class: "tp-b " + cls, data: { b }, text: buttonLabel(player.game.console, b) });
+    const n64 = player.game.console === "n64";
+    const btn = (b, cls) => h("div", { class: "tp-b " + cls, data: { b }, text: (n64 && N64_TOUCH[b]) || buttonLabel(player.game.console, b) });
     pad.classList.toggle("ps", player.game.console === "psx"); // PS1: four shoulder buttons, L1 L2 left and R2 R1 right
+    pad.classList.toggle("n64", n64); // N64: stick + small D-pad left, C buttons over A/B right, L Z left, R right
 
     const dpad = h("div", { class: "tp-dpad" }, ["Up", "Down", "Left", "Right"].map(d => h("span", { data: { d } })));
-    const faces = ["X", "Y", "A", "B"].filter(b => has.includes(b));
-    const face = h("div", { class: "tp-face" + (faces.length <= 2 ? " two" : "") }, faces.map(b => btn(b, "")));
+    const faces = (n64 ? ["CUp", "CLeft", "CRight", "CDown", "B", "A"] : ["X", "Y", "A", "B"]).filter(b => has.includes(b));
+    const face = h("div", { class: "tp-face" + (faces.length <= 2 ? " two" : "") + (n64 ? " n64" : "") }, faces.map(b => btn(b, "")));
     const kids = [dpad, face];
-    for (const b of ["L", "L2", "R2", "R"]) if (has.includes(b)) kids.push(btn(b, "tp-sh"));
-    kids.push(btn("Select", "tp-sm"), btn("Start", "tp-sm"));
+    const knob = h("span", { class: "tp-knob" });
+    const stick = has.includes("StickUp") ? h("div", { class: "tp-stick" }, knob) : null;
+    if (stick) kids.push(stick);
+    for (const b of ["L", "Z", "L2", "R2", "R"]) if (has.includes(b)) kids.push(btn(b, "tp-sh"));
+    for (const b of ["Select", "Start"]) if (has.includes(b)) kids.push(btn(b, "tp-sm"));
     pad.replaceChildren(...kids);
 
     // Buttons: each finger holds what it pressed until it lifts.
@@ -1107,6 +1122,40 @@
     for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) {
       dpad.addEventListener(ev, e => { if (held.has(e.pointerId)) setDirs(e.pointerId, null); });
     }
+    // Stick (N64): how far and which way the finger is from the centre, as four levels (0-1) for the core's analogue
+    // stick. Held by the finger that touched it until that finger lifts.
+    if (stick) {
+      let finger = null;
+      const DIRS = ["StickUp", "StickDown", "StickLeft", "StickRight"];
+      const move = e => {
+        const r = stick.getBoundingClientRect();
+        let x = (e.clientX - r.left) / (r.width / 2) - 1;
+        let y = (e.clientY - r.top) / (r.height / 2) - 1;
+        const len = Math.hypot(x, y);
+        if (len > 1) { x /= len; y /= len; }
+        if (Math.hypot(x, y) < 0.08) { x = 0; y = 0; }
+        knob.style.transform = "translate(" + (x * 50) + "%, " + (y * 50) + "%)";
+        stick.classList.toggle("on", x !== 0 || y !== 0);
+        const lv = { StickUp: Math.max(0, -y), StickDown: Math.max(0, y), StickLeft: Math.max(0, -x), StickRight: Math.max(0, x) };
+        for (const d of DIRS) player.touchLevel(d, lv[d]);
+      };
+      const end = e => {
+        if (e.pointerId !== finger) return;
+        finger = null;
+        knob.style.transform = "";
+        stick.classList.remove("on");
+        for (const d of DIRS) player.touchLevel(d, 0);
+      };
+      stick.addEventListener("pointerdown", e => {
+        e.preventDefault();
+        if (finger !== null) return;
+        finger = e.pointerId;
+        try { stick.setPointerCapture(e.pointerId); } catch (x) { /* fine */ }
+        move(e);
+      });
+      stick.addEventListener("pointermove", e => { if (e.pointerId === finger) move(e); });
+      for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) stick.addEventListener(ev, end);
+    }
     pad.addEventListener("contextmenu", e => e.preventDefault());
   }
 
@@ -1135,6 +1184,7 @@
     $("ds-sec").hidden = g.console !== "nds";
     body.classList.toggle("ds", g.console === "nds");
     body.classList.toggle("psx", g.console === "psx"); // four face buttons: sideways, the touch columns are as wide as DS's
+    body.classList.toggle("n64", g.console === "n64"); // stick + C buttons: sideways columns as wide as DS's too
     S.ctlConsole = g.console;
     setPinned(!!p.toolbarPinned);
     applyFf(typeof p.ffSpeed === "number" ? p.ffSpeed : 2);
@@ -1142,7 +1192,7 @@
     applyDs();
     applySnapsSwitch();
     if (!isTouch) {
-      const keys = C.buildMap(C.BUTTONS[g.console] || C.BUTTONS.gba, C.DEFAULT_KEYS, p.controls && p.controls.keyboard);
+      const keys = C.buildMap(C.BUTTONS[g.console] || C.BUTTONS.gba, C.defaultKeys(g.console), p.controls && p.controls.keyboard);
       const hk = hotkeysOf(p);
       const k = b => (keys[b] || []).map(keyName)[0] || "?";
       const n = b => buttonLabel(g.console, b);

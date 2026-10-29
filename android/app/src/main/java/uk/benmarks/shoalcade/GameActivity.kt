@@ -121,7 +121,14 @@ class GameActivity : ComponentActivity() {
             saveDisabled = true
             toast("Saving is off this session: couldn't back up your save first (${it.message}). Your phone save is unchanged.")
         }
-        loadedSave = Storage.readSave(userId, game)
+        // PS1/N64: a save of the wrong size is never given to the core (it would start fresh without saying so, and a
+        // game that saves at boot would hide that). The file stays on the phone (and in backups); saving goes off.
+        val (forCore, keptBack) = saveForCore(console, Storage.readSave(userId, game))
+        loadedSave = forCore
+        if (keptBack) {
+            saveDisabled = true
+            toast(SAVE_NOT_LOADED)
+        }
         if (link == null) loadCheats() // D143: none in a link session
 
         val libDir = applicationInfo.nativeLibraryDir
@@ -185,8 +192,12 @@ class GameActivity : ComponentActivity() {
 
         val dm = resources.displayMetrics
         pad = GamepadView(this, object : GamepadView.Listener {
-            override fun onButton(keyCode: Int, pressed: Boolean) =
-                retroView.sendKeyEvent(if (pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, keyCode)
+            override fun onButton(keyCode: Int, pressed: Boolean) {
+                // N64 C-buttons go as the right stick (plan-n64), never as keys.
+                val c = GameButton.cButton(keyCode)
+                if (c != null) touchC.press(c, pressed)?.let { (x, y) -> retroView.sendMotionEvent(GLRetroView.MOTION_SOURCE_ANALOG_RIGHT, x, y) }
+                else retroView.sendKeyEvent(if (pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, keyCode)
+            }
             override fun onDpad(x: Float, y: Float) =
                 retroView.sendMotionEvent(GLRetroView.MOTION_SOURCE_DPAD, x, y)
             override fun onStick(x: Float, y: Float) =
@@ -344,7 +355,7 @@ class GameActivity : ComponentActivity() {
             val now = splitSave(readSramOnEmuThread()).first
             if (saveNotLoaded(console, loadedSave, now)) {
                 saveDisabled = true
-                toast("Your save couldn't be loaded, so saving is off this session to protect it.")
+                toast(SAVE_NOT_LOADED)
             }
             ready = true
             dsPending?.let { (l, swap) -> setDsLayout(l, swap) }
@@ -468,8 +479,17 @@ class GameActivity : ComponentActivity() {
 
     private val controlPrefs by lazy { ControlPrefs.of(this) }
     private val autoHide = TouchAutoHide()
-    /** One translator per controller model (they share its button map). Player 1 only: every controller plays as player 1. */
-    private val translators = mutableMapOf<String, PadTranslator>()
+    /**
+     * One translator per (player port, controller model); controllers of one model share its button map. Single-player
+     * consoles: every controller plays as player 1 (port 0). N64: each controller gets its own port ([ports]).
+     */
+    private val translators = mutableMapOf<Pair<Int, String>, PadTranslator>()
+    /** N64 players 1-4 by physical controller (plan-n64); unused on single-player consoles. */
+    private val ports by lazy { PlayerPorts(console.players) }
+    /** Device id → the physical-controller id [ports] knows it by (kept, since a removed device can't be looked up). */
+    private val padIds = mutableMapOf<Int, String>()
+    /** The touch pad's N64 C-buttons (always player 1). */
+    private val touchC = CStick()
     /** Each controller's axes: their rest and latest values (G6 M3: a trigger resting at -1 isn't "moved"). */
     private val axisRest = AxisRest()
     /** Device id of the controller that last sent anything. */
@@ -482,14 +502,16 @@ class GameActivity : ComponentActivity() {
 
     private val deviceListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(id: Int) {
-            if (isController(InputDevice.getDevice(id))) { autoHide.controllerConnected(id); applyTouchVisibility() }
+            val d = InputDevice.getDevice(id)
+            if (isController(d)) { autoHide.controllerConnected(id); portFor(d, id); applyTouchVisibility() }
         }
         override fun onInputDeviceRemoved(id: Int) {
             autoHide.controllerDisconnected(id)
             axisRest.forget(id)
             lastController = null // the Controls screen must not show a controller that has gone
             // A controller vanishing mid-press must not leave a button held in the game.
-            for (t in translators.values) send(t.releaseAll())
+            releaseControllers()
+            padIds.remove(id)?.let { ports.disconnect(it) } // it keeps its player number for when it comes back
             applyTouchVisibility()
         }
         override fun onInputDeviceChanged(id: Int) {}
@@ -497,7 +519,10 @@ class GameActivity : ComponentActivity() {
 
     private fun setUpControllers() {
         autoHide.mode = controlPrefs.touchMode(console)
-        for (id in InputDevice.getDeviceIds()) if (isController(InputDevice.getDevice(id))) autoHide.controllerConnected(id)
+        for (id in InputDevice.getDeviceIds()) InputDevice.getDevice(id)?.takeIf { isController(it) }?.let {
+            autoHide.controllerConnected(id)
+            portFor(it, id)
+        }
         getSystemService(InputManager::class.java)?.let {
             it.registerInputDeviceListener(deviceListener, Handler(Looper.getMainLooper()))
             deviceListenerOn = true
@@ -521,13 +546,35 @@ class GameActivity : ComponentActivity() {
 
     private fun infoOf(d: InputDevice?): ControllerInfo = controllerInfo(d)
 
-    private fun translatorFor(c: ControllerInfo) = translators.getOrPut(c.key) { PadTranslator(controlPrefs.map(console, c.key)) }
+    private fun translatorFor(c: ControllerInfo, port: Int) =
+        translators.getOrPut(port to c.key) { PadTranslator(controlPrefs.map(console, c.key)) }
 
-    private fun send(outs: List<PadOut>) {
+    /**
+     * The core port (player) controller [d] plays as: always 0 on single-player consoles. N64: its own port, given when it
+     * first connects or sends input ([PlayerPorts]); null = all four players taken, so its input is ignored.
+     */
+    private fun portFor(d: InputDevice?, deviceId: Int): Int? {
+        if (console.players == 1) return 0
+        val id = padIds.getOrPut(deviceId) {
+            // The descriptor stays the same when a controller reconnects. Two identical controllers with no serial can
+            // share one, so a second device with the same descriptor gets its own id for this session.
+            val desc = d?.descriptor?.takeIf { it.isNotBlank() } ?: "dev:$deviceId"
+            if (desc in padIds.values) "$desc#$deviceId" else desc
+        }
+        return ports.portOf(id) ?: ports.connect(id)
+    }
+
+    /** Lets go of everything every controller holds, on every player's port. */
+    private fun releaseControllers() {
+        for ((k, t) in translators) send(t.releaseAll(), k.first)
+    }
+
+    private fun send(outs: List<PadOut>, port: Int) {
         for (o in outs) when (o) {
-            is PadOut.Key -> retroView.sendKeyEvent(if (o.down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, o.keyCode)
-            is PadOut.Dpad -> retroView.sendMotionEvent(GLRetroView.MOTION_SOURCE_DPAD, o.x.toFloat(), o.y.toFloat())
-            is PadOut.Stick -> retroView.sendMotionEvent(GLRetroView.MOTION_SOURCE_ANALOG_LEFT, o.x, o.y)
+            is PadOut.Key -> retroView.sendKeyEvent(if (o.down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, o.keyCode, port)
+            is PadOut.Dpad -> retroView.sendMotionEvent(GLRetroView.MOTION_SOURCE_DPAD, o.x.toFloat(), o.y.toFloat(), port)
+            is PadOut.Stick -> retroView.sendMotionEvent(GLRetroView.MOTION_SOURCE_ANALOG_LEFT, o.x, o.y, port)
+            is PadOut.CStick -> retroView.sendMotionEvent(GLRetroView.MOTION_SOURCE_ANALOG_RIGHT, o.x, o.y, port)
             PadOut.Menu -> openDrawer() // Home / Back on the controller
         }
     }
@@ -568,7 +615,12 @@ class GameActivity : ComponentActivity() {
         if (down && event.repeatCount == 0) controllerUsed() // a held button's repeats aren't new input (F1)
         // Every controller key is handled here (unknown ones do nothing), so an unhandled B can't fall through to
         // the system "Back" action. Home / Back always open the menu (MenuKeys), whatever the button map says.
-        send(translatorFor(info).key(event.keyCode, down, event.repeatCount))
+        val port = portFor(event.device, event.deviceId)
+        if (port == null) { // a 5th N64 controller: no player for it, but Home / Back still open the menu
+            if (down && event.repeatCount == 0 && MenuKeys.isMenu(event.keyCode)) openDrawer()
+            return true
+        }
+        send(translatorFor(info, port).key(event.keyCode, down, event.repeatCount), port)
         return true
     }
 
@@ -588,7 +640,8 @@ class GameActivity : ComponentActivity() {
         }
         if (drawer.open) { navResult(nav.motion(values)); return true }
         if (moved) controllerUsed()
-        send(translatorFor(info).motion(values))
+        val port = portFor(event.device, event.deviceId) ?: return true // a 5th N64 controller: no player for it
+        send(translatorFor(info, port).motion(values), port)
         return true
     }
 
@@ -628,10 +681,10 @@ class GameActivity : ComponentActivity() {
 
     private fun openControls() {
         // Nothing stays held in the game while the screen is open.
-        for (t in translators.values) send(t.releaseAll())
+        releaseControllers()
         val f = flow ?: ControlsFlow(ControlsState(console), controlPrefs,
             later = { ms, block -> val r = Runnable(block); root.postDelayed(r, ms); { root.removeCallbacks(r) } },
-            changed = { key, map -> translators[key]?.map = map }).also { flow = it }
+            changed = { key, map -> translators.forEach { (k, t) -> if (k.second == key) t.map = map } }).also { flow = it }
         val c = lastController
             ?: InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.firstOrNull { isController(it) }?.let { infoOf(it) }
         f.open(c)
@@ -716,7 +769,7 @@ class GameActivity : ComponentActivity() {
     private fun openDrawer() {
         if (quitting || controlsOpen || cheatsOpen || drawer.open) return // Back / Home on those screens is handled there
         // Nothing stays held in the game while the menu is open.
-        for (t in translators.values) send(t.releaseAll())
+        releaseControllers()
         cancelTouches()
         refreshDrawer(resetFocus = true)
         nav.reset(axisRest.last(lastDevice))
@@ -1089,7 +1142,7 @@ class GameActivity : ComponentActivity() {
 
     private fun openCheats(list: Boolean) {
         if (link != null) return
-        for (t in translators.values) send(t.releaseAll())
+        releaseControllers()
         cheatEditor.cheats = cheatBook.cheats
         if (list) cheatEditor.openList() else cheatEditor.openAdd()
         val view = cheatView ?: ComposeView(this).also { v ->
@@ -1124,8 +1177,9 @@ class GameActivity : ComponentActivity() {
     }
 
     /** The cheat screen's Add / Save. A plain-English problem, or null when done. */
-    private fun saveCheat(id: String?, name: String, code: String): String? {
-        CheatRules.problem(name, code)?.let { return it }
+    private fun saveCheat(id: String?, name: String, typed: String): String? {
+        val code = CheatRules.normalise(console, typed) // N64: a pasted 8XXXXXXXYYYY gets its space (plan-n64)
+        CheatRules.problem(name, code, console)?.let { return it }
         if (id == null) {
             val (b, c) = cheatBook.add(name, code) ?: return "That cheat can't be used."
             val known = b == cheatBook
@@ -1278,6 +1332,20 @@ class GameActivity : ComponentActivity() {
  */
 internal fun saveNotLoaded(console: Console, loaded: ByteArray?, now: ByteArray?): Boolean =
     !console.hasFolderSaves && !Storage.isBlank(loaded) && Storage.isBlank(now)
+
+internal const val SAVE_NOT_LOADED = "Your save couldn't be loaded, so saving is off this session to protect it."
+
+/**
+ * What the core is given at start (plan-n64 final RC fix): (save for the core, a real save was kept back). On consoles
+ * with one exact save size ([Console.exactSaveSize]: PS1, N64) a save of any other size is never given to the core;
+ * if it held anything (not blank) it counts as kept back, so the caller turns saving off and says so. Every other
+ * console, and a right-size save, goes in unchanged.
+ */
+internal fun saveForCore(console: Console, save: ByteArray?): Pair<ByteArray?, Boolean> {
+    val exact = console.exactSaveSize ?: return save to false
+    if (save == null || save.size == exact) return save to false
+    return null to !Storage.isBlank(save)
+}
 
 /**
  * Menu handle touches: dragging right by [slop] px opens the menu straight away (and the lift then does nothing);

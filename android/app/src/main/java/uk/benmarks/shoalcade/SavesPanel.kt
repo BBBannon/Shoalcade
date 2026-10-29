@@ -181,6 +181,8 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
                 status = "Couldn't read the file: ${e.message}"
                 return@launch
             }
+            // PS1/N64 saves are one exact size: refuse any other before anything is sent or replaced.
+            game.console?.wrongSaveSize(bytes.size)?.let { statusError = true; status = it; return@launch }
             upload(bytes, "normal")
         }
     }

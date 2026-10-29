@@ -125,6 +125,42 @@ object PadLayout {
     }
 
     /**
+     * N64 (plan-n64): landscape only, drawn see-through over the game like PSP, with PSP's D-pad, touch stick (D138),
+     * ☰ Menu and hint. Left: L and Z on top. Right: R on top, the C-button diamond, then B and the big A below it (as
+     * on the N64 pad: B up and left of A), Start in the corner. C-buttons carry made-up negative codes (GameButton.C_UP.keyCode etc.):
+     * GameActivity sends them as the right stick. [scaledDensity] = pixels per sp.
+     */
+    fun n64(w: Int, h: Int, scaledDensity: Float): PadSpec {
+        val W = w.toFloat()
+        val H = h.toFloat()
+        val unit = H * 0.075f
+        val b = mutableListOf(
+            // Shoulder pills by unit from the edges (not PSP's 8 % / 92 %), so they stay on narrow screens too.
+            PadButton("L", KeyEvent.KEYCODE_BUTTON_L1, unit * 2.1f, H * 0.09f, unit, wide = true),
+            PadButton("Z", KeyEvent.KEYCODE_BUTTON_L2, unit * 6.7f, H * 0.09f, unit, wide = true),
+            PadButton("R", KeyEvent.KEYCODE_BUTTON_R1, W - unit * 2.1f, H * 0.09f, unit, wide = true),
+        )
+        val rx = W * 0.88f // right-hand anchor: the C diamond's centre
+        val cy = H * 0.40f
+        val d = unit * 1.4f
+        val cr = unit * 0.75f
+        b += PadButton("C▲", GameButton.C_UP.keyCode, rx, cy - d, cr)
+        b += PadButton("C◀", GameButton.C_LEFT.keyCode, rx - d, cy, cr)
+        b += PadButton("C▶", GameButton.C_RIGHT.keyCode, rx + d, cy, cr)
+        b += PadButton("C▼", GameButton.C_DOWN.keyCode, rx, cy + d, cr)
+        // The core's default map: N64 A = RetroPad B, N64 B = RetroPad Y (plan-n64 Step 0).
+        b += PadButton("A", KeyEvent.KEYCODE_BUTTON_B, rx - unit, H * 0.74f, unit * 1.05f)
+        b += PadButton("B", KeyEvent.KEYCODE_BUTTON_Y, rx - unit * 3.1f, H * 0.62f, unit * 1.05f)
+        b += PadButton("START", KeyEvent.KEYCODE_BUTTON_START, W - unit * 1.3f, H * 0.90f, unit * 0.55f, wide = true)
+        val m = unit * 0.5f
+        val sr = min(H * 0.16f, W * 0.12f)
+        return PadSpec(b, dpadCx = W * 0.12f, dpadCy = H * 0.40f, dpadR = H * 0.16f,
+            stickCx = W * 0.15f, stickCy = H - sr * 1.1f, stickR = sr, textSize = unit * 0.8f,
+            menu = Area(W / 2 - m * 1.6f, H * 0.06f - m * 0.8f, W / 2 + m * 1.6f, H * 0.06f + m * 0.8f),
+            hint = HintSpot(W / 2, H - HINT_SP * scaledDensity * 1.5f, W), seeThrough = true)
+    }
+
+    /**
      * Landscape GB/GBC/GBA/DS: [w] × [h] = the whole screen, [game] = the game picture (pad pixels). D-pad, L and
      * Select in the left column; face buttons, R and Start in the right one; ☰ Menu in the top-left corner.
      * [density] = pixels per dp.
@@ -206,6 +242,7 @@ object PadLayout {
 
     /** The layout for [console] in [layout] (pad pixels). [scaledDensity] = pixels per sp (only the PSP hint uses it). */
     fun forLayout(console: Console, layout: GameLayout, density: Float, scaledDensity: Float = density): PadSpec = when {
+        console == Console.N64 -> n64(layout.pad.width, layout.pad.height, scaledDensity)
         console.isLandscape -> psp(layout.pad.width, layout.pad.height, scaledDensity)
         layout.hole == null -> portrait(console, layout.pad.width, layout.pad.height) // portrait buttons hidden: as landscape
         else -> {

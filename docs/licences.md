@@ -35,10 +35,12 @@ A short public summary is in **`THIRD_PARTY_NOTICES.md`** (repo root). This file
 | gpSP `v1.1.0-5819380` | App (GBA link play) | GPL-2.0-or-later | https://github.com/libretro/gpsp/tree/5819380 |
 | PPSSPP (libretro nightly) | App (PSP) | GPL-2.0-or-later | https://github.com/hrydgard/ppsspp/tree/902e5ccd8c1400b4387b73942491cded655e5f9c |
 | PCSX ReARMed `r26l-119-gc881679` (libretro nightly, built 25/10/2026) | App (PS1, D137) | GPL-2.0-or-later (bundled parts below) | https://github.com/libretro/pcsx_rearmed/tree/c8816799b50388e61cfe237fe2cdbb7d8175f20a |
+| Mupen64Plus-Next GLES3 `3.0-GLES3 15bada8` (libretro nightly, arm64 built 27/10/2026, x86_64 debug-only 28/10/2026) | App (N64, plan-n64) | GPL-3.0 as combined (parts: sweep below) | https://github.com/libretro/mupen64plus-libretro-nx/tree/15bada85906593376e8fd697f1b0b3af3a20f512 |
 | mGBA (EmulatorJS build 4.2.3) | Plugin (browser GB, GBC, GBA) | MPL-2.0 | https://github.com/EmulatorJS/mgba (npm `@emulatorjs/core-mgba` 4.2.3, hash in `server/emulatorjs.lock`) |
 | melonDS legacy (EmulatorJS build 4.2.3) | Plugin (browser DS) | GPL-3.0 | https://github.com/EmulatorJS/melonDS (npm `@emulatorjs/core-melonds` 4.2.3, hash in `server/emulatorjs.lock`) |
 | RomPatcher.js 3.2.1 core | Plugin (patcher page, `Pages/rompatcher.js`) | MIT (licence kept at the top of the file) | https://github.com/marcrobledo/RomPatcher.js/tree/v3.2.1 (archive SHA-256 `95d4ac04…128275f`, checked by `tools/vendor_rompatcher.py`) |
 | PCSX ReARMed (EmulatorJS build 4.2.3) | Plugin (browser PS1, D137) | GPL-2.0-or-later | https://github.com/EmulatorJS/pcsx_rearmed (npm `@emulatorjs/core-pcsx_rearmed` 4.2.3, hash in `server/emulatorjs.lock`) |
+| Mupen64Plus-Next (EmulatorJS build 4.2.3, fork commit `c35e55e`) | Plugin (browser N64, D146) | GPL-2.0-or-later | https://github.com/EmulatorJS/mupen64plus-libretro-nx/tree/c35e55e87cbaa4cfc8355d8f91ceaa2beb212e9d (npm `@emulatorjs/core-mupen64plus_next` 4.2.3, hash in `server/emulatorjs.lock`) |
 
 - ✅ `About.kt` shows the PPSSPP row as commit `902e5cc` (checked 28/10/2026).
 - The EmulatorJS core builds don't name an exact upstream commit; the npm package + SHA-256 is the pin. Their `reports/*.json` give the build date.
@@ -49,6 +51,19 @@ A short public summary is in **`THIRD_PARTY_NOTICES.md`** (repo root). This file
 3. Ship nothing else: no ROMs, BIOS, firmware or keys.
 4. ✅ **PPSSPP commit found** (25/10/2026): `902e5cc` is embedded in the bundled `libppsspp_libretro_android.so`. Full hash above. If the core is ever replaced, re-check the string and update `About.kt`.
 5. ✅ **PPSSPP fonts checked** (25/10/2026): they are PPSSPP's own community replacements, not Sony's. Details below.
+6. ✅ **Mupen64Plus-Next licence sweep** (28/10/2026, commit `15bada8`). See "Mupen64Plus-Next (N64) sweep" below. GLideN64 wording decided (D146).
+
+### Mupen64Plus-Next (N64) sweep — 28/10/2026
+
+- **What gets built:** the buildbot uses `libretro/jni/Android.mk` (`.gitlab-ci.yml`).
+  - **arm64** (`Android.mk:38-43`): `LLE`, `HAVE_PARALLEL_RSP`, `HAVE_PARALLEL_RDP` and `HAVE_THR_AL` are all on. So it also has cxd4 (**CC0**), parallel-rsp (**MIT**, or LGPL-3) + GNU lightning (**LGPL-3.0-or-later**), parallel-rdp (**MIT**) and angrylion (**MIT** upstream; the tree has no licence text for it).
+  - **x86_64** (debug only): those four parts are left out.
+- **Both builds:**
+  - mupen64plus-core, rsp-hle, the libretro glue and `custom/` are **GPL-2.0-or-later** (headers: "either version 2 … or any later version").
+  - GLideN64 + GLideNHQ, libretro-common (**MIT**), libco (public domain), xxHash (**BSD-2**), zlib, libpng, minizip and md5 (zlib / BSD style).
+- **No GPL-2.0-only file headers.** No non-commercial or MAME-only licences.
+- **GLideN64 — decided 28/10/2026 (Ben: "u pick"), D146.** Its `LICENSE` says "GNU General Public License version 2" with no "or later", and almost none of its files carry a header. GLideN64 upstream itself already builds in GPL-3.0-or-later code (`GraphicBuffer.cpp`), GPL-3.0 xBRZ (`TextureFilters_xbrz.cpp`) and LGPL-3.0 gles2n64 parts, so its own authors distribute it combined with GPL-3 code. We follow upstream: listed as **"GLideN64: GPL-2.0 (combined upstream with GPL-3.0 code)"**, shipped as part of the GPL-3.0 app with full source at the tag. **If the GLideN64 authors ever say it is GPL-2.0-only and object,** the fix is a core build without GLideN64 (parallel-RDP / angrylion only), not a change to the app's licence.
+- **Result:** the `.so` is **GPL-3.0 as combined**, which fits the app's GPL-3.0.
 
 | Component | Use | Licence |
 |---|---|---|
@@ -59,11 +74,12 @@ A short public summary is in **`THIRD_PARTY_NOTICES.md`** (repo root). This file
 | **PPSSPP** libretro core (nightly built 22/10/2026; commit `902e5cc` embedded in the arm64 `.so` and reported by the PC test build) | PSP | GPL-2.0-or-later (headers: *"version 2.0 or later versions"*) — source https://github.com/hrydgard/ppsspp/tree/902e5ccd8c1400b4387b73942491cded655e5f9c |
 | **PPSSPP support files** (`assets/PPSSPP.zip`, from buildbot `assets/system/PPSSPP.zip`) | PSP fonts, compatibility list, UI atlas. Unpacked to `files/system/PPSSPP` | GPL-2.0 + PSPSDK BSD notice (`PPSSPP/LICENSE.TXT` inside) |
 | **PCSX ReARMed** libretro core `r26l-119-gc881679` (commit `c8816799`, 02/10/2026) | PS1 (D137) | GPL-2.0-or-later, no GPL-2.0-only files (sweep below) — source https://github.com/libretro/pcsx_rearmed/tree/c8816799b50388e61cfe237fe2cdbb7d8175f20a |
+| **Mupen64Plus-Next** libretro core, GLES3 build `3.0-GLES3 15bada8` (commit `15bada85`, 22/10/2026). Bundled as `libmupen64plusnext_libretro_android.so`: arm64 SHA-256 `4335b6b1…6bc3c7`, x86_64 (debug APK only) `ead53e23…3ce9e` | N64 (plan-n64) | GPL-3.0 as combined, no GPL-3-incompatible code (sweep below) — source https://github.com/libretro/mupen64plus-libretro-nx/tree/15bada85906593376e8fd697f1b0b3af3a20f512 |
 | Shoalcade link shim (`cpp/linkshim.c`, `cpp/linkstate.c`) | Gives cores link support | GPL-3.0 (ours) |
 | Shoalcade clock shim (`cpp/clockshim.c`) | Saves the Game Boy cartridge clock with the game | GPL-3.0 (ours) |
 | AndroidX / Jetpack Compose / Kotlin | App framework | Apache-2.0 |
 | Shoalcade QR code maker (`server/.../Pages/qr.js`) | Browser Settings page: QR code for the phone app download (D134) | GPL-3.0 (ours). Written for Shoalcade from the QR code standard (ISO/IEC 18004); no third-party code, no network |
-| **Phone app inside the plugin zip** (`app/Shoalcade.apk`, D134) | The plugin now also hands out the APK, cores and all | Same duties as sharing the APK (see "GPL obligations"): each plugin release that bundles an APK must have that APK's source (the repo at its tag) published, like a GitHub release. **The plugin zip therefore carries the APK's GPL duties too** — including every app core (mGBA, melonDS DS, gpSP, PPSSPP, PCSX ReARMed) and their notices |
+| **Phone app inside the plugin zip** (`app/Shoalcade.apk`, D134) | The plugin now also hands out the APK, cores and all | Same duties as sharing the APK (see "GPL obligations"): each plugin release that bundles an APK must have that APK's source (the repo at its tag) published, like a GitHub release. **The plugin zip therefore carries the APK's GPL duties too** — including every app core (mGBA, melonDS DS, gpSP, PPSSPP, PCSX ReARMed, Mupen64Plus-Next) and their notices |
 | JellyEMU (server plugin, not bundled) | ROM + save API | MIT |
 | **JellyEMU 0.9.2.4 code reused** (console, region and disc detection, name cleaning, .cue/.j3u reading: `PlatformResolver`, `NameCleaner`, `RetroGamesCore`), ported into `server/.../Scanner/ConsoleDetector.cs` and `RomScanner.cs` | Server scanner (phase 3, D42) | MIT — Copyright (c) 2026 Jellyfin GP — https://github.com/Jellyfin-PG/JellyEmu. The MIT notice must stay with the code. Full MIT text: `THIRD_PARTY_NOTICES.md`. Source headers in both files credit it and point at the MIT text, which ships in the plugin zip (`THIRD_PARTY_NOTICES.md`) |
 | **libretro-database** `.dat` files (`metadat/no-intro`, `redump`, `developer`, `publisher`, `releaseyear`, `genre`) — **downloaded at run time, not bundled** (s0.2, D48) | Server: official game names, year, developer, publisher, genre by ROM MD5. Fetched by the plugin from `https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/` into `shoalcade/gamedb/`, only for consoles that have games, checked weekly | **CC-BY-SA-4.0** — © libretro and contributors, https://github.com/libretro/libretro-database. Not redistributed by us (each server downloads its own copy). If we ever ship the files or a database built from them: credit libretro-database, link the licence, and share that data under CC-BY-SA-4.0 |
@@ -98,6 +114,7 @@ The plugin is GPL-3.0 too (`LICENSE.txt` in the zip). It bundles EmulatorJS and 
 | **mGBA** (EmulatorJS build) | `@emulatorjs/core-mgba` 4.2.3 (core built 14/06/2025, `reports/mgba.json`) | `9ea664b4…42cad529` | **GB, GBC and GBA** in the browser (same core family as the app, D25) | MPL-2.0 — https://github.com/EmulatorJS/mgba (fork of https://github.com/mgba-emu/mgba) |
 | **melonDS** legacy (EmulatorJS build) | `@emulatorjs/core-melonds` 4.2.3 (core built 14/06/2025, `reports/melonds.json`) | `6cbd17e0…e08d0045` | DS in the browser | GPL-3.0 — https://github.com/EmulatorJS/melonDS (fork of https://github.com/melonDS-emu/melonDS) |
 | **PCSX ReARMed** (EmulatorJS build) | `@emulatorjs/core-pcsx_rearmed` 4.2.3 (core built June 2025) | `d641b90c…ff165d923` (npm sha512 `mMbl/Nsz…fgQCog==` also checked) | **PS1** in the browser (same core family as the app, one memory card, D137). Run with its HLE BIOS stand-in; no BIOS bundled | GPL-2.0-or-later — https://github.com/EmulatorJS/pcsx_rearmed (fork of https://github.com/libretro/pcsx_rearmed) |
+| **Mupen64Plus-Next** (EmulatorJS build) | `@emulatorjs/core-mupen64plus_next` 4.2.3 (core built 14/06/2025, version string `2.8-GLES3 c35e55e`) | `2b8952aa…09724417` (npm sha512 `HnnEXbOE…5e3hw==` also checked) | **N64** in the browser (same core family as the app, one save block, D146). No BIOS/PIF ROM needed or bundled | GPL-2.0-or-later — https://github.com/EmulatorJS/mupen64plus-libretro-nx/tree/c35e55e87cbaa4cfc8355d8f91ceaa2beb212e9d (fork of https://github.com/libretro/mupen64plus-libretro-nx) |
 
 - Full hashes are in `server/emulatorjs.lock`. **Not yet done (security M3):** cross-check them once against npm's published `dist.integrity`, and diff-review EmulatorJS on any version bump.
 - Each core `.data` file is a 7-Zip archive built by EmulatorJS; the licence above is the upstream core's. (Not unpacked here to read any licence file inside: no 7-Zip on the build PC.)

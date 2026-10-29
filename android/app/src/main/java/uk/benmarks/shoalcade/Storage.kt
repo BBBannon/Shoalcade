@@ -356,9 +356,10 @@ object Storage {
 
     /**
      * All-0x00 or all-0xFF means the game never saved: never upload or keep that. Nor a PS1 memory card the emulator
-     * formatted by itself with nothing on it (D135, [PsxCard.isEmptyCard]).
+     * formatted by itself with nothing on it (D135, [PsxCard.isEmptyCard]), nor an N64 save block the core made fresh
+     * with its four empty Controller Paks (plan-n64, [N64Save.isUntouched]).
      */
     fun isBlank(bytes: ByteArray?): Boolean =
         bytes == null || bytes.isEmpty() || bytes.all { it == 0.toByte() } || bytes.all { it == 0xFF.toByte() } ||
-            PsxCard.isEmptyCard(bytes)
+            PsxCard.isEmptyCard(bytes) || N64Save.isUntouched(bytes)
 }

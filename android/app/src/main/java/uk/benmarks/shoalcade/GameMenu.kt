@@ -117,7 +117,7 @@ object GameMenu {
             TouchMode.entries.map { MenuItem.Choice(touchId(it), it.label, "touch", c.touch == it) }
     }
 
-    /** PSP is always landscape with one screen, so it has nothing to choose here. */
+    /** PSP and N64 are always landscape with one screen, so they have nothing to choose here. */
     val DISPLAY_SECTION = MenuSection("display", DISPLAY, visible = { !it.console.isLandscape }) { c ->
         buildList {
             add(MenuItem.Heading("screen", SCREEN))

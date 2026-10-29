@@ -164,7 +164,7 @@ public static class RomScanner
         if (cues.Length == 1 && CueFirstBin(cues[0]) is string bin)
         {
             var console = ConsoleDetector.Resolve(cues[0]);
-            return console is null || console.SingleFileOnly
+            return console is null || console.FilesOnly
                 ? null
                 : new ScannedRom(bin, ConsoleDetector.CleanName(dirName), console, FirstRegion(cues[0]), SeriesFor(trimmed), false, false, bin);
         }
@@ -180,7 +180,7 @@ public static class RomScanner
         }
 
         var discConsole = ConsoleDetector.Resolve(discs[0]);
-        if (discConsole is null || discConsole.SingleFileOnly)
+        if (discConsole is null || discConsole.FilesOnly)
         {
             return null;
         }
@@ -199,7 +199,7 @@ public static class RomScanner
         {
             var refs = J3uFiles(path).Where(File.Exists).ToList();
             var console = refs.Count == 0 ? null : ConsoleDetector.Resolve(refs[0]);
-            return console is null || console.SingleFileOnly ? null : new ScannedRom(path, name, console, FirstRegion(path), SeriesFor(path), true, true, refs[0]);
+            return console is null || console.FilesOnly ? null : new ScannedRom(path, name, console, FirstRegion(path), SeriesFor(path), true, true, refs[0]);
         }
 
         if (string.Equals(ext, ".cue", StringComparison.OrdinalIgnoreCase))
@@ -212,7 +212,7 @@ public static class RomScanner
             }
 
             var console = ConsoleDetector.Resolve(path);
-            return console is null || console.SingleFileOnly || IsListedByJ3u(path) ? null : new ScannedRom(path, name, console, FirstRegion(path), SeriesFor(path), true, false, bin);
+            return console is null || console.FilesOnly || IsListedByJ3u(path) ? null : new ScannedRom(path, name, console, FirstRegion(path), SeriesFor(path), true, false, bin);
         }
 
         if (!RomExtensions.Contains(ext) || IsListedByJ3u(path))

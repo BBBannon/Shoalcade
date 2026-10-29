@@ -120,6 +120,25 @@ body[data-state=playing] #intro { display: none; }
 .touchpad.ps .tp-sh { width: calc(64px * var(--ts)); }
 .tp-sh[data-b=L2] { left: calc(14px + 70px * var(--ts)); top: 64px; }
 .tp-sh[data-b=R2] { right: calc(14px + 70px * var(--ts)); top: 64px; }
+/* N64 (D146): analogue stick (left, middle) over a small D-pad; L and Z top left, R top right; C buttons in a diamond
+   above B and A on the right (B up-left of A, as on the controller). */
+.tp-stick { width: calc(128px * var(--ts)); height: calc(128px * var(--ts)); left: 14px; top: 50%; transform: translateY(-50%);
+  border-radius: 50%; border: 2px solid rgba(236, 239, 219, .85); background: rgba(236, 239, 219, .1); opacity: var(--to); }
+.tp-stick.on { background: rgba(200, 50, 75, .35); }
+.tp-knob { position: absolute; left: 25%; top: 25%; width: 50%; height: 50%; border-radius: 50%; pointer-events: none;
+  background: rgba(236, 239, 219, .45); border: 2px solid rgba(236, 239, 219, .85); }
+.touchpad.n64 .tp-dpad { width: calc(96px * var(--ts)); height: calc(96px * var(--ts)); top: auto; bottom: 8px; transform: none; }
+.touchpad.n64 .tp-sh { width: calc(64px * var(--ts)); }
+.tp-sh[data-b=Z] { left: calc(14px + 70px * var(--ts)); top: 64px; }
+.tp-face.n64 { grid-template-columns: repeat(3, calc(40px * var(--ts))); grid-template-rows: repeat(5, calc(40px * var(--ts)));
+  top: auto; bottom: 46px; transform: none; }
+.tp-face.n64 .tp-b { font-size: calc(.8rem * var(--ts)); }
+.tp-face.n64 [data-b=CUp] { grid-area: 1 / 2; }
+.tp-face.n64 [data-b=CLeft] { grid-area: 2 / 1; }
+.tp-face.n64 [data-b=CRight] { grid-area: 2 / 3; }
+.tp-face.n64 [data-b=CDown] { grid-area: 3 / 2; }
+.tp-face.n64 [data-b=B] { grid-area: 4 / 1; }
+.tp-face.n64 [data-b=A] { grid-area: 5 / 2; transform: scale(1.15); }
 .tp-sm[data-b=Select] { right: calc(50% + 6px); bottom: 12px; }
 .tp-sm[data-b=Start] { left: calc(50% + 6px); bottom: 12px; }
 .panel-open .touchpad { display: none; }
@@ -127,8 +146,10 @@ body[data-state=playing] #intro { display: none; }
 @media (orientation: portrait) {
   .touchpad { top: auto; height: var(--tp-h); }
   .sc-play.touch-on .player .stage { bottom: var(--tp-h); }
-  .tp-sh[data-b=L], .tp-sh[data-b=R], .tp-sh[data-b=L2], .tp-sh[data-b=R2] { top: 8px; }
+  .tp-sh[data-b=L], .tp-sh[data-b=R], .tp-sh[data-b=L2], .tp-sh[data-b=R2], .tp-sh[data-b=Z] { top: 8px; }
   .tp-dpad, .tp-face { top: 52%; }
+  .tp-stick { top: 40%; }
+  .touchpad.n64 .tp-dpad, .tp-face.n64 { top: auto; }
 }
 
 /* ---------- phones ---------- */
@@ -149,7 +170,7 @@ body[data-state=playing] #intro { display: none; }
    body by play-ui.js. Not while Settings is open (the buttons are hidden then). */
 @media (orientation: landscape) {
   .sc-play.touch-on { --tp-w: calc(24px + 150px * var(--ts, 1)); --tp-l: var(--rail); }
-  .sc-play.ds.touch-on, .sc-play.psx.touch-on { --tp-w: calc(24px + 174px * var(--ts, 1)); }
+  .sc-play.ds.touch-on, .sc-play.psx.touch-on, .sc-play.n64.touch-on { --tp-w: calc(24px + 174px * var(--ts, 1)); }
   .sc-play.touch-on:not(.panel-open) .player .stage { left: calc(var(--tp-l) + var(--tp-w)); right: var(--tp-w); }
   .sc-play.touch-on .touchpad { left: var(--tp-l); }
   .sc-play .tp-sm[data-b=Select] { right: auto; left: 14px; }

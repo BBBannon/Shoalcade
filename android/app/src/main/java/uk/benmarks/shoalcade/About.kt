@@ -38,6 +38,9 @@ object Licences {
         Part("melonDS DS 1.4.0", "Nintendo DS", "GPL-3.0", "https://github.com/JesseTG/melonds-ds/tree/v1.4.0"),
         Part("PPSSPP (commit 902e5cc)", "PSP, plus its support files (fonts, compatibility list)", "GPL-2.0-or-later (PSPSDK parts: BSD)", "https://github.com/hrydgard/ppsspp/tree/902e5ccd8c1400b4387b73942491cded655e5f9c"),
         Part("PCSX ReARMed (r26l-119-gc881679)", "PlayStation (PS1)", "GPL-2.0-or-later (parts: libchdr and zstd BSD, libretro-common MIT)", "https://github.com/libretro/pcsx_rearmed/tree/c8816799b50388e61cfe237fe2cdbb7d8175f20a"),
+        Part("Mupen64Plus-Next (3.0-GLES3 15bada8)", "Nintendo 64",
+            "GPL-3.0 as combined (parts: mupen64plus-core GPL-2.0-or-later, GLideN64 GPL-2.0 (combined upstream with GPL-3.0 code), xBRZ GPL-3.0, GNU lightning LGPL-3.0-or-later, cxd4 CC0, parallel-rsp, parallel-rdp, angrylion and libretro-common MIT, xxHash BSD-2, zlib, libpng and minizip zlib)",
+            "https://github.com/libretro/mupen64plus-libretro-nx/tree/15bada85906593376e8fd697f1b0b3af3a20f512"),
         Part("gpSP (v1.1.0-5819380)", "GBA link play", "GPL-2.0-or-later", "https://github.com/libretro/gpsp/tree/5819380"),
         Part("AndroidX, Jetpack Compose, Kotlin", "App framework", "Apache-2.0", "https://android.googlesource.com/platform/frameworks/support"),
     )

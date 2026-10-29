@@ -20,9 +20,9 @@ android {
         applicationId = "uk.benmarks.shoalcade"
         minSdk = 30 // Android 11+
         targetSdk = 35
-        versionCode = 13 // +1 for every build Ben installs
+        versionCode = 14 // +1 for every build Ben installs
         // a0.6 dev 1 (D41, D88): sent to the server in every request. Dev builds are "0.6.0-devN"; launch is "1.0.0".
-        versionName = "0.7.0"
+        versionName = "0.8.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 

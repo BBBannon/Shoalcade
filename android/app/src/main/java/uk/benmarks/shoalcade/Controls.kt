@@ -9,8 +9,12 @@ import android.view.MotionEvent
  * Everything here is plain Kotlin (no Android objects), so the rules are unit-tested; GameActivity feeds it events.
  */
 
-/** A button on the game's own pad (the touch buttons, GamepadView). [keyCode] is what the core is sent; directions go as the D-pad. */
-enum class GameButton(val label: String, val keyCode: Int, val dx: Int = 0, val dy: Int = 0) {
+/**
+ * A button on the game's own pad (the touch buttons, GamepadView). [keyCode] is what the core is sent; directions go as
+ * the D-pad. N64 C-buttons ([cx], [cy]) go as the right analogue stick instead (plan-n64 Step 0): their [keyCode] is a
+ * made-up negative code (never a real Android key code) that only names them on the touch pad and is never sent to the core.
+ */
+enum class GameButton(val label: String, val keyCode: Int, val dx: Int = 0, val dy: Int = 0, val cx: Int = 0, val cy: Int = 0) {
     UP("Up", KeyEvent.KEYCODE_DPAD_UP, dy = -1),
     DOWN("Down", KeyEvent.KEYCODE_DPAD_DOWN, dy = 1),
     LEFT("Left", KeyEvent.KEYCODE_DPAD_LEFT, dx = -1),
@@ -26,9 +30,23 @@ enum class GameButton(val label: String, val keyCode: Int, val dx: Int = 0, val 
     R2("R2", KeyEvent.KEYCODE_BUTTON_R2),
     START("Start", KeyEvent.KEYCODE_BUTTON_START),
     SELECT("Select", KeyEvent.KEYCODE_BUTTON_SELECT),
+    /**
+     * N64 only (plan-n64), after the others so stored maps read as before. The core's default map (Step 0): N64 A = RetroPad
+     * B, N64 B = RetroPad Y, Z = L2; L, R, Start and the D-pad as named. C-buttons = the right stick.
+     */
+    N64_A("A", KeyEvent.KEYCODE_BUTTON_B),
+    N64_B("B", KeyEvent.KEYCODE_BUTTON_Y),
+    Z("Z", KeyEvent.KEYCODE_BUTTON_L2),
+    C_UP("C▲", -101, cy = -1),
+    C_DOWN("C▼", -102, cy = 1),
+    C_LEFT("C◀", -103, cx = -1),
+    C_RIGHT("C▶", -104, cx = 1),
     ;
 
     val isDirection get() = dx != 0 || dy != 0
+
+    /** N64 C-button: sent as the right stick pushed fully its way, never as a key. */
+    val isCButton get() = cx != 0 || cy != 0
 
     /**
      * Name on screen for this console: PSP and PS1 face buttons by their symbols, as on the touch buttons
@@ -44,11 +62,15 @@ enum class GameButton(val label: String, val keyCode: Int, val dx: Int = 0, val 
     companion object {
         private val DPAD = listOf(UP, DOWN, LEFT, RIGHT)
 
+        /** The C-button with touch-pad code [code], or null if it isn't one. */
+        fun cButton(code: Int): GameButton? = entries.firstOrNull { it.isCButton && it.keyCode == code }
+
         /** The buttons the touch pad has for [console] (same set as GamepadView), in the order the Controls screen lists them. */
         fun forConsole(console: Console): List<GameButton> = DPAD + when (console) {
             Console.GB, Console.GBC -> listOf(A, B, START, SELECT)
             Console.GBA -> listOf(A, B, L, R, START, SELECT)
             Console.PSX -> listOf(X, A, B, Y, L, R, L2, R2, START, SELECT) // △ ○ ✕ □ L1 R1 L2 R2
+            Console.N64 -> listOf(N64_A, N64_B, Z, L, R, START, C_UP, C_DOWN, C_LEFT, C_RIGHT) // no Select on an N64
             else -> listOf(A, B, X, Y, L, R, START, SELECT) // DS, PSP (3DS isn't playable in the app)
         }
     }
@@ -187,7 +209,7 @@ class ControllerMap(val console: Console, private val binds: Map<GameButton, Lis
         const val NOT_SET = "Not set"
 
         fun defaults(console: Console): ControllerMap {
-            val stick = console != Console.PSP // PSP: the left stick is the analogue stick, not the D-pad
+            val stick = !console.hasAnalogueStick // PSP, N64: the left stick is the analogue stick, not the D-pad
             fun dir(key: Int, hat: Int, hatPlus: Boolean, axis: Int) = listOfNotNull(
                 PadInput.Key(key), PadInput.Axis(hat, hatPlus), if (stick) PadInput.Axis(axis, hatPlus) else null)
             val m = GameButton.forConsole(console).associateWith { b ->
@@ -199,6 +221,16 @@ class ControllerMap(val console: Console, private val binds: Map<GameButton, Lis
                     // PS1 (D135): L2/R2 are real game buttons; many controllers send them as triggers (axes), not keys.
                     GameButton.L2 -> listOf(PadInput.Key(b.keyCode), PadInput.Axis(MotionEvent.AXIS_LTRIGGER, true))
                     GameButton.R2 -> listOf(PadInput.Key(b.keyCode), PadInput.Axis(MotionEvent.AXIS_RTRIGGER, true))
+                    // N64 (plan-n64): face buttons by position (south = A, west = B), either trigger = Z (as keys and as
+                    // axes), the right stick = the C-buttons. The left stick is the N64 stick ([PadTranslator]).
+                    GameButton.N64_A -> listOf(PadInput.Key(KeyEvent.KEYCODE_BUTTON_A))
+                    GameButton.N64_B -> listOf(PadInput.Key(KeyEvent.KEYCODE_BUTTON_X))
+                    GameButton.Z -> listOf(PadInput.Key(KeyEvent.KEYCODE_BUTTON_L2), PadInput.Axis(MotionEvent.AXIS_LTRIGGER, true),
+                        PadInput.Key(KeyEvent.KEYCODE_BUTTON_R2), PadInput.Axis(MotionEvent.AXIS_RTRIGGER, true))
+                    GameButton.C_UP -> listOf(PadInput.Axis(MotionEvent.AXIS_RZ, false))
+                    GameButton.C_DOWN -> listOf(PadInput.Axis(MotionEvent.AXIS_RZ, true))
+                    GameButton.C_LEFT -> listOf(PadInput.Axis(MotionEvent.AXIS_Z, false))
+                    GameButton.C_RIGHT -> listOf(PadInput.Axis(MotionEvent.AXIS_Z, true))
                     else -> listOf(PadInput.Key(b.keyCode))
                 }
             }
@@ -225,8 +257,10 @@ class ControllerMap(val console: Console, private val binds: Map<GameButton, Lis
 sealed class PadOut {
     data class Key(val keyCode: Int, val down: Boolean) : PadOut()
     data class Dpad(val x: Int, val y: Int) : PadOut()
-    /** PSP analogue stick, -1..1. */
+    /** PSP / N64 analogue stick, -1..1. */
     data class Stick(val x: Float, val y: Float) : PadOut()
+    /** N64 C-buttons as the right stick: -1, 0 or 1 each way (y -1 = C-up). */
+    data class CStick(val x: Float, val y: Float) : PadOut()
     object Menu : PadOut()
 }
 
@@ -234,7 +268,8 @@ sealed class PadOut {
  * Turns one controller's keys and axes into game input through its [ControllerMap]. Keeps what is held and sends only
  * changes. A controller key that no game button uses, and that isn't one of this console's default keys, goes to the
  * game unchanged (e.g. L2/R2/L3/R3 on DS), exactly as before D126. On PS1, L2/R2 are game buttons (default keys), so
- * they are never passed through: they go wherever the map sends them.
+ * they are never passed through: they go wherever the map sends them. N64 passes nothing through: its core reads raw
+ * RetroPad buttons as other N64 buttons (and R2 held turns A/B/X/Y into C-buttons), so only mapped buttons count.
  */
 class PadTranslator(map: ControllerMap) {
     var map: ControllerMap = map
@@ -246,6 +281,7 @@ class PadTranslator(map: ControllerMap) {
     private var sentRaw = setOf<Int>()
     private var sentDpad = 0 to 0
     private var sentStick = 0f to 0f
+    private var sentC = 0f to 0f
     private lateinit var bound: Set<PadInput>
     private lateinit var defaultKeys: Set<Int>
     private var analogue = false
@@ -256,8 +292,8 @@ class PadTranslator(map: ControllerMap) {
         bound = map.buttons.flatMap { map.inputs(it) }.toSet()
         defaultKeys = ControllerMap.defaults(map.console).let { d -> d.buttons.flatMap { d.inputs(it) } }
             .filterIsInstance<PadInput.Key>().map { it.code }.toSet()
-        // PSP: the left stick is the analogue stick, unless a button has been given to it.
-        analogue = map.console == Console.PSP && bound.none { it is PadInput.Axis && (it.axis == MotionEvent.AXIS_X || it.axis == MotionEvent.AXIS_Y) }
+        // PSP, N64: the left stick is the analogue stick, unless a button has been given to it.
+        analogue = map.console.hasAnalogueStick && bound.none { it is PadInput.Axis && (it.axis == MotionEvent.AXIS_X || it.axis == MotionEvent.AXIS_Y) }
     }
 
     /** A key went down or up ([repeat] = held-key repeat, ignored). */
@@ -285,10 +321,11 @@ class PadTranslator(map: ControllerMap) {
     private fun resolve(): List<PadOut> {
         val out = mutableListOf<PadOut>()
         val pressed = map.buttons.filter { b -> map.inputs(b).any { active(it) } }.toSet()
-        val raw = heldKeys.filter { isGamepadButton(it) && PadInput.Key(it) !in bound && it !in defaultKeys }.toSet()
+        val raw = if (map.console == Console.N64) emptySet() else
+            heldKeys.filter { isGamepadButton(it) && PadInput.Key(it) !in bound && it !in defaultKeys }.toSet()
 
-        for (b in pressed - sentButtons) if (!b.isDirection) out += PadOut.Key(b.keyCode, true)
-        for (b in sentButtons - pressed) if (!b.isDirection) out += PadOut.Key(b.keyCode, false)
+        for (b in pressed - sentButtons) if (!b.isDirection && !b.isCButton) out += PadOut.Key(b.keyCode, true)
+        for (b in sentButtons - pressed) if (!b.isDirection && !b.isCButton) out += PadOut.Key(b.keyCode, false)
         for (k in raw - sentRaw) out += PadOut.Key(k, true)
         for (k in sentRaw - raw) out += PadOut.Key(k, false)
         sentButtons = pressed; sentRaw = raw
@@ -296,6 +333,9 @@ class PadTranslator(map: ControllerMap) {
         val x = (if (GameButton.RIGHT in pressed) 1 else 0) - (if (GameButton.LEFT in pressed) 1 else 0)
         val y = (if (GameButton.DOWN in pressed) 1 else 0) - (if (GameButton.UP in pressed) 1 else 0)
         if ((x to y) != sentDpad) { sentDpad = x to y; out += PadOut.Dpad(x, y) }
+
+        val c = CStick.vector(pressed)
+        if (c != sentC) { sentC = c; out += PadOut.CStick(c.first, c.second) }
 
         if (analogue) {
             fun dz(v: Float) = if (kotlin.math.abs(v) < DEAD_ZONE) 0f else v
@@ -311,6 +351,66 @@ class PadTranslator(map: ControllerMap) {
         const val DEAD_ZONE = 0.15f
         /** Axes [motion] needs: everything a button could be set to. */
         val AXES = PadInput.BINDABLE_AXES
+    }
+}
+
+/**
+ * N64 C-buttons as the right stick (plan-n64 Step 0: the core's default C-button mode, which also matches the browser's
+ * EmulatorJS ids 20-23). Each held C-button pushes the stick fully its way; opposite ones cancel. The touch pad uses
+ * [press]; [PadTranslator] uses [vector] on the buttons a controller holds.
+ */
+class CStick {
+    private val held = mutableSetOf<GameButton>()
+    private var sent = 0f to 0f
+
+    /** A touch C-button went down or up. The new stick position if it changed, else null. */
+    fun press(b: GameButton, down: Boolean): Pair<Float, Float>? {
+        if (!b.isCButton) return null
+        if (down) held += b else held -= b
+        val v = vector(held)
+        if (v == sent) return null
+        sent = v
+        return v
+    }
+
+    companion object {
+        fun vector(pressed: Collection<GameButton>): Pair<Float, Float> {
+            val c = pressed.filter { it.isCButton }
+            return c.sumOf { it.cx }.coerceIn(-1, 1).toFloat() to c.sumOf { it.cy }.coerceIn(-1, 1).toFloat()
+        }
+    }
+}
+
+/**
+ * Which player (core port 0-3) each controller plays as, for consoles with more than one pad (N64). The first
+ * controller is player 1 (port 0, shared with the touch buttons), then 2, 3, 4 in the order they connect. A controller
+ * that goes away keeps its port, so reconnecting it gives the same one back; a new controller takes a never-used port,
+ * else the one freed longest ago. When every port has a connected controller, more get none (their input is ignored).
+ * An id is one physical controller (its input-device descriptor), not its model. Single-player consoles don't use this.
+ */
+class PlayerPorts(val ports: Int) {
+    private val owner = arrayOfNulls<String>(ports)
+    private val connected = mutableSetOf<String>()
+    /** Ports freed by a disconnect, oldest first. */
+    private val freed = ArrayDeque<Int>()
+
+    /** The port of connected controller [id], or null. */
+    fun portOf(id: String): Int? = owner.indexOf(id).takeIf { it >= 0 && id in connected }
+
+    /** [id] connected (or sent input before we heard it connect): its port, or null if every port is in use. */
+    fun connect(id: String): Int? {
+        val had = owner.indexOf(id)
+        if (had >= 0) { connected += id; freed.remove(had); return had }
+        val port = owner.indexOfFirst { it == null }.takeIf { it >= 0 } ?: freed.removeFirstOrNull() ?: return null
+        owner[port] = id
+        connected += id
+        return port
+    }
+
+    fun disconnect(id: String) {
+        val port = owner.indexOf(id)
+        if (port < 0 || !connected.remove(id)) return
+        freed.addLast(port)
     }
 }
 

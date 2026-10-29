@@ -11,7 +11,7 @@ labels: bug
 <!-- Phone app / browser player / Jellyfin settings page -->
 
 **Shoalcade app version:**
-<!-- Settings → About, e.g. 0.7.0 -->
+<!-- Settings → About, e.g. 0.8.0 -->
 
 **Shoalcade plugin version:**
 <!-- Jellyfin Dashboard → Plugins, e.g. s0.2 -->

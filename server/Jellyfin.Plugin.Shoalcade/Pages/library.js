@@ -19,12 +19,12 @@
 
   const api = window.SC.api;
   const $ = id => document.getElementById(id);
-  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP" };
+  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP" };
   const RECENT_MAX = 6;
   const SORTS = ["name", "year", "platform", "played"];
   const DEFAULT_SORT = "played";
-  /** Platform order (same as the app): the Game Boy family oldest first, then DS, 3DS, PS1, PSP. Unknown consoles last. */
-  const PLATFORM_ORDER = ["gb", "gbc", "gba", "nds", "3ds", "psx", "psp"];
+  /** Platform order (same as the app): the Game Boy family oldest first, then N64, DS, 3DS, PS1, PSP. Unknown consoles last. */
+  const PLATFORM_ORDER = ["gb", "gbc", "gba", "n64", "nds", "3ds", "psx", "psp"];
   const collator = new Intl.Collator("en-GB", { sensitivity: "base" });
 
   const S = { info: null, games: [], byId: new Map(), cards: new Map(), con: "all", q: "", sort: DEFAULT_SORT, openedHere: false, edit: null };

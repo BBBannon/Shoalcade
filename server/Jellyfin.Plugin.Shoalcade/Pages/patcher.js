@@ -104,6 +104,28 @@
     return typeof parsed.patch.validateSource === "function";
   }
 
+  /**
+   * N64 byte order from the first 4 bytes (D146): "v64" (pairs swapped, 37 80 40 12) or "n64" (words reversed,
+   * 40 12 37 80); null for the standard big-endian .z64 order (80 37 12 40) and anything that isn't an N64 ROM.
+   */
+  function n64Order(u8) {
+    if (u8.length < 4) return null;
+    const w = ((u8[0] << 24) | (u8[1] << 16) | (u8[2] << 8) | u8[3]) >>> 0;
+    return w === 0x37804012 ? "v64" : w === 0x40123780 ? "n64" : null;
+  }
+
+  /** Swaps an N64 ROM between .z64 order and `order`, in place (each swap undoes itself). */
+  function swapN64(u8, order) {
+    if (order === "v64") {
+      for (let i = 0; i + 1 < u8.length; i += 2) { const t = u8[i]; u8[i] = u8[i + 1]; u8[i + 1] = t; }
+    } else if (order === "n64") {
+      for (let i = 0; i + 3 < u8.length; i += 4) {
+        let t = u8[i]; u8[i] = u8[i + 3]; u8[i + 3] = t;
+        t = u8[i + 1]; u8[i + 1] = u8[i + 2]; u8[i + 2] = t;
+      }
+    }
+  }
+
   function explain(e) {
     const code = e && (e.code || e.message);
     if (code === "unknown_patch") return "This isn't a patch file this page can read. It works with IPS, UPS, BPS, PPF, xdelta, APS, RUP and PMSR patches.";
@@ -126,6 +148,12 @@
       const { patch, bytes, sums } = await readPatch(S.patch);
       const rom = new BinFile(await S.rom.arrayBuffer());
       rom.fileName = S.rom.name;
+      // N64: patches are made for the standard .z64 byte order. A .v64/.n64 file is patched in .z64 order and put
+      // back in its own order afterwards, unless a patch that checks its game file says it fits the file as it is.
+      const order = n64Order(rom._u8array);
+      const fitsAsIs = order && typeof patch.validateSource === "function" && RomPatcher.validateRom(rom, patch);
+      const swapped = !!order && !fitsAsIs;
+      if (swapped) swapN64(rom._u8array, order);
       if (!force && !RomPatcher.validateRom(rom, patch)) {
         $("mismatch").textContent = "This doesn't look like the game file the patch was made for: its checksum is different. The patched game probably won't work. Check the version and region, or patch it anyway.";
         $("mismatch").hidden = false;
@@ -144,8 +172,10 @@
       } else {
         out = RomPatcher.applyPatch(rom, patch, { requireValidation: false, outputSuffix: true });
       }
+      if (swapped) swapN64(out._u8array, order);
       download(out);
-      status("Done: " + out.fileName + " (" + size(out.fileSize) + ") is in your downloads.");
+      status("Done: " + out.fileName + " (" + size(out.fileSize) + ") is in your downloads."
+        + (swapped ? " Your N64 game file is in ." + order + " byte order, so the patch was applied in the usual .z64 order and the patched game put back in ." + order + " order." : ""));
     } catch (e) {
       status("");
       $("mismatch").textContent = explain(e);

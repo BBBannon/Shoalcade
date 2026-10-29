@@ -146,7 +146,7 @@ private fun CheatForm(
     Text(CheatRules.hint(console), color = MUTED)
     OutlinedTextField(
         value = name,
-        onValueChange = { v -> name = v.filterNot { it.isISOControl() }.take(CheatRules.MAX_NAME); if (tried) problem = CheatRules.problem(name, code) },
+        onValueChange = { v -> name = v.filterNot { it.isISOControl() }.take(CheatRules.MAX_NAME); if (tried) problem = CheatRules.problem(name, code, console) },
         label = { Text("Name") },
         singleLine = true,
         supportingText = { Text("${name.length} / ${CheatRules.MAX_NAME}") },
@@ -156,7 +156,7 @@ private fun CheatForm(
     OutlinedTextField(
         value = code,
         // A pasted .cht line can be long; anything far past the limit is cut so the field stays usable.
-        onValueChange = { v -> code = v.take(CheatRules.MAX_CODE + 500); if (tried) problem = CheatRules.problem(name, code) },
+        onValueChange = { v -> code = v.take(CheatRules.MAX_CODE + 500); if (tried) problem = CheatRules.problem(name, code, console) },
         label = { Text("Code") },
         minLines = 4,
         textStyle = TextStyle(fontFamily = FontFamily.Monospace),
@@ -177,7 +177,7 @@ private fun CheatForm(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Button(onClick = {
                 tried = true
-                problem = CheatRules.problem(name, code) ?: onSave(editing?.id, name, code)
+                problem = CheatRules.problem(name, code, console) ?: onSave(editing?.id, name, code)
             }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (editing == null) "Add cheat" else "Save cheat") }
             OutlinedButton(onClick = cancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
             if (editing != null) TextButton(onClick = { confirmDelete = true }, modifier = Modifier.heightIn(min = 48.dp)) {

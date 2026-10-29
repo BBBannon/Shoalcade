@@ -182,6 +182,7 @@ class GamepadView(
             }
             val old = text.textSize
             if (b.wide && b.label.length > 1) text.textSize = b.r * 0.75f
+            else if (!b.wide && b.label.length > 1) text.textSize = b.r * 0.7f // N64 C-buttons ("C▲") in small circles
             canvas.drawText(b.label, b.cx, b.cy + text.textSize * 0.35f, text)
             text.textSize = old
         }

@@ -48,13 +48,14 @@
 ├── Game Boy/            .gb
 ├── Game Boy Color/      .gbc
 ├── Game Boy Advance/    .gba
+├── Nintendo 64/         .z64 .n64 .v64
 ├── Nintendo DS/         .nds
 ├── PS1/                 .chd .pbp   (one file per game)
 ├── PSP/                 .iso .cso .pbp .chd
 └── Nintendo 3DS/        .3ds .cci .cia
 ```
 
-- Short names work too: `gb`, `gbc`, `gba`, `nds`, `ps1`, `psx`, `psp`, `3ds`.
+- Short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`.
 - A **.zip** or **.7z** holding one game is fine (not PS1).
 - PSP `.iso` files **must** be in a PSP folder (`.iso` alone doesn't say which console).
 - **A file must fit its folder's console.** E.g. a `.gba` file in a `PSP` folder is **not listed** any more. Move it to the right folder.
@@ -118,7 +119,7 @@
 
 - Open the **Shoalcade** link in Jellyfin's menu, or go to **`https://<your-server>/shoalcade/`**.
 - It uses your Jellyfin web login. No extra sign-in.
-- Plays **GB, GBC, GBA, DS and PS1**. PSP and 3DS are phone only.
+- Plays **GB, GBC, GBA, N64, DS and PS1**. PSP and 3DS are phone only.
 - Each game page has **Play** and **Saves** buttons.
 - Saves are sent to Jellyfin by themselves, a few seconds after the game saves.
   - Leaving too soon? It asks: **Your save hasn't reached the server yet** → **Stay** or **Leave anyway**.

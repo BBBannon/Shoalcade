@@ -68,16 +68,16 @@ data class GameLayout(
         fun portraitAspectHW(console: Console, ds: DsLayout): Float = when {
             console.isDualScreen -> if (ds == DsLayout.STACK) 1.5f else 1f / ds.aspect
             console == Console.GBA -> 2f / 3f
-            console == Console.PSX -> 0.75f
+            console == Console.PSX || console == Console.N64 -> 0.75f
             else -> 0.9f
         }
 
-        /** Width ÷ height of the game picture (GB 160×144, GBA 240×160, PS1 4:3 TV, PSP 480×272, DS by layout). */
+        /** Width ÷ height of the game picture (GB 160×144, GBA 240×160, PS1 and N64 4:3 TV, PSP 480×272, DS by layout). */
         fun pictureAspect(console: Console, ds: DsLayout): Float = when (console) {
             Console.NDS -> ds.aspect
             Console.GBA -> 1.5f
             Console.PSP -> 480f / 272f
-            Console.PSX -> 4f / 3f
+            Console.PSX, Console.N64 -> 4f / 3f
             else -> 160f / 144f
         }
 

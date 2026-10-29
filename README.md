@@ -70,12 +70,14 @@
 |---|---|---|---|
 | **Game Boy / Game Boy Color** | ✅ mGBA | ✅ mGBA | ❌ |
 | **Game Boy Advance** | ✅ mGBA | ✅ mGBA | ✅ gpSP (e.g. Pokémon trades and battles) |
+| **Nintendo 64** | ✅ Mupen64Plus-Next (landscape) | ✅ Mupen64Plus-Next | ❌ |
 | **Nintendo DS** | ✅ melonDS DS | ✅ melonDS | ✅ local wireless |
 | **PlayStation (PS1)** | ✅ PCSX ReARMed | ✅ PCSX ReARMed | ❌ |
 | **PSP** | ✅ PPSSPP (landscape) | ❌ not yet | ❌ |
 | **Nintendo 3DS** | 🗓️ Listed as **"3DS support coming later"** — not downloadable or playable yet | ❌ | ❌ |
 
 - **PS1:** one `.chd` or `.pbp` file per game. **No BIOS needed** (a built-in stand-in is used; some games may need a real BIOS, not supported yet). Save = one **memory card**, shared by the phone and the browser.
+- **N64:** `.z64`, `.n64` or `.v64` files (or a `.zip`/`.7z` holding one). Save = the cartridge save plus **Controller Pak 1**, shared by the phone and the browser.
 - **Other consoles are not shown.** Their files stay on your server, untouched.
 
 ---
@@ -128,6 +130,7 @@
 - **D-pad works like a joystick too:** tap an arm, or press and slide your thumb
 - **DS:** screens **stacked**, **side by side** or **one big, one small**, with **swap** — chosen separately for upright and sideways. **Touch on the bottom screen**, even while holding a button
 - **PSP:** landscape, see-through controls with an **analogue stick**; each game gets its own memory stick
+- **N64:** landscape, with an **analogue stick** and the four **C buttons**. On a controller: left stick = N64 stick, right stick = C buttons, trigger = **Z**. **Players 2–4:** each extra controller is the next player, in the order you connect them
 - **PS1:** △ ○ ✕ □ with **L1 L2 R1 R2**; controller triggers work as L2/R2. Buttons match **by position**, so a controller's **A** (bottom on Xbox pads) is **○** — swap it in **Controls** if you prefer ✕
 - **Game Boy cartridge clock** kept with the save and backed up (e.g. Pokémon Gold, Silver, Crystal)
 - **Cheats** — side menu → **Cheats**: **Add a cheat…**, switch each one on or off, **Edit cheats…**. Shared with the browser player, and they work offline. See [Cheats](#-cheats)
@@ -192,6 +195,7 @@
 - **Cheats** tab in the player's settings: add, switch on and off, edit and delete codes (see [Cheats](#-cheats))
 - **DS:** three **screen layouts** (plus swap), changeable while playing; **touch screen works with mouse and finger**
 - **Sideways phone:** touch buttons sit in columns **beside the game**, not over it
+- **N64:** keyboard **arrows** = stick, **I J K L** = C buttons, **A** = Z, **Y G H B** = D-pad. On a pad: left stick = N64 stick, right stick = C buttons, triggers = Z. Up to **4 pads** = players 1–4
 - **PS1:** keyboard **E / R** or pad **LT / RT** for L2 / R2; very big discs show a note that they need a lot of memory
 - **Saves upload by themselves** a few seconds after the game saves
 - **Leaving too soon?** It asks: **Your save hasn't reached the server yet** → **Stay** or **Leave anyway**
@@ -217,6 +221,7 @@
 |---|---|
 | **GB / GBC** | GameShark, Game Genie |
 | **GBA** | CodeBreaker, GameShark, Action Replay |
+| **N64** | GameShark (`8XXXXXXX YYYY`) |
 | **DS** | Action Replay |
 | **PS1** | GameShark |
 | **PSP** (app) | CWCheat |
@@ -231,7 +236,7 @@
 
 ### 🗂️ Server and library
 
-- **Own game scanner** — finds GB, GBC, GBA, DS, PS1, PSP and 3DS games, including zipped games and multi-disc sets (not PS1)
+- **Own game scanner** — finds GB, GBC, GBA, N64, DS, PS1, PSP and 3DS games, including zipped games and multi-disc sets (not PS1)
 - A file is only listed if its type fits its folder's console (e.g. a `.gba` in a `PSP` folder is skipped)
 - **Official names, year, developer, publisher and genre** from **libretro-database** (downloaded by your server, checked weekly, works from its own copy)
 - **Box art** from libretro — your own pictures next to the ROMs and `.nfo` files still come first
@@ -319,13 +324,14 @@
 
 ### 2. Make a games library
 
-1. Put your games in **one folder per console** (short names work too: `gb`, `gbc`, `gba`, `nds`, `ps1`, `psx`, `psp`, `3ds`):
+1. Put your games in **one folder per console** (short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`):
 
 ```
 /media/games/
 ├── Game Boy/            .gb
 ├── Game Boy Color/      .gbc
 ├── Game Boy Advance/    .gba
+├── Nintendo 64/         .z64 .n64 .v64
 ├── Nintendo DS/         .nds
 ├── PS1/                 .chd .pbp   (one file per game)
 └── PSP/                 .iso .cso .pbp .chd
@@ -388,8 +394,8 @@ Yes. Patch your own game file with **⚙ Settings → Patch a game** in the brow
 **Can my kids or other people use it? Can I stop downloads?**
 Yes — it uses **Jellyfin's own users**. Each person has their own saves. Jellyfin's **library access** decides who sees the games library, and Jellyfin's **Allow media downloading** permission is needed to play (on the phone and in the browser). There's no separate kids mode.
 
-**Which consoles? Why not SNES or N64?**
-**GB, GBC, GBA, DS, PS1 and PSP.** Each console is a lot of work to make safe for saves, so the list is small for now. Other consoles may come later; their files stay on your server untouched.
+**Which consoles? Why not SNES?**
+**GB, GBC, GBA, N64, DS, PS1 and PSP.** Each console is a lot of work to make safe for saves, so the list is small for now. Other consoles may come later; their files stay on your server untouched.
 
 **Will 3DS work?**
 **Not yet.** 3DS games appear in the app as **"3DS support coming later"**. 3DS is too heavy for the built-in emulators, so it's planned for later with no date.
@@ -522,7 +528,7 @@ server/build.sh                    # → dist/server/Shoalcade_s<version>.zip
 ## Disclaimer
 
 - Shoalcade is **not affiliated with or endorsed by** Jellyfin, Nintendo or Sony.
-- Jellyfin is a trademark of Jellyfin, Inc. Nintendo, Game Boy, Nintendo DS, Nintendo 3DS, Sony, PlayStation and PSP are trademarks of their owners.
+- Jellyfin is a trademark of Jellyfin, Inc. Nintendo, Game Boy, Nintendo 64, Nintendo DS, Nintendo 3DS, Sony, PlayStation and PSP are trademarks of their owners.
 - Shoalcade is provided **as is, with no warranty** (see [LICENSE](LICENSE)). **Back up your saves.**
 
 <!-- Discord invite: change it here only. -->

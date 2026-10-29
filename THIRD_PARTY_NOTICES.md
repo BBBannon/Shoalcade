@@ -41,6 +41,7 @@ It is built on the work of the projects below. Thank you to all of them.
 | **mGBA** (EmulatorJS build 4.2.3) | Browser: GB, GBC, GBA | MPL-2.0 | https://github.com/EmulatorJS/mgba |
 | **melonDS** (EmulatorJS build 4.2.3) | Browser: DS | GPL-3.0 | https://github.com/EmulatorJS/melonDS |
 | **PCSX ReARMed** (EmulatorJS build 4.2.3) | Browser: PS1 | GPL-2.0-or-later | https://github.com/EmulatorJS/pcsx_rearmed |
+| **Mupen64Plus-Next** (EmulatorJS build 4.2.3) | Browser: Nintendo 64 | GPL-2.0-or-later | https://github.com/EmulatorJS/mupen64plus-libretro-nx |
 | **Shoalcade phone app** (`app/Shoalcade.apk`) | Phone app download from your Jellyfin | GPL-3.0, with every part in the **Android app** table above | This repository, at the release's tag |
 | **nipplejs** (inside EmulatorJS) | Touch joystick | MIT | https://github.com/yoannmoinet/nipplejs |
 | **Socket.IO** client 4.8.1 (inside EmulatorJS) | Not used by Shoalcade | MIT | https://github.com/socketio/socket.io |

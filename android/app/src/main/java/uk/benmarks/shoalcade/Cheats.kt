@@ -36,11 +36,28 @@ object CheatRules {
         return s.takeIf { it.isNotEmpty() && it.length <= MAX_CODE && s.count { c -> c == '\n' } + 1 <= MAX_LINES && it.all(::allowed) }
     }
 
-    /** Plain-English reason the name or code can't be used, or null if both are fine. */
-    fun problem(name: String, code: String): String? {
+    private val N64_CODE = Regex("^[0-9A-Fa-f]{8} [0-9A-Fa-f]{4}$")
+    private val N64_RUN = Regex("^[0-9A-Fa-f]{12}$")
+
+    /**
+     * The code as it should be kept for [console]. N64 (plan-n64 Step 0): the core splits a GameShark code at any
+     * non-hex character, so `8XXXXXXXYYYY` with no space would be one number that silently does nothing. Each such line
+     * (or "+"-joined part) gets its space put in; anything else is left for [problem] to judge.
+     */
+    fun normalise(console: Console?, code: String): String {
+        if (console != Console.N64) return code
+        return tidyCode(code).split('\n').joinToString("\n") { line ->
+            line.split('+').joinToString("+") { p -> p.trim().let { if (N64_RUN.matches(it)) it.substring(0, 8) + " " + it.substring(8) else it } }
+        }
+    }
+
+    /** Plain-English reason the name or code can't be used, or null if both are fine. [console]'s own code format is checked too (N64). */
+    fun problem(name: String, code: String, console: Console? = null): String? {
         val n = name.split(' ', '\t').filter { it.isNotEmpty() }.joinToString(" ")
-        val c = tidyCode(code)
+        val c = tidyCode(normalise(console, code))
         val bad = c.firstOrNull { !allowed(it) }
+        val n64Bad = console == Console.N64 && c.isNotEmpty() &&
+            c.split('\n').flatMap { it.split('+') }.any { !N64_CODE.matches(it.trim()) }
         return when {
             n.isEmpty() -> "Give the cheat a name."
             n.length > MAX_NAME -> "Names can be up to $MAX_NAME characters."
@@ -49,6 +66,7 @@ object CheatRules {
             bad != null -> "Codes use only letters, numbers, spaces and + - : _ . , so \"$bad\" can't be used."
             c.length > MAX_CODE -> "That code is too long (up to $MAX_CODE characters)."
             c.count { it == '\n' } + 1 > MAX_LINES -> "That code has too many lines (up to $MAX_LINES)."
+            n64Bad -> "N64 codes look like 8XXXXXXX YYYY: 8 characters, a space, then 4. One code per line."
             else -> null
         }
     }
@@ -66,6 +84,7 @@ object CheatRules {
         Console.NDS -> "DS: Action Replay codes, two blocks of 8 per line, like 02xxxxxx yyyyyyyy."
         Console.PSX -> "PlayStation: GameShark codes, like 8xxxxxxx yyyy. One code per line."
         Console.PSP -> "PSP: CWCheat codes, one per line, like _L 0x2xxxxxxx 0xyyyyyyyy."
+        Console.N64 -> "Nintendo 64: GameShark codes, like 8XXXXXXX YYYY. One code per line."
         Console.N3DS -> "3DS games can't be played on the phone yet."
     }
 }

@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/BBBannon/Shoalcade/main/server/assets/thumb.png",
     "versions": [
       {
+        "version": "0.5.0.0",
+        "changelog": "s0.5 - Nintendo 64 games (browser + phone app 0.8.0). Release notes: https://github.com/BBBannon/Shoalcade/releases/tag/v0.5.0",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/BBBannon/Shoalcade/releases/download/v0.5.0/Shoalcade_s0.5.zip",
+        "checksum": "b3381da40455cb12ccfa3730be95024d",
+        "timestamp": "2026-10-29T07:18:16Z"
+      },
+      {
         "version": "0.4.0.0",
         "changelog": "s0.4 - ROM patcher page and cheats (browser + phone app 0.7.0). Release notes: https://github.com/BBBannon/Shoalcade/releases/tag/v0.4.0",
         "targetAbi": "12.3.0.0",

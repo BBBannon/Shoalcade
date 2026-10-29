@@ -36,14 +36,30 @@
   // ---------------------------------------------------------------------------------------------
   const RETRO = { B: 0, Y: 1, Select: 2, Start: 3, Up: 4, Down: 5, Left: 6, Right: 7, A: 8, X: 9, L: 10, R: 11, L2: 12, R2: 13 };
   const DPAD = ["Up", "Down", "Left", "Right"];
+  const STICK = ["StickUp", "StickDown", "StickLeft", "StickRight"];
+  const CBUTTONS = ["CUp", "CDown", "CLeft", "CRight"];
   const BUTTONS = {
     gb: DPAD.concat(["A", "B", "Start", "Select"]),
     gbc: DPAD.concat(["A", "B", "Start", "Select"]),
     gba: DPAD.concat(["A", "B", "L", "R", "Start", "Select"]),
+    // Nintendo 64 (D146), same order as the app: stick, D-pad, A, B, Z, L, R, Start, the four C buttons.
+    n64: STICK.concat(DPAD, ["A", "B", "Z", "L", "R", "Start"], CBUTTONS),
     nds: DPAD.concat(["A", "B", "X", "Y", "L", "R", "Start", "Select"]),
     // PS1 (D137), same order as the app: D-pad, triangle circle cross square (by position, as PSP: X A B Y), L1 R1 L2 R2.
     psx: DPAD.concat(["X", "A", "B", "Y", "L", "R", "L2", "R2", "Start", "Select"]),
   };
+  /**
+   * N64 buttons -> RetroPad ids (Mupen64Plus-Next's default map, plan-n64 Step 0): A = RetroPad B, B = Y, Z = L2,
+   * L/R/Start/D-pad as named. Ids 16-23 are EmulatorJS's analogue ids (value 0-0x7fff): 16-19 left stick
+   * right/left/down/up = the N64 stick, 20-23 right stick right/left/down/up = the C buttons (works in any C-button
+   * mode and keeps R2 free).
+   */
+  const RETRO_BY_CONSOLE = {
+    n64: { A: 0, B: 1, Start: 3, Up: 4, Down: 5, Left: 6, Right: 7, L: 10, R: 11, Z: 12,
+      StickRight: 16, StickLeft: 17, StickDown: 18, StickUp: 19, CRight: 20, CLeft: 21, CDown: 22, CUp: 23 },
+  };
+  const ANALOG_FULL = 0x7fff;
+  const STICK_DEADZONE = 0.1; // below this a controller stick sends 0 (the core adds its own 15 % dead zone)
   // Keyboard: KeyboardEvent.code (same physical key on any layout).
   const DEFAULT_KEYS = {
     Up: ["ArrowUp"], Down: ["ArrowDown"], Left: ["ArrowLeft"], Right: ["ArrowRight"],
@@ -59,6 +75,27 @@
     A: ["east"], B: ["south"], X: ["north"], Y: ["west"], L: ["l1"], R: ["r1"], L2: ["l2"], R2: ["r2"],
     Start: ["start"], Select: ["select"],
   };
+  /**
+   * Per-console defaults laid over the ones above. N64: arrows = the stick (the main control), D-pad on Y G H B
+   * (F is the full-screen shortcut), C buttons on I J K L, Z on A. Controller: left stick = N64 stick, right stick =
+   * C buttons, D-pad = D-pad, bottom = A, left = B (as RetroArch), both triggers = Z.
+   */
+  const DEFAULT_KEYS_BY_CONSOLE = {
+    n64: { StickUp: ["ArrowUp"], StickDown: ["ArrowDown"], StickLeft: ["ArrowLeft"], StickRight: ["ArrowRight"],
+      Up: ["KeyY"], Down: ["KeyB"], Left: ["KeyG"], Right: ["KeyH"], A: ["KeyX"], B: ["KeyZ"], Z: ["KeyA"],
+      CUp: ["KeyI"], CDown: ["KeyK"], CLeft: ["KeyJ"], CRight: ["KeyL"] },
+  };
+  const DEFAULT_PAD_BY_CONSOLE = {
+    n64: { StickUp: ["a1-"], StickDown: ["a1+"], StickLeft: ["a0-"], StickRight: ["a0+"],
+      Up: ["up"], Down: ["down"], Left: ["left"], Right: ["right"], A: ["south"], B: ["west"], Z: ["l2", "r2"],
+      CUp: ["a3-"], CDown: ["a3+"], CLeft: ["a2-"], CRight: ["a2+"] },
+  };
+  /** Default keys for a console. */
+  function defaultKeys(consoleKey) { return Object.assign({}, DEFAULT_KEYS, DEFAULT_KEYS_BY_CONSOLE[consoleKey]); }
+  /** Default controller buttons for a console. */
+  function defaultPad(consoleKey) { return Object.assign({}, DEFAULT_PAD, DEFAULT_PAD_BY_CONSOLE[consoleKey]); }
+  /** Consoles where each controller is its own player (Gamepad API index 0-3 = player 1-4); others: player 1 only. */
+  const MULTIPLAYER = { n64: 4 };
 
   function asList(v) {
     if (typeof v === "string") return [v];
@@ -75,14 +112,24 @@
     return map;
   }
 
+  /**
+   * Keyboard, controllers and touch buttons -> the core. Player 1 only, except N64, where each controller is its
+   * own player by its Gamepad API index (0-3 = player 1-4, so it keeps its player if it drops and comes back);
+   * keyboard and touch are always player 1. Every input has a level 0-1: buttons are 0 or 1, a controller axis bound
+   * to the N64 stick gives how far it is pushed, and the touch stick how far the finger is from its centre. Digital
+   * ids get 0/1, analogue ids (16-23) get level x 0x7fff.
+   */
   class Input {
     constructor(consoleKey, controls, send) {
+      this.console = consoleKey;
       this.buttons = BUTTONS[consoleKey] || BUTTONS.gba;
+      this.retro = RETRO_BY_CONSOLE[consoleKey] || RETRO;
+      this.players = MULTIPLAYER[consoleKey] || 1;
       this.send = send;
-      this.down = new Map();    // button -> pressed (combined)
+      this.sent = [];           // per player: button -> value last sent to the core
+      this.padLevel = [];       // per player: button -> level from that player's controller
       this.keyDown = new Set(); // codes held
-      this.padDown = new Set(); // buttons held on the pad
-      this.touchDown = new Set(); // buttons held on the touch overlay
+      this.touchLevel = new Map(); // button -> level from the touch overlay (player 1)
       this.setControls(controls);
       this.enabled = false;
       this.raf = 0;
@@ -108,22 +155,25 @@
     setControls(controls) {
       if (this.keys) this.releaseAll();
       this.controls = controls || {};
-      this.keys = buildMap(this.buttons, DEFAULT_KEYS, this.controls.keyboard);
+      this.keys = buildMap(this.buttons, defaultKeys(this.console), this.controls.keyboard);
       this.padMaps = new Map();
     }
 
     /** A touch button pressed or let go. */
-    setTouch(b, on) {
-      if (!this.buttons.includes(b) || (on && !this.enabled)) return;
-      if (on) this.touchDown.add(b); else this.touchDown.delete(b);
-      this.update(b);
+    setTouch(b, on) { this.setTouchLevel(b, on ? 1 : 0); }
+
+    /** A touch input's level (0-1): 1 for a button, how far the finger is pushed for the touch stick. */
+    setTouchLevel(b, level) {
+      if (!this.buttons.includes(b) || (level > 0 && !this.enabled)) return;
+      if (level > 0) this.touchLevel.set(b, Math.min(1, level)); else this.touchLevel.delete(b);
+      this.update(b, 0);
     }
 
     padMap(pad) {
       let m = this.padMaps.get(pad.id);
       if (!m) {
         const saved = this.controls.gamepads && this.controls.gamepads[pad.id];
-        m = buildMap(this.buttons, DEFAULT_PAD, saved);
+        m = buildMap(this.buttons, defaultPad(this.console), saved);
         this.padMaps.set(pad.id, m);
       }
       return m;
@@ -143,23 +193,46 @@
       return !!(btn && (btn.pressed || btn.value > 0.5));
     }
 
+    /** How far a bind is pushed (0-1) for the N64 stick: an axis gives its size past the dead zone, a button 0 or 1. */
+    static level(pad, bind) {
+      const m = /^a(\d+)([+-])$/.exec(bind);
+      if (!m) return Input.isHeld(pad, bind) ? 1 : 0;
+      const v = (pad.axes[+m[1]] || 0) * (m[2] === "+" ? 1 : -1);
+      return v > STICK_DEADZONE ? Math.min(1, v) : 0;
+    }
+
+    /** True if this button's id is analogue (N64 stick and C buttons). */
+    isAnalog(b) { return this.retro[b] >= 16; }
+
+    /** The controller of each player: [first connected] or, on N64, by Gamepad index 0-3. */
+    pads() {
+      const all = navigator.getGamepads ? navigator.getGamepads() : [];
+      const out = [];
+      for (const p of all) {
+        if (!p || !p.connected) continue;
+        if (this.players === 1) { out[0] = p; break; }
+        if (p.index < this.players) out[p.index] = p;
+      }
+      return out;
+    }
+
     poll() {
       this.raf = requestAnimationFrame(this.poll);
-      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-      let pad = null;
-      for (const p of pads) { if (p && p.connected) { pad = p; break; } } // player 1 only
-      const now = new Set();
-      if (pad && this.enabled) {
-        const map = this.padMap(pad);
+      const pads = this.enabled ? this.pads() : [];
+      for (let pl = 0; pl < this.players; pl++) {
+        const pad = pads[pl];
+        const map = pad ? this.padMap(pad) : null;
+        const levels = this.padLevel[pl] || (this.padLevel[pl] = new Map());
         for (const b of this.buttons) {
-          if (map[b].some(bind => Input.isHeld(pad, bind))) now.add(b);
-        }
-      }
-      for (const b of this.buttons) {
-        const was = this.padDown.has(b);
-        if (now.has(b) !== was) {
-          if (now.has(b)) this.padDown.add(b); else this.padDown.delete(b);
-          this.update(b);
+          let lv = 0;
+          if (map) {
+            const stick = b.startsWith("Stick");
+            for (const bind of map[b]) lv = Math.max(lv, stick ? Input.level(pad, bind) : (Input.isHeld(pad, bind) ? 1 : 0));
+          }
+          if ((levels.get(b) || 0) !== lv) {
+            if (lv > 0) levels.set(b, lv); else levels.delete(b);
+            this.update(b, pl);
+          }
         }
       }
     }
@@ -172,21 +245,30 @@
       if (hit.length === 0) return;
       e.preventDefault();
       if (e.type === "keydown") this.keyDown.add(e.code); else this.keyDown.delete(e.code);
-      hit.forEach(b => this.update(b));
+      hit.forEach(b => this.update(b, 0));
     }
 
-    update(b) {
-      const pressed = this.padDown.has(b) || this.touchDown.has(b) || this.keys[b].some(c => this.keyDown.has(c));
-      if (!!this.down.get(b) === pressed) return;
-      this.down.set(b, pressed);
-      this.send(RETRO[b], pressed ? 1 : 0);
+    /** Works out a button's level for a player (keyboard and touch are player 1) and tells the core if it changed. */
+    update(b, player) {
+      let lv = (this.padLevel[player] && this.padLevel[player].get(b)) || 0;
+      if (player === 0) {
+        lv = Math.max(lv, this.touchLevel.get(b) || 0);
+        if (this.keys[b].some(c => this.keyDown.has(c))) lv = 1;
+      }
+      const value = lv <= 0 ? 0 : (this.isAnalog(b) ? Math.round(ANALOG_FULL * lv) : 1);
+      const sent = this.sent[player] || (this.sent[player] = new Map());
+      if ((sent.get(b) || 0) === value) return;
+      sent.set(b, value);
+      this.send(this.retro[b], value, player);
     }
 
     releaseAll() {
       this.keyDown.clear();
-      this.padDown.clear();
-      this.touchDown.clear();
-      for (const b of this.buttons) this.update(b);
+      this.touchLevel.clear();
+      for (let pl = 0; pl < this.players; pl++) {
+        if (this.padLevel[pl]) this.padLevel[pl].clear();
+        for (const b of this.buttons) this.update(b, pl);
+      }
     }
   }
 
@@ -517,7 +599,7 @@
     return out;
   }
 
-  const ROM_EXT = { gb: "gb", gbc: "gbc", gba: "gba", nds: "nds", psx: "chd" };
+  const ROM_EXT = { gb: "gb", gbc: "gbc", gba: "gba", n64: "z64", nds: "nds", psx: "chd" };
   /**
    * Core settings every game of a console starts with. melonDS's own default touch mode ("Mouse") moves a
    * hidden cursor by how far the mouse moves while the pointer is locked, so clicks and taps never landed where
@@ -532,7 +614,16 @@
    * and its memcard2 takes "disabled" / "enabled". Checked against the core's own option list by
    * tools/testbed/browser_ps1.mjs.
    */
-  const CORE_FORCED = { psx: { pcsx_rearmed_bios: "HLE", pcsx_rearmed_memcard2: "disabled" } };
+  /**
+   * N64 (D146): Controller Pak 1 = memory pak (it lives inside the synced save block), paks 2-4 none, never a rumble
+   * or transfer pak; same names in this EmulatorJS build (2.8, c35e55e) as in the app's core (checked against the
+   * core's own option list by tools/testbed/browser_n64.mjs). Controllers 2-4 have no option: the core always has all
+   * four plugged in, and each Gamepad API controller drives its own (Input, MULTIPLAYER).
+   */
+  const CORE_FORCED = {
+    psx: { pcsx_rearmed_bios: "HLE", pcsx_rearmed_memcard2: "disabled" },
+    n64: { "mupen64plus-pak1": "memory", "mupen64plus-pak2": "none", "mupen64plus-pak3": "none", "mupen64plus-pak4": "none" },
+  };
   const BIG_GAME_BYTES = 300 * 1024 * 1024; // above this, say the game needs a lot of memory (PS1 discs)
   const NO_BUTTONS = ["playPause", "restart", "mute", "settings", "fullscreen", "saveState", "loadState",
     "screenRecord", "gamepad", "cheat", "volumeSlider", "saveSavFiles", "loadSavFiles", "quickSave",
@@ -542,6 +633,17 @@
   /** A big game (a PS1 disc) is held in the browser's memory while it plays: say so, so a phone that runs out isn't a mystery. */
   function bigGameNote(bytes) {
     return "This is a big game (" + Math.round(bytes / (1024 * 1024)) + " MB). It is kept in this browser's memory while you play, so on a phone it may be slow to start or not start. The phone app plays it straight from storage.";
+  }
+
+  /**
+   * A cheat's code as the core gets it: its lines joined with "+". N64 (D146): Mupen64Plus-Next splits a code on
+   * anything that isn't a hex digit, so a 12-digit line typed without its space ("8030001000FF") would be one number
+   * and silently do nothing; such a line gets its space back ("80300010 00FF"), the same rule as the app.
+   */
+  function cheatForCore(consoleKey, code) {
+    let lines = code.split("\n");
+    if (consoleKey === "n64") lines = lines.map(l => /^\s*[0-9A-Fa-f]{12}\s*$/.test(l) ? l.trim().slice(0, 8) + " " + l.trim().slice(8) : l);
+    return lines.join("+");
   }
 
   const SNAP_SLOTS = ["1", "2", "3", "auto"];
@@ -760,7 +862,7 @@
       gm.setFastForwardRatio(this.ffSpeed);
       // Never lock the mouse pointer to the game: it hides the cursor and breaks touching the DS screen.
       this.emu.enableMouseLock = false;
-      this.input = new Input(this.game.console, this.prefs.controls, (id, v) => this.emu.gameManager.simulateInput(0, id, v));
+      this.input = new Input(this.game.console, this.prefs.controls, (id, v, pl) => this.emu.gameManager.simulateInput(pl || 0, id, v));
       this.input.attach();
       this.running = true;
       this.sync.start();
@@ -872,6 +974,9 @@
 
     /** A touch button: name (A, B, Up...) and pressed or not. */
     touch(button, on) { if (this.input) this.input.setTouch(button, on); }
+
+    /** The touch stick (N64): a direction (StickUp...) and how far it is pushed, 0-1. */
+    touchLevel(button, level) { if (this.input) this.input.setTouchLevel(button, level); }
 
     /** A PNG of the game picture (core output, no scaling). */
     async screenshot() {
@@ -1095,7 +1200,7 @@
      */
     applyCheats() {
       if (!this.running || !this.emu || !this.emu.gameManager) return false;
-      const codes = this.activeCheats().map(c => c.code.split("\n").join("+"));
+      const codes = this.activeCheats().map(c => cheatForCore(this.game.console, c.code));
       const gm = this.emu.gameManager;
       try {
         gm.resetCheat();
@@ -1212,6 +1317,6 @@
   }
 
   window.SC.Player = Player;
-  window.SC.controls = { RETRO, BUTTONS, DEFAULT_KEYS, DEFAULT_PAD, STANDARD, buildMap, isHeld: Input.isHeld };
-  window.SC._test = { meaningfulChange, sameBytes, buildMap, Input, SnapshotGuard };
+  window.SC.controls = { RETRO, RETRO_BY_CONSOLE, BUTTONS, DEFAULT_KEYS, DEFAULT_PAD, defaultKeys, defaultPad, MULTIPLAYER, STANDARD, buildMap, isHeld: Input.isHeld };
+  window.SC._test = { meaningfulChange, sameBytes, buildMap, Input, SnapshotGuard, cheatForCore };
 })();

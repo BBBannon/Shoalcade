@@ -17,6 +17,7 @@ public static class LibretroNames
         ["gb"] = "Nintendo - Game Boy",
         ["gbc"] = "Nintendo - Game Boy Color",
         ["gba"] = "Nintendo - Game Boy Advance",
+        ["n64"] = "Nintendo - Nintendo 64",
         ["nds"] = "Nintendo - Nintendo DS",
         ["3ds"] = "Nintendo - Nintendo 3DS",
         ["psp"] = "Sony - PlayStation Portable",
