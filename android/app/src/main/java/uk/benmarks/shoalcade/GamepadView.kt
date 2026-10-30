@@ -46,8 +46,6 @@ class GamepadView(
 
     private var pad: PadSpec? = null
     private val buttons get() = pad?.buttons.orEmpty()
-    /** Each button's label size, worked out once per layout ([labelSize]). */
-    private var labelSizes = FloatArray(0)
     private val dpadCx get() = pad?.dpadCx ?: 0f
     private val dpadCy get() = pad?.dpadCy ?: 0f
     private val dpadR get() = pad?.dpadR ?: 0f
@@ -101,7 +99,6 @@ class GamepadView(
         setBackgroundColor(if (s.background) Color.rgb(18, 18, 24) else Color.TRANSPARENT)
         fill.alpha = if (s.seeThrough) 45 else 70 // see the game through the buttons
         stroke.alpha = if (s.seeThrough) 110 else 160
-        labelSizes = FloatArray(s.buttons.size) { labelSize(s.buttons[it], s.textSize) }
         text.textSize = s.textSize
         val cx = s.dpadCx
         val cy = s.dpadCy
@@ -173,7 +170,7 @@ class GamepadView(
             if (dpadPointer != -1) canvas.drawCircle(thumbX, thumbY, dpadR * 0.22f, fillDown) // where the thumb is
         }
 
-        for ((i, b) in buttons.withIndex()) {
+        for (b in buttons) {
             val p = if (b.keyCode in pressed) fillDown else fill
             if (b.wide) {
                 drawRect.set(b.rect)
@@ -184,7 +181,8 @@ class GamepadView(
                 canvas.drawCircle(b.cx, b.cy, b.r, stroke)
             }
             val old = text.textSize
-            text.textSize = labelSizes.getOrElse(i) { old }
+            if (b.wide && b.label.length > 1) text.textSize = b.r * 0.75f
+            else if (!b.wide && b.label.length > 1) text.textSize = b.r * 0.7f // N64 C-buttons ("C▲") in small circles
             canvas.drawText(b.label, b.cx, b.cy + text.textSize * 0.35f, text)
             text.textSize = old
         }
@@ -196,19 +194,6 @@ class GamepadView(
             val knob = if (sx != 0f || sy != 0f) fillDown else fill
             canvas.drawCircle(stickCx + sx * stickR * 0.6f, stickCy + sy * stickR * 0.6f, stickR * 0.45f, knob)
         }
-    }
-
-    /** Text size for a button's label: smaller when it's more than one letter, and shrunk to fit inside the button. */
-    private fun labelSize(b: PadButton, base: Float): Float {
-        text.textSize = when {
-            b.label.length <= 1 -> base
-            b.wide -> b.r * 0.75f
-            else -> b.r * 0.7f // N64 C-buttons ("C▲") in small circles
-        }
-        // RPG Maker games name their own buttons ("Action"): a longer word shrinks to fit inside its button.
-        val room = if (b.wide) b.r * 3.4f else b.r * 1.7f
-        val w = text.measureText(b.label)
-        return if (w > room) text.textSize * room / w else text.textSize
     }
 
     private fun RectF.set(a: Area) = set(a.left, a.top, a.right, a.bottom)

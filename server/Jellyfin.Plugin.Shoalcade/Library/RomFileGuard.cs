@@ -40,21 +40,12 @@ public sealed class RomFileGuard : IAsyncActionFilter
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(next);
         if (IsGuardedRoute(context.ActionDescriptor.AttributeRouteInfo?.Template)
-            && context.ActionArguments.TryGetValue("itemId", out var raw) && raw is Guid itemId)
+            && context.ActionArguments.TryGetValue("itemId", out var raw) && raw is Guid itemId
+            && _library.IsRomOutsideItsLibrary(itemId))
         {
-            if (_library.IsRomOutsideItsLibrary(itemId))
-            {
-                _logger.LogWarning("Shoalcade refused to serve game {ItemId}: its file is not inside its library's folders", itemId);
-                context.Result = new StatusCodeResult(StatusCodes.Status404NotFound);
-                return;
-            }
-
-            // An RPG Maker game is a folder (D147): never sent whole by Jellyfin's file routes, only file by file by ours.
-            if (_library.IsFolderGame(itemId))
-            {
-                context.Result = new StatusCodeResult(StatusCodes.Status404NotFound);
-                return;
-            }
+            _logger.LogWarning("Shoalcade refused to serve game {ItemId}: its file is not inside its library's folders", itemId);
+            context.Result = new StatusCodeResult(StatusCodes.Status404NotFound);
+            return;
         }
 
         await next().ConfigureAwait(false);

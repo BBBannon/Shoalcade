@@ -15,7 +15,7 @@
 
   const api = window.SC.api;
   const $ = id => document.getElementById(id);
-  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP", rpgmaker: "RPG Maker" };
+  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP" };
   const SOURCE = {
     browser: "the browser player",
     app: "the phone app",

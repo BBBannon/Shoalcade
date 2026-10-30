@@ -35,7 +35,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -186,33 +185,12 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
     // Android 13+: ask once so the download progress notification can show. Downloads work either way.
     val notifPermission = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
-    // D147: a folder game (RPG Maker) says how big it is first; Wi-Fi only (Settings) stops downloads on mobile data.
-    var sizeAsk by remember { mutableStateOf<Pair<Game, FolderList>?>(null) }
-    val scope = rememberCoroutineScope()
-    fun download(g: Game, asked: Boolean = false) {
-        DownloadPrefs.blocked(DownloadPrefs.wifiOnly(ctx), DownloadPrefs.onWifi(ctx))?.let { vm.message = it; return }
-        if (g.isFolderGame && !asked) {
-            scope.launch {
-                try { sizeAsk = g to vm.folderList(g) } catch (e: Exception) { vm.message = "Couldn't get ${g.name}'s file list: ${e.message}" }
-            }
-            return
-        }
+    fun download(g: Game) {
         if (android.os.Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
             != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
         vm.download(g)
-    }
-
-    sizeAsk?.let { (g, list) ->
-        val have = remember(g.id) { list.total - FolderDownload.stillToFetch(Storage.downloadFolder(g), list) }
-        AlertDialog(
-            onDismissRequest = { sizeAsk = null },
-            title = { Text("Download ${g.name}?") },
-            text = { Text(DownloadPrefs.folderQuestion(g.name, list, have, DownloadPrefs.onWifi(ctx))) },
-            confirmButton = { TextButton(onClick = { sizeAsk = null; download(g, asked = true) }) { Text("Download") } },
-            dismissButton = { TextButton(onClick = { sizeAsk = null }) { Text("Cancel") } },
-        )
     }
 
     Scaffold(
@@ -250,7 +228,7 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 12.dp)) {
                     FilterChip(filter == ConsoleFilter.All, { filter = ConsoleFilter.All }, { Text("All") }, Modifier.padding(end = 6.dp))
-                    // Nintendo ▾ / Sony ▾ menus and plain chips (RPG Maker), only consoles that have games.
+                    // Nintendo ▾ / Sony ▾ menus and plain chips, only consoles that have games.
                     val bar = remember(vm.games) { ConsoleBar.items(vm.games.mapNotNull { it.console }.toSet()) }
                     bar.forEach { item ->
                         when (item) {
@@ -376,13 +354,11 @@ private fun GameRow(
             Column {
                 Text(
                     listOfNotNull(
-                        (g.console?.shortName ?: "Unknown console") + (g.engine?.let { " $it" } ?: ""),
-                        g.size?.takeIf { !downloaded && g.isFolderGame }?.let { FolderDownload.sizeText(it) },
+                        g.console?.shortName ?: "Unknown console",
                         if (downloaded) "On phone" else null,
                         if (g.console == Console.N3DS) "3DS support coming later" else null,
                     ).joinToString(" · ")
                 )
-                if (g.mayNotWork) Text("⚠️ May not work", color = MaterialTheme.colorScheme.error)
                 if (conflict) {
                     TextButton(onClick = { vm.askConflict(g) }, contentPadding = PaddingValues(0.dp)) {
                         Text("⚠️ Phone and Jellyfin saves differ: choose", color = MaterialTheme.colorScheme.error)
@@ -414,11 +390,6 @@ private fun GameRow(
                             }
                             DropdownMenuItem({ Text("Upload save to Jellyfin") }, { menu = false; onUpload() })
                             DropdownMenuItem({ Text("Get save from Jellyfin") }, { menu = false; onGetSave() })
-                            // D147: a folder game updates file by file, so only new or changed files download.
-                            if (g.isFolderGame) {
-                                DropdownMenuItem({ Text("Update from Jellyfin") }, { menu = false; onDownload() },
-                                    enabled = prog == null && !vm.offline && vm.serverProblem == null && g.canDownload)
-                            }
                             DropdownMenuItem({ Text("Remove from phone (keeps save)") }, { menu = false; vm.deleteDownload(g) })
                         }
                     }

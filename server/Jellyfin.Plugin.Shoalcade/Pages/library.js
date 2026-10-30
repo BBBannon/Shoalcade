@@ -9,7 +9,7 @@
  * - Console filter and search are kept in the address (?c=&q=) so Back from the player returns to the same view;
  *   the open game is #game=<id>, so Back closes it. ?c= is one console (gba) or a maker's group (nintendo, sony).
  * - Console bar: All, then one menu button per maker (Nintendo ▾, Sony ▾, from the server's consoles[].maker) and a
- *   plain button for a console with no maker (RPG Maker). A maker with only one console that has games is a plain
+ *   plain button for a console with no maker. A maker with only one console that has games is a plain
  *   button for that console.
  * - Sort (D123): Name / Year / Platform / Last played, the same words and order rules as the app's GameSort.kt.
  *   Remembered per user in the server's settings ("global" scope, key librarySort), with this browser's
@@ -22,12 +22,12 @@
 
   const api = window.SC.api;
   const $ = id => document.getElementById(id);
-  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP", rpgmaker: "RPG Maker" };
+  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP" };
   const RECENT_MAX = 6;
   const SORTS = ["name", "year", "platform", "played"];
   const DEFAULT_SORT = "played";
   /** Platform order (same as the app): the Game Boy family oldest first, then N64, DS, 3DS, PS1, PSP. Unknown consoles last. */
-  const PLATFORM_ORDER = ["gb", "gbc", "gba", "n64", "nds", "3ds", "psx", "psp", "rpgmaker"];
+  const PLATFORM_ORDER = ["gb", "gbc", "gba", "n64", "nds", "3ds", "psx", "psp"];
   const collator = new Intl.Collator("en-GB", { sensitivity: "base" });
 
   const S = { info: null, games: [], byId: new Map(), cards: new Map(), con: "all", q: "", sort: DEFAULT_SORT, openedHere: false, edit: null,
@@ -85,16 +85,9 @@
     return best;
   }
 
-  /** A game folder's size, for RPG Maker games (D147). */
-  function sizeText(n) {
-    return n >= 1073741824 ? (n / 1073741824).toFixed(1) + " GB" : n >= 1048576 ? Math.round(n / 1048576) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
-  }
-
   /** Why Play is not offered for a game, or null if it can be played here. */
   function cantPlay(g) {
     if (!S.info.browserPlayer) return "The browser player is switched off on this server.";
-    // 3DS isn't playable anywhere yet (the app says "coming later" too), so don't point people at the app.
-    if (g.console === "3ds") return "Nintendo 3DS games can't be played yet, here or in the Shoalcade app. Support is coming later.";
     if (!g.browserPlayable) return consoleName(g.console) + " games can't be played in the browser. Use the Shoalcade app.";
     if (!S.info.user.canDownload) return "Your Jellyfin account isn't allowed to download, so games can't be played here. Ask the server admin.";
     return null;
@@ -401,9 +394,7 @@
     $("sheet-edit").hidden = !(S.info.user && S.info.user.isAdmin);
 
     const facts = [
-      ["Console", consoleName(g.console) + (g.engine ? " " + g.engine : "")],
-      ["Size", g.size ? sizeText(g.size) : null],
-      ["Warning", g.mayNotWork ? "May not work: this game comes with Windows add-ons that may not run here." : null],
+      ["Console", consoleName(g.console)],
       ["Region", g.region],
       ["Year", g.year],
       ["Series", g.series],

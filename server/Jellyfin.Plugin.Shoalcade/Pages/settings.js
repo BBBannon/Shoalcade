@@ -228,8 +228,7 @@
     const list = changed(p);
     box.append(
       h("h3", { class: "set-h3", text: c.name }),
-      // RPG Maker has no snapshots (D147), so no switch for it.
-      c.key === "rpgmaker" ? "" : h("label", { class: "tog" }, [h("span", { text: "Snapshots" }), sw, h("span", { class: "tog-ui", "aria-hidden": "true" })]),
+      h("label", { class: "tog" }, [h("span", { text: "Snapshots" }), sw, h("span", { class: "tog-ui", "aria-hidden": "true" })]),
       h("p", { class: "fine set-sub", text: "Controls" }),
       list.length
         ? h("ul", { class: "set-changed" }, list.map(x => {

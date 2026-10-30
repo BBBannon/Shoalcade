@@ -112,7 +112,7 @@ class GameActivity : ComponentActivity() {
             if (link == null) { toast("The link was lost before the game started. Try again."); finish(); return }
         }
         // From boot until the state is in, nothing the game does counts as a save (the person chose the snapshot).
-        startFromState = link == null && console.hasSnapshots && intent.getBooleanExtra(EXTRA_SNAPSHOT, false) && Storage.stateFile(userId, game).isFile
+        startFromState = link == null && intent.getBooleanExtra(EXTRA_SNAPSHOT, false) && Storage.stateFile(userId, game).isFile
         if (startFromState) { startPrior = guard.begin(); loadingState = true }
 
         // Keep a copy of the save as it was before this session, so a bad session can be undone.
@@ -129,7 +129,7 @@ class GameActivity : ComponentActivity() {
             saveDisabled = true
             toast(SAVE_NOT_LOADED)
         }
-        if (link == null && console.hasCheats) loadCheats() // D143: none in a link session; none for RPG Maker (D147)
+        if (link == null) loadCheats() // D143: none in a link session
 
         val libDir = applicationInfo.nativeLibraryDir
         val realCore = File(libDir, if (link != null && console == Console.GBA) LinkRules.GPSP_CORE else console.core!!).absolutePath
@@ -160,15 +160,6 @@ class GameActivity : ComponentActivity() {
             }
         }
 
-        if (console == Console.RPGMAKER) {
-            RpgMaker.loadNames(rom.parentFile!!) // the game's own button names (its mkxp.json), for the touch buttons
-            coreVars += RpgMaker.gameVariables(runCatching { File(rom.parentFile!!, Storage.FOLDER_LIST).readText() }.getOrNull())
-            try { RpgMaker.installCompat(this, PspAssets.systemDir(this).apply { mkdirs() }) } catch (e: Exception) {
-                toast("Couldn't set up the RPG Maker engine: ${e.message}"); finish(); return
-            }
-            Os.setenv("SC_REAL_CORE", realCore, true) // mkxp-z always goes through its shim (rpgshim.c)
-        }
-
         // Cartridge clock (Gen 2 Pokémon): load through the clock shim so the clock is saved with the game.
         clockMode = link == null && (console == Console.GB || console == Console.GBC) && GbClock.hasClock(rom)
         if (clockMode) Os.setenv("SC_REAL_CORE", realCore, true)
@@ -177,7 +168,6 @@ class GameActivity : ComponentActivity() {
             coreFilePath = when {
                 link != null -> File(libDir, LinkRules.SHIM).absolutePath
                 clockMode -> File(libDir, GbClock.SHIM).absolutePath
-                console == Console.RPGMAKER -> File(libDir, RPG_SHIM).absolutePath
                 else -> realCore
             }
             gameFilePath = rom.absolutePath
@@ -251,10 +241,6 @@ class GameActivity : ComponentActivity() {
             root.addView(status, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END))
             watchLink(status)
         }
-        if (console == Console.RPGMAKER) {
-            // Typing for names and the like (RpgTyping): the keyboard opens when the game asks for text.
-            typing = RpgTyping.Receiver(this, Storage.savedataDir(userId, game)).also { root.addView(it, FrameLayout.LayoutParams(1, 1)); it.start() }
-        }
         setContentView(root)
         startLoading()
         startWatchers()
@@ -264,8 +250,6 @@ class GameActivity : ComponentActivity() {
     // --- Screen layout (D128) --------------------------------------------------------------------
 
     private lateinit var root: FrameLayout
-    /** RPG Maker only: takes the phone keyboard's typing while the game wants text. */
-    private var typing: RpgTyping.Receiver? = null
     private lateinit var menuHandle: TextView
     /** The loading screen while the game starts (GameLoading.kt); null once the game shows. */
     private var loadingView: ComposeView? = null
@@ -540,7 +524,6 @@ class GameActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        typing?.stop()
         if (deviceListenerOn) getSystemService(InputManager::class.java)?.unregisterInputDeviceListener(deviceListener)
         if (link != null && owner === this) LinkHolder.end()
         if (owner === this) owner = null
@@ -663,7 +646,6 @@ class GameActivity : ComponentActivity() {
     // Lint flags super.dispatchKeyEvent on ComponentActivity as restricted; overriding it is the documented way to read keys.
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (typing?.key(event) == true) return true // RPG Maker asking for text: a physical keyboard types
         if (!::retroView.isInitialized) return super.dispatchKeyEvent(event)
         val down = event.action == KeyEvent.ACTION_DOWN
         // Menu open: controller (and keyboard) keys move around it. The phone's own Back goes to the Back handler,
@@ -820,12 +802,12 @@ class GameActivity : ComponentActivity() {
             console = console,
             // States would break a link session (the other phone wouldn't jump back with us).
             // Snapshots on/off per console comes from the server settings, shared with the browser (D38).
-            states = link == null && console.hasSnapshots && SnapshotSetting.enabled(this, console),
+            states = link == null && SnapshotSetting.enabled(this, console),
             hasState = Storage.stateFile(userId, game).isFile,
             touch = autoHide.mode, screen = display.screen,
             ds = display.ds(land), dsSwap = display.swap(land), muted = muted,
             canUpload = !intent.getBooleanExtra(EXTRA_OFF_LIST, false),
-            cheatsAllowed = link == null && console.hasCheats,
+            cheatsAllowed = link == null,
             cheats = cheatBook.cheats.map { MenuCheat(it.id, it.name, cheatBook.isOn(it.id)) },
         )
     }
@@ -1363,8 +1345,6 @@ class GameActivity : ComponentActivity() {
     private fun toast(msg: String) = Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show()
 
     companion object {
-        /** Loaded in place of mkxp-z for RPG Maker games (cpp/rpgshim.c). */
-        const val RPG_SHIM = "librpgshim.so"
         /** The loading screen goes after this even if the game still shows only black (safety net, not the signal). */
         const val LOADING_SAFETY_MS = 180_000L
         private const val EXTRA_ID = "id"

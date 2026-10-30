@@ -68,7 +68,7 @@ data class GameLayout(
         fun portraitAspectHW(console: Console, ds: DsLayout): Float = when {
             console.isDualScreen -> if (ds == DsLayout.STACK) 1.5f else 1f / ds.aspect
             console == Console.GBA -> 2f / 3f
-            console == Console.PSX || console == Console.N64 || console == Console.RPGMAKER -> 0.75f
+            console == Console.PSX || console == Console.N64 -> 0.75f
             else -> 0.9f
         }
 
@@ -77,7 +77,7 @@ data class GameLayout(
             Console.NDS -> ds.aspect
             Console.GBA -> 1.5f
             Console.PSP -> 480f / 272f
-            Console.PSX, Console.N64, Console.RPGMAKER -> 4f / 3f // RPG Maker XP 640×480 (Reborn 512×384)
+            Console.PSX, Console.N64 -> 4f / 3f
             else -> 160f / 144f
         }
 

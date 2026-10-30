@@ -52,12 +52,11 @@
 ├── Nintendo DS/         .nds
 ├── PS1/                 .chd .pbp   (one file per game)
 ├── PSP/                 .iso .cso .pbp .chd
-├── Nintendo 3DS/        .3ds .cci .cia
-└── RPG Maker/           one folder per game (see below)
+└── Nintendo 3DS/        .3ds .cci .cia
 ```
 
-- Short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`, `rpgmaker`.
-- A **.zip** or **.7z** holding one game is fine (not PS1 or RPG Maker).
+- Short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`.
+- A **.zip** or **.7z** holding one game is fine (not PS1).
 - PSP `.iso` files **must** be in a PSP folder (`.iso` alone doesn't say which console).
 - **A file must fit its folder's console.** E.g. a `.gba` file in a `PSP` folder is **not listed** any more. Move it to the right folder.
 - **Nothing is ever written into your ROM folder.**
@@ -75,29 +74,6 @@
 - `.chd` and `.pbp` files outside a PS1 folder are treated as **PSP**, unless the name says PS1 (a PS1 `.pbp` is also recognised by its contents).
 - **Big discs** (hundreds of MB) play best on the phone. In the browser they need a lot of memory; a note says so before **Play**.
 - **The save is one 128 KB memory card**, shared by the phone and the browser. A second card is turned off.
-
-**RPG Maker games — the rules**
-
-```
-/media/games/RPG Maker/
-└── Pokemon Reborn/
-    ├── Game.ini
-    ├── Game.exe
-    ├── Data/
-    └── Graphics/ ...
-```
-
-| Works | Not supported |
-|---|---|
-| **RPG Maker XP, VX and VX Ace** games (Windows) | RPG Maker **MV / MZ** (`index.html` + `js/` folder) |
-| The game's **folder** (the one with `Game.ini`) in an **`RPG Maker`** folder | RPG Maker **2000 / 2003** (`RPG_RT.exe`) |
-| A game **one folder down** (as it often is after unzipping) | Packed games (`.zip`, `.7z`, `.rar`) — **unzip them first**; the scan log tells you which |
-
-- Other folder names work too: `RPG Maker XP`, `RPG Maker VX`, `RPG Maker VX Ace`, `rpgxp`, `rpgvx`, `rpgvxace`.
-- Games packed into **one encrypted archive** (`Game.rgssad`, `.rgss2a`, `.rgss3a`) should work, but are **untested**.
-- Games that ship **Windows add-ons** (DLLs) Shoalcade doesn't know show **⚠️ May not work**. Common add-ons in older Windows games (e.g. Pokémon Z) get a built-in stand-in.
-- **No snapshots, cheats or patcher** for RPG Maker. Saves sync like every other console.
-- Tell us how a game runs: [RPG Maker game report](https://github.com/BBBannon/Shoalcade/issues/new?template=rpg_maker_report.yml).
 
 **Create the library:**
 
@@ -125,11 +101,6 @@
 
 **Updating:** install the new APK over the old one. Your login, games and saves stay.
 
-**RPG Maker on the phone**
-- Big games show their **size** and ask before downloading. To save mobile data, switch on **Settings → Download games on Wi-Fi only**.
-- Game menu → **Update from Jellyfin** downloads **only the files that changed**.
-- Touch buttons use **the game's own button names**. When the game asks you to type, the **phone keyboard** opens.
-
 ---
 
 ## 4. First login
@@ -148,20 +119,12 @@
 
 - Open the **Shoalcade** link in Jellyfin's menu, or go to **`https://<your-server>/shoalcade/`**.
 - It uses your Jellyfin web login. No extra sign-in.
-- Plays **GB, GBC, GBA, N64, DS, PS1 and RPG Maker**. PSP and 3DS are phone only.
-- **Console bar** at the top: **All**, **Nintendo ▾**, **Sony ▾**, **RPG Maker**.
-- A **loading bar** shows while a game starts.
+- Plays **GB, GBC, GBA, N64, DS and PS1**. PSP and 3DS are phone only.
 - Each game page has **Play** and **Saves** buttons.
 - Saves are sent to Jellyfin by themselves, a few seconds after the game saves.
   - Leaving too soon? It asks: **Your save hasn't reached the server yet** → **Stay** or **Leave anyway**.
-- **Quick snapshot** (F2) and **Load snapshot** (F4) are on the toolbar (not RPG Maker).
+- **Quick snapshot** (F2) and **Load snapshot** (F4) are on the toolbar.
 - **⚙ Settings** (top of the library): **Manage saves**, **Phone app** and each console's **Browser player** settings.
-
-**RPG Maker in the browser**
-- **First start can take up to a minute.** Big games take about **40–60 seconds** to reach the title screen.
-- Files load **as the game needs them**. For big games, **Keep in browser** keeps the files in this browser so later starts are quicker.
-- **Keys:** **arrows** = move, **Enter** = C (Go), **Esc** = B (Back), **Left Shift** = A. Type names on your keyboard. **F1** = pause, **hold Tab** = fast-forward. Change them in **Settings → Controls**.
-- **Needs a lot of memory:** about **1 GB** once running, with a short peak of up to **~4 GB** while it starts (desktop Chrome). On a low-memory device, use the phone app.
 
 **Admins** can turn the browser player off: **Settings → Browser player and library pages**.
 
@@ -215,7 +178,5 @@ Both copies are kept either way.
 | App shows a red banner | The plugin is too old for the app. Update the plugin |
 | Login fails | Use the **HTTPS** address. Try **Log in with Quick Connect** |
 | No box art | Wait for the next scan. Some games have no libretro art |
-| RPG Maker game not listed | Unzip it into its own folder inside `RPG Maker`, then scan. MV, MZ, 2000 and 2003 aren't supported |
-| RPG Maker game crashes the browser tab | Close other tabs, or play it in the phone app — the browser needs a lot of memory while it starts |
 
 **Please report bugs on GitHub** — not to the Jellyfin team.

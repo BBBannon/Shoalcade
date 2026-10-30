@@ -41,8 +41,6 @@ public sealed class WebAssets
         [".zip"] = "application/zip",
         [".txt"] = "text/plain; charset=utf-8",
         [".woff2"] = "font/woff2",
-        [".mjs"] = "text/javascript; charset=utf-8",
-        [".rb"] = "text/plain; charset=utf-8",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     private readonly FrozenDictionary<string, WebAsset> _pages;

@@ -99,10 +99,6 @@ internal fun SettingsScreen(vm: AppViewModel, onClose: () -> Unit) {
             DrawerRow(MenuItem.Toggle(SettingsModel.ID_HAPTICS, SettingsModel.HAPTICS, haptics), focused = false) {
                 haptics = !haptics; Haptics.setOn(GameSound.store(ctx), haptics)
             }
-            var wifiOnly by remember { mutableStateOf(DownloadPrefs.wifiOnly(ctx)) }
-            DrawerRow(MenuItem.Toggle(SettingsModel.ID_WIFI_ONLY, SettingsModel.WIFI_ONLY, wifiOnly), focused = false) {
-                wifiOnly = !wifiOnly; DownloadPrefs.setWifiOnly(GameSound.store(ctx), wifiOnly)
-            }
             val session = vm.session
             Labelled(SettingsModel.SERVER, session?.serverUrl.orEmpty())
             Labelled(SettingsModel.ACCOUNT, session?.userName.orEmpty() + if (vm.offline) " · offline" else "")

@@ -204,12 +204,7 @@ public class CheatsController : ShoalcadeControllerBase
             return fail;
         }
 
-        if (RequireRom(id, user, out var rom) is ActionResult notFound)
-        {
-            return notFound;
-        }
-
-        return rom.Console.FolderGame ? GameNotFound() : null; // no cheats for RPG Maker (D147)
+        return RequireRom(id, user, out _);
     }
 
     private ObjectResult CheatNotFound() => Fail(StatusCodes.Status404NotFound, "no_cheat", "That cheat isn't in this game's list any more.");

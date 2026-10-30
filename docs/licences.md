@@ -52,83 +52,6 @@ A short public summary is in **`THIRD_PARTY_NOTICES.md`** (repo root). This file
 4. ✅ **PPSSPP commit found** (25/10/2026): `902e5cc` is embedded in the bundled `libppsspp_libretro_android.so`. Full hash above. If the core is ever replaced, re-check the string and update `About.kt`.
 5. ✅ **PPSSPP fonts checked** (25/10/2026): they are PPSSPP's own community replacements, not Sony's. Details below.
 6. ✅ **Mupen64Plus-Next licence sweep** (28/10/2026, commit `15bada8`). See "Mupen64Plus-Next (N64) sweep" below. GLideN64 wording decided (D146).
-7. ✅ **mkxp-z licence sweep** (29/10/2026, white-axe commit `5cd3203`, app and browser builds). See "mkxp-z (RPG Maker) sweep" below. ⚠️ Two release jobs remain: our own source copy, and the notice texts.
-
-### mkxp-z (RPG Maker) sweep — 29/10/2026
-
-**Verdict: OK to release.** Every part is GPL-3.0-compatible. No GPL-2.0-only code, no non-commercial or "no-sell" licences.
-
-- **mkxp-z is GPL-2.0-or-later.** `COPYING` is GPL v2, and all 199 GPL-headed source files at `5cd3203` say *"either version 2 of the License, or (at your option) any later version"* (checked by script; none without "or later").
-- **Combined with our GPL-3.0 shim (`librpgshim.so`) and app: fine.** "Or later" lets us take GPL-3.0. The Apache-2.0 parts (wasm2c output, wasi-libc option) are GPL-3-compatible but not GPL-2-compatible, so the built core is **GPL-3.0 as combined**. That matches the app and plugin (GPL-3.0). Upstream's own README says the same happens with its HTTPS build ("in practice … GPLv3").
-- **The browser build also contains RetroArch v1.22.2 (GPL-3.0).** CI builds RetroArch's emscripten front-end around the core (`autobuild.yml`, "LR Emscripten unthreaded"), using RetroArch's **latest release at build time**. Our `mkxp-z_libretro.wasm` reports `Version: 1.22.2`. GPL-3.0, so it is compatible, but it is **not pinned in mkxp-z's source**: our source copy must include RetroArch `v1.22.2`.
-- **How it is built** (`libretro/Makefile`, `meson.build`, `src/meson.build`, `.github/workflows/autobuild.yml` at `5cd3203`):
-  - **Stage 1:** Ruby 3.3.10 is built to WebAssembly with **WASI SDK 30.0** (`wasm32-wasip2`), then turned into C with **wasm2c** (WABT 1.0.37). That C is compiled into the core, so Ruby, its built-in extensions, libyaml, zlib and wasi-libc all end up inside it.
-  - **Stage 2:** the core, with meson subprojects (wrap files in `subprojects/`). The libretro build leaves out OpenSSL, SDL, the HTTP/network code (`net/`) and Steam.
-  - **Android:** NDK r27c, arm64 and x86_64. **Browser:** emsdk **4.0.8**, "unthreaded" (`HAVE_THREADS=0`, OpenAL audio).
-
-| Component (in both builds unless noted) | Version | Licence | GPL-3 OK? | Binary duties |
-|---|---|---|---|---|
-| **mkxp-z** core (white-axe fork) | 2.4.2, `5cd3203` | GPL-2.0-or-later | ✅ | Source |
-| ↳ in-tree: libnsgif | — | MIT | ✅ | Notice |
-| ↳ in-tree: ghc::filesystem | — | MIT | ✅ | Notice |
-| ↳ in-tree: rapidcsv | — | BSD-3-Clause | ✅ | Notice |
-| ↳ in-tree: sigslot | — | MIT | ✅ | Notice |
-| **Ruby** (as WebAssembly → C) | 3.3.10 | Ruby licence or BSD-2-Clause (we take BSD-2). Parts per Ruby's `LEGAL`: Onigmo BSD-2, ccan CC0/MIT, MT19937 BSD-3, others BSD/MIT/public domain | ✅ | Notice (BSD-2 + `LEGAL`) |
-| **libyaml** (Ruby's psych) | 0.2.5 | MIT | ✅ | Notice |
-| **wasi-libc** (WASI SDK 30.0) | 30.0 | Apache-2.0 WITH LLVM-exception, Apache-2.0 or MIT (we take MIT); musl MIT, cloudlibc BSD-2, fts BSD-3, dlmalloc CC0 | ✅ | Notice |
-| **wasm2c** output and runtime templates (WABT) | 1.0.37 | Apache-2.0 | ✅ GPL-3 only | Licence text |
-| **Boost** (asio, optional, preprocessor, type_traits, container_hash … header-only) | 1.90.0 | BSL-1.0 | ✅ | None for binaries |
-| **zlib** | 1.3.1 | zlib | ✅ | None for binaries |
-| **PhysicsFS** | 3.2.0 | zlib | ✅ | None for binaries |
-| **theoraplay** | `672cf6d` | zlib | ✅ | None for binaries |
-| **OpenAL Soft** | 1.24.3 | LGPL-2.0-or-later (`COPYING` = Library GPL v2) | ✅ | Source (covered by ours) |
-| **FluidSynth** | 2.5.0 | LGPL-2.1-or-later | ✅ | Source |
-| **libsndfile** | 1.2.2 | LGPL-2.1-or-later | ✅ | Source |
-| **mpg123** (madebr CMake fork) | `fe143d4` | LGPL-2.1 (LGPL 2.1 §3 allows GPL v2 or later) | ✅ | Source |
-| **libiconv** | 1.18 | LGPL-2.1-or-later (library) | ✅ | Source |
-| **libidn** | 1.43 | GPL-2.0-or-later or LGPL-3.0-or-later | ✅ | Source |
-| **uchardet** | 0.0.8 | MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later (we take GPL) | ✅ | Source |
-| **FreeType** | 2.14.1 | FTL or GPL-2.0-or-later (we take GPL, so no FTL credit is required) | ✅ | Source |
-| **libogg** / **libvorbis** | 1.3.6 / 1.3.7 | BSD-3-Clause | ✅ | Notice |
-| **FLAC** | 1.5.0 | BSD-3-Clause (libFLAC) | ✅ | Notice |
-| **Opus** | 1.5.2 | BSD-3-Clause | ✅ | Notice |
-| **Theora** (decoder) | 1.2.0 | BSD-3-Clause | ✅ | Notice |
-| **pixman-region** | `6380f6e` | MIT (X11-style) | ✅ | Notice |
-| **stb** | `f1c79c0` | MIT or public domain (we take public domain) | ✅ | None |
-| **Priority-Deque** | `7475dac` | MIT | ✅ | Notice |
-| **PicoSHA2** | v1.0.1 / `161cb3f` | MIT | ✅ | Notice |
-| **libretro-common** | `7caf0cd` | MIT | ✅ | Notice |
-| OpenGL-Registry headers | `d38ff69` | Apache-2.0 / MIT (headers only, no code) | ✅ | None |
-| **RetroArch** front-end (browser only) | v1.22.2 | GPL-3.0-or-later | ✅ | Source (exact tag) |
-| **Emscripten** runtime + its libc (browser only: JS glue in `mkxp-z_libretro.js` and wasm) | emsdk 4.0.8 | MIT or UIUC (dual); musl MIT | ✅ | Notice |
-| **librpgshim.so** (`android/app/src/main/cpp/rpgshim.c`, app only) | ours | GPL-3.0 | ✅ | Source (this repo) |
-| **shoalcade_compat.rb** (`android/app/src/main/assets/rpgmaker/`, app and browser) | ours | GPL-3.0 (header says so) | ✅ | Source (this repo) |
-
-"Notice" = the licence text and copyright line must go with the binary (BSD, MIT, Apache: in "the documentation and/or other materials").
-
-#### Do we ship the needed texts? ⚠️ Not yet
-
-| Text | Needed for | In the APK? | In the plugin zip? |
-|---|---|---|---|
-| GPL-3.0 | Shoalcade, RetroArch, the combined core | ✅ `assets/LICENSE.txt` | ✅ `LICENSE.txt` |
-| GPL-2.0 / LGPL-2.0 / LGPL-2.1 | mkxp-z, OpenAL Soft, FluidSynth, libsndfile, mpg123, libiconv | ❌ | ❌ |
-| BSD-2 / BSD-3 / MIT / Apache-2.0 texts with copyright lines | Ruby, libyaml, wasi-libc, wasm2c, ogg, vorbis, FLAC, Opus, Theora, pixman-region, Priority-Deque, PicoSHA2, libretro-common, libnsgif, ghc::filesystem, rapidcsv, sigslot, Emscripten | ❌ | ❌ (`THIRD_PARTY_NOTICES.md` only names them) |
-
-- **Fix (lead, build change):** add one plain-text file, e.g. `licences/mkxp-z-THIRD-PARTY.txt`, holding each upstream licence file copied from the source at the versions above (`COPYING`/`LICENSE` of each project, plus Ruby's `BSDL` and `LEGAL`). Then:
-  - **Plugin zip:** `server/build.sh` copies it next to `LICENSE.txt`.
-  - **APK:** add it to the assets the same way `LICENSE.txt` is (`android/app/build.gradle.kts`, line ~115) and let **About and licences** open it.
-- **Low risk if it slips one release** (the source link is in the app and the zip), but BSD/MIT/Apache strictly ask for it. The same gap already exists for older parts (PCSX ReARMed's libchdr and zstd BSD, Mupen64Plus-Next's MIT/BSD parts), so one shared file fixes all of them.
-- **Wording to correct (lead, code + notices):** `About.kt` and `THIRD_PARTY_NOTICES.md` call mkxp-z "GPL-2.0-or-later" with a short parts list and "FreeType FTL". Better: **"GPL-3.0 as combined (mkxp-z GPL-2.0-or-later; parts listed in docs/licences.md)"**. The browser row should also name **RetroArch v1.22.2 (GPL-3.0)** and **Emscripten (MIT)**.
-
-#### Source offer
-
-- GPL needs the **complete corresponding source** for both builds: mkxp-z at `5cd3203`, **plus** every downloaded part (Ruby 3.3.10, libyaml 0.2.5, WABT 1.0.37, all meson wraps above, RetroArch v1.22.2) and the build scripts (they are in the mkxp-z tree).
-- **Today:** the white-axe commit is public (`https://github.com/white-axe/mkxp-z/tree/5cd3203660d16ab8cfb8dd962e04216662f8f8e9`), and upstream PR mkxp-z/mkxp-z#255 keeps a reference to it. But it lives on someone else's fork branch, which can be force-pushed or deleted. The dependencies come from GitHub, GNU mirrors and Debian, and RetroArch is chosen as "latest" at build time. The CI artifacts expire **22/01/2027**.
-- **Recommendation:** for each release that ships mkxp-z:
-  1. **Fork** `white-axe/mkxp-z` to `BBBannon/mkxp-z` and tag `5cd3203` (e.g. `shoalcade-v0.6.0`), so the core's source can't vanish.
-  2. **Attach a source tarball** to the GitHub release: the mkxp-z tree with `meson subprojects download` already run, plus Ruby 3.3.10, libyaml 0.2.5, WABT 1.0.37 and RetroArch v1.22.2 sources. Then the source is complete even if upstream links move.
-  3. **Back up the two CI artifact zips** (already pinned by SHA-256 in `server/mkxpz.lock` and kept in `.testbed/dl`) somewhere other than this PC before 22/01/2027. Better still, rebuild from our fork's own CI and pin that.
-- Not done by this sweep (no forks made, nothing uploaded).
 
 ### Mupen64Plus-Next (N64) sweep — 28/10/2026
 
@@ -152,7 +75,6 @@ A short public summary is in **`THIRD_PARTY_NOTICES.md`** (repo root). This file
 | **PPSSPP support files** (`assets/PPSSPP.zip`, from buildbot `assets/system/PPSSPP.zip`) | PSP fonts, compatibility list, UI atlas. Unpacked to `files/system/PPSSPP` | GPL-2.0 + PSPSDK BSD notice (`PPSSPP/LICENSE.TXT` inside) |
 | **PCSX ReARMed** libretro core `r26l-119-gc881679` (commit `c8816799`, 02/10/2026) | PS1 (D137) | GPL-2.0-or-later, no GPL-2.0-only files (sweep below) — source https://github.com/libretro/pcsx_rearmed/tree/c8816799b50388e61cfe237fe2cdbb7d8175f20a |
 | **Mupen64Plus-Next** libretro core, GLES3 build `3.0-GLES3 15bada8` (commit `15bada85`, 22/10/2026). Bundled as `libmupen64plusnext_libretro_android.so`: arm64 SHA-256 `4335b6b1…6bc3c7`, x86_64 (debug APK only) `ead53e23…3ce9e` | N64 (plan-n64) | GPL-3.0 as combined, no GPL-3-incompatible code (sweep below) — source https://github.com/libretro/mupen64plus-libretro-nx/tree/15bada85906593376e8fd697f1b0b3af3a20f512 |
-| **mkxp-z** libretro core 2.4.2, white-axe build `5cd3203` (GitHub Actions run 40133334951, 24/10/2026; PR mkxp-z/mkxp-z#255, not yet merged upstream). Bundled as `libmkxpz_libretro_android.so`: arm64 SHA-256 `992b9b70…614d64`, x86_64 (debug APK only) `ade41c0c…1dc686`. Loaded through `librpgshim.so` (our GPL-3.0 shim) | RPG Maker (D147) | **GPL-3.0 as combined** (mkxp-z itself GPL-2.0-or-later; its Apache-2.0 parts need GPL-3). ✅ **Swept 29/10/2026: no GPL-incompatible code, no GPL-2.0-only files.** Every part, version and licence: "mkxp-z (RPG Maker) sweep" below. Still to do: keep our own copy of the full source (CI artifact expires 22/01/2027) and ship the BSD/MIT/Apache notice texts (see the sweep) — source https://github.com/white-axe/mkxp-z/tree/5cd3203660d16ab8cfb8dd962e04216662f8f8e9 |
 | Shoalcade link shim (`cpp/linkshim.c`, `cpp/linkstate.c`) | Gives cores link support | GPL-3.0 (ours) |
 | Shoalcade clock shim (`cpp/clockshim.c`) | Saves the Game Boy cartridge clock with the game | GPL-3.0 (ours) |
 | AndroidX / Jetpack Compose / Kotlin | App framework | Apache-2.0 |
@@ -194,7 +116,6 @@ The plugin is GPL-3.0 too (`LICENSE.txt` in the zip). It bundles EmulatorJS and 
 | **PCSX ReARMed** (EmulatorJS build) | `@emulatorjs/core-pcsx_rearmed` 4.2.3 (core built June 2025) | `d641b90c…ff165d923` (npm sha512 `mMbl/Nsz…fgQCog==` also checked) | **PS1** in the browser (same core family as the app, one memory card, D137). Run with its HLE BIOS stand-in; no BIOS bundled | GPL-2.0-or-later — https://github.com/EmulatorJS/pcsx_rearmed (fork of https://github.com/libretro/pcsx_rearmed) |
 | **Mupen64Plus-Next** (EmulatorJS build) | `@emulatorjs/core-mupen64plus_next` 4.2.3 (core built 14/06/2025, version string `2.8-GLES3 c35e55e`) | `2b8952aa…09724417` (npm sha512 `HnnEXbOE…5e3hw==` also checked) | **N64** in the browser (same core family as the app, one save block, D146). No BIOS/PIF ROM needed or bundled | GPL-2.0-or-later — https://github.com/EmulatorJS/mupen64plus-libretro-nx/tree/c35e55e87cbaa4cfc8355d8f91ceaa2beb212e9d (fork of https://github.com/libretro/mupen64plus-libretro-nx) |
 
-- **mkxp-z** (RPG Maker browser player, D147) is **not** from npm: the emscripten "unthreaded" build of white-axe `5cd3203` (RetroArch v1.22.2 + the core in one module, `mkxp-z_libretro.js` + `.wasm` → `ejs/mkxp-z/`). Pinned by SHA-256 in `server/mkxpz.lock` (artifact zip `e9a0770a…0a96bd02cc`). Licence: **GPL-3.0 as combined**, see "mkxp-z (RPG Maker) sweep" above.
 - Full hashes are in `server/emulatorjs.lock`. **Not yet done (security M3):** cross-check them once against npm's published `dist.integrity`, and diff-review EmulatorJS on any version bump.
 - Each core `.data` file is a 7-Zip archive built by EmulatorJS; the licence above is the upstream core's. (Not unpacked here to read any licence file inside: no 7-Zip on the build PC.)
 - ✅ **gambatte removed from the plugin too** (24/10/2026): it is GPL-2.0-only (see Notes), the same reason D25 removed it from the app. The browser's GB/GBC core is now **mGBA**, matching the app, so GB/GBC save files keep one format. `core-gambatte` is gone from `emulatorjs.lock`, so it can't be bundled by mistake. Side effect: browser snapshots made with gambatte before this change show as "made by another core" and won't load; saves are not affected.

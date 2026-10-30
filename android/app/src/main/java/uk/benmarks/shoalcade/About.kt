@@ -41,9 +41,6 @@ object Licences {
         Part("Mupen64Plus-Next (3.0-GLES3 15bada8)", "Nintendo 64",
             "GPL-3.0 as combined (parts: mupen64plus-core GPL-2.0-or-later, GLideN64 GPL-2.0 (combined upstream with GPL-3.0 code), xBRZ GPL-3.0, GNU lightning LGPL-3.0-or-later, cxd4 CC0, parallel-rsp, parallel-rdp, angrylion and libretro-common MIT, xxHash BSD-2, zlib, libpng and minizip zlib)",
             "https://github.com/libretro/mupen64plus-libretro-nx/tree/15bada85906593376e8fd697f1b0b3af3a20f512"),
-        Part("mkxp-z libretro core (2.4.2, white-axe 5cd3203)", "RPG Maker XP, VX and VX Ace",
-            "GPL-2.0-or-later (parts: Ruby 3.3 Ruby licence or BSD-2-Clause, OpenAL Soft LGPL-2.0-or-later, FluidSynth LGPL-2.1-or-later, PhysicsFS zlib, FreeType FTL, libogg and libvorbis BSD-3-Clause, zlib, Boost BSL-1.0, wasm2c Apache-2.0)",
-            "https://github.com/white-axe/mkxp-z/tree/5cd3203660d16ab8cfb8dd962e04216662f8f8e9"),
         Part("gpSP (v1.1.0-5819380)", "GBA link play", "GPL-2.0-or-later", "https://github.com/libretro/gpsp/tree/5819380"),
         Part("AndroidX, Jetpack Compose, Kotlin", "App framework", "Apache-2.0", "https://android.googlesource.com/platform/frameworks/support"),
     )

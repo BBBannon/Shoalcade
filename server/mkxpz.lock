@@ -1,7 +1,0 @@
-# mkxp-z libretro core for the RPG Maker browser player (D147): the emscripten "unthreaded" build (RetroArch web +
-# the core in one module) of the same commit as the phone app's core. GPL-2.0-or-later.
-# Source: GitHub Actions run 40133334951 of white-axe/mkxp-z (branch libretro-syntax-transform, PR mkxp-z/mkxp-z#255),
-# artifact mkxp-z_libretro.emscripten.unthreaded.libretro-syntax-transform-5cd3203. Artifacts expire (this one
-# 22/01/2027), so build.sh keeps the zip in .testbed/dl and checks it by SHA-256 before every build.
-# name                 commit   sha256 (artifact zip)                                              artifact-id
-emscripten-unthreaded  5cd3203  e9a0770a49481d33a66f870e1b39a10cb7bfaf53b7b374517a56dd0a96bd02cc  12577157905

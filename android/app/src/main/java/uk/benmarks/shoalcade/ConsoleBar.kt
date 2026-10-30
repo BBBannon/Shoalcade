@@ -14,7 +14,7 @@ sealed interface ConsoleFilter {
 
 /**
  * The library's console bar after "All": a menu chip per maker ("Nintendo ▾", "Sony ▾") and a plain chip for a console
- * with no maker (RPG Maker). A maker with only one console that has games is a plain chip for that console.
+ * with no maker. A maker with only one console that has games is a plain chip for that console.
  * Same rules as the browser library's bar (library.js renderFilters).
  */
 object ConsoleBar {
@@ -31,7 +31,6 @@ object ConsoleBar {
         val seen = mutableSetOf<Maker>()
         for (c in shown) {
             val m = c.maker
-            if (m == null) { out += Item.Chip(c); continue }
             if (!seen.add(m)) continue
             val group = shown.filter { it.maker == m }
             out += if (group.size > 1) Item.Menu(m, group) else Item.Chip(c)

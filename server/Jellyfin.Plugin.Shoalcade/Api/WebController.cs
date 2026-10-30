@@ -106,18 +106,6 @@ public class WebController : ControllerBase
         return Send(a, "no-cache", false, false);
     }
 
-    /// <summary>The RPG Maker player's files (D147): <c>Pages/rpgmaker/*</c> and the shared <c>shoalcade_compat.rb</c>.
-    /// Pages (.html) only through <see cref="RpgMakerPlay"/>.</summary>
-    /// <param name="name">File name.</param>
-    /// <returns>The file.</returns>
-    [HttpGet("web/rpgmaker/{name}")]
-    public ActionResult RpgMakerAsset([FromRoute] string name) => Asset("rpgmaker/" + name);
-
-    /// <summary>The RPG Maker player page (<c>Pages/rpgmaker/play.html</c>), cross-origin isolated like the player.</summary>
-    /// <returns>HTML.</returns>
-    [HttpGet("play-rpgmaker")]
-    public ActionResult RpgMakerPlay() => Page("rpgmaker/play.html", true);
-
     /// <summary>EmulatorJS files (pinned v4.2.3).</summary>
     /// <param name="path">Path inside the emulator folder.</param>
     /// <returns>The file.</returns>

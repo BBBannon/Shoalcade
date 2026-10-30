@@ -36,8 +36,6 @@ The only third party contacted is **libretro**, by your **server**, for game nam
 - Box art comes from **your** server.
 - The browser player and library pages can only talk to **your** server (their security policy blocks anything else). EmulatorJS's update check is switched off.
 - **Patch a game** runs entirely in your browser: the game file and patch you pick are **never uploaded**, not even to your own server.
-- **RPG Maker games can't go online**, on the phone or in the browser. A game's own web requests or updater fail as if you were offline.
-- **Keep in browser** (big RPG Maker games) stores that game's files in **this browser only**, until you switch it off.
 
 ---
 

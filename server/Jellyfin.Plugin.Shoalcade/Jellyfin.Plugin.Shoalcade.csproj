@@ -29,10 +29,6 @@
     <None Remove="Configuration\configPage.html" />
     <EmbeddedResource Include="Configuration\configPage.html" />
     <EmbeddedResource Include="Pages\*" />
-    <!-- RPG Maker player files (D147), served at /shoalcade/web/rpgmaker/<name>; the compat script is the phone's own
-         copy (one file, never duplicated), served at /shoalcade/web/rpgmaker/shoalcade_compat.rb. -->
-    <EmbeddedResource Include="Pages\rpgmaker\*" LogicalName="Jellyfin.Plugin.Shoalcade.Pages.rpgmaker/%(Filename)%(Extension)" />
-    <EmbeddedResource Include="..\..\android\app\src\main\assets\rpgmaker\shoalcade_compat.rb" LogicalName="Jellyfin.Plugin.Shoalcade.Pages.rpgmaker/shoalcade_compat.rb" />
     <!-- The pinned EmulatorJS version is read from here at run time (B3), so /info can never drift from what build.sh bundles. -->
     <EmbeddedResource Include="..\emulatorjs.lock" LogicalName="Jellyfin.Plugin.Shoalcade.emulatorjs.lock" />
   </ItemGroup>

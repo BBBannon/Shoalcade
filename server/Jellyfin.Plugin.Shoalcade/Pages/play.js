@@ -47,8 +47,6 @@
     nds: DPAD.concat(["A", "B", "X", "Y", "L", "R", "Start", "Select"]),
     // PS1 (D137), same order as the app: D-pad, triangle circle cross square (by position, as PSP: X A B Y), L1 R1 L2 R2.
     psx: DPAD.concat(["X", "A", "B", "Y", "L", "R", "L2", "R2", "Start", "Select"]),
-    // RPG Maker XP/VX/VX Ace (D147): the engine's own buttons. C = confirm, B = cancel/menu, A = run (Shift).
-    rpgmaker: DPAD.concat(["C", "B", "A", "X", "Y", "Z", "L", "R"]),
   };
   /**
    * N64 buttons -> RetroPad ids (Mupen64Plus-Next's default map, plan-n64 Step 0): A = RetroPad B, B = Y, Z = L2,
@@ -59,8 +57,6 @@
   const RETRO_BY_CONSOLE = {
     n64: { A: 0, B: 1, Start: 3, Up: 4, Down: 5, Left: 6, Right: 7, L: 10, R: 11, Z: 12,
       StickRight: 16, StickLeft: 17, StickDown: 18, StickUp: 19, CRight: 20, CLeft: 21, CDown: 22, CUp: 23 },
-    // mkxp-z's pad map (src/input/input-retro.cpp): RetroPad A = C, B = B, X = A, Y = X, L3 = Y, R3 = Z.
-    rpgmaker: { C: 8, B: 0, A: 9, X: 1, Y: 14, Z: 15, L: 10, R: 11, Up: 4, Down: 5, Left: 6, Right: 7 },
   };
   const ANALOG_FULL = 0x7fff;
   const STICK_DEADZONE = 0.1; // below this a controller stick sends 0 (the core adds its own 15 % dead zone)
@@ -88,16 +84,11 @@
     n64: { StickUp: ["ArrowUp"], StickDown: ["ArrowDown"], StickLeft: ["ArrowLeft"], StickRight: ["ArrowRight"],
       Up: ["KeyY"], Down: ["KeyB"], Left: ["KeyG"], Right: ["KeyH"], A: ["KeyX"], B: ["KeyZ"], Z: ["KeyA"],
       CUp: ["KeyI"], CDown: ["KeyK"], CLeft: ["KeyJ"], CRight: ["KeyL"] },
-    // RPG Maker's own PC keys: Enter/Space/Z = C, Esc/X = B, Shift = A, A S D = X Y Z, Q W = L R.
-    rpgmaker: { C: ["Enter", "Space", "KeyZ"], B: ["Escape", "KeyX"], A: ["ShiftLeft", "ShiftRight"], X: ["KeyA"], Y: ["KeyS"],
-      Z: ["KeyD"], L: ["KeyQ", "PageUp"], R: ["KeyW", "PageDown"] },
   };
   const DEFAULT_PAD_BY_CONSOLE = {
     n64: { StickUp: ["a1-"], StickDown: ["a1+"], StickLeft: ["a0-"], StickRight: ["a0+"],
       Up: ["up"], Down: ["down"], Left: ["left"], Right: ["right"], A: ["south"], B: ["west"], Z: ["l2", "r2"],
       CUp: ["a3-"], CDown: ["a3+"], CLeft: ["a2-"], CRight: ["a2+"] },
-    // As RetroArch on the phone: right face button = C (confirm), bottom = B, top = A, left = X, triggers = Y and Z.
-    rpgmaker: { C: ["east"], B: ["south"], A: ["north"], X: ["west"], Y: ["l2"], Z: ["r2"], L: ["l1"], R: ["r1"] },
   };
   /** Default keys for a console. */
   function defaultKeys(consoleKey) { return Object.assign({}, DEFAULT_KEYS, DEFAULT_KEYS_BY_CONSOLE[consoleKey]); }
@@ -762,8 +753,6 @@
         workerTag = info.serverVersion || "0";
         api.showVersion(info);
         this.game = game;
-        // RPG Maker games (a folder, mkxp-z) play on their own page (rpgmaker/play.html, same look).
-        if (game.console === "rpgmaker" && !this.isRpgMaker) { location.replace("play-rpgmaker" + location.search); return; }
         this.emit("game", game);
         const c = (info.consoles || []).find(x => x.key === game.console);
         if (!info.browserPlayer) throw new Error("The browser player is switched off on this server.");
@@ -1357,7 +1346,6 @@
   }
 
   window.SC.Player = Player;
-  window.SC.SaveSync = SaveSync; // reused by the RPG Maker player (rpgmaker/player.js)
-  window.SC.controls = { RETRO, RETRO_BY_CONSOLE, BUTTONS, DEFAULT_KEYS, DEFAULT_PAD, defaultKeys, defaultPad, MULTIPLAYER, STANDARD, buildMap, isHeld: Input.isHeld, Input };
+  window.SC.controls = { RETRO, RETRO_BY_CONSOLE, BUTTONS, DEFAULT_KEYS, DEFAULT_PAD, defaultKeys, defaultPad, MULTIPLAYER, STANDARD, buildMap, isHeld: Input.isHeld };
   window.SC._test = { meaningfulChange, sameBytes, buildMap, Input, SnapshotGuard, cheatForCore };
 })();

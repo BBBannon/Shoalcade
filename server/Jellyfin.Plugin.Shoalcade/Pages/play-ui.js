@@ -27,9 +27,6 @@
   ];
   const HOTKEY_NAMES = HOTKEYS.map(x => x[0]);
   const DEFAULT_HOTKEYS = Object.fromEntries(HOTKEYS.map(x => [x[0], x[2]]));
-  /** RPG Maker (D147): letters and Space are game keys (typing a name, Space = confirm), so its shortcuts are F keys and Tab. */
-  const HOTKEYS_BY_CONSOLE = { rpgmaker: { pause: ["F1"], ff: ["Tab"], quickSave: [], quickLoad: [], screenshot: ["F8"], fullscreen: ["F11"] } };
-  function defaultHotkeys(scope) { return Object.assign({}, DEFAULT_HOTKEYS, HOTKEYS_BY_CONSOLE[scope]); }
 
   /** DS layouts -> melonDS "melonds_screen_layout" values [normal, swapped]. */
   const DS_LAYOUT = {
@@ -38,7 +35,7 @@
     big: ["Hybrid Top", "Hybrid Bottom"],
   };
 
-  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", psx: "PS1", rpgmaker: "RPG Maker" };
+  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", psx: "PS1" };
   const BUTTON_LABEL = { Up: "Up", Down: "Down", Left: "Left", Right: "Right", A: "A", B: "B", X: "X", Y: "Y", L: "L", R: "R", L2: "L2", R2: "R2", Z: "Z", Start: "Start", Select: "Select" };
   /** N64 names (D146): the stick and C buttons in words; the D-pad is "D-pad up" so it can't be taken for the stick. */
   const N64_LABEL = {
@@ -52,9 +49,6 @@
   const PSX_LABEL = { X: "△", A: "○", B: "✕", Y: "□", L: "L1", R: "R1", L2: "L2", R2: "R2" };
   /** What a button is called on a console's controller. */
   function buttonLabel(consoleKey, b) {
-    // RPG Maker: the game's own name for a button (mkxp.json bindingNames), e.g. "C (Action)".
-    const own = consoleKey === "rpgmaker" && window.SC.player && window.SC.player.buttonNames && window.SC.player.buttonNames[b];
-    if (own) return b + " (" + own + ")";
     return (consoleKey === "psx" && PSX_LABEL[b]) || (consoleKey === "n64" && N64_LABEL[b]) || BUTTON_LABEL[b] || b;
   }
   const KEY_NAMES = {
@@ -407,7 +401,7 @@
 
   /** Shortcut keys. Registered before the engine's game keys, so a shortcut never reaches the game. */
   function hotkeyFor(code) {
-    const hk = Object.assign({}, defaultHotkeys(player.game && player.game.console), (player.prefs && player.prefs.controls && player.prefs.controls.hotkeys) || {});
+    const hk = Object.assign({}, DEFAULT_HOTKEYS, (player.prefs && player.prefs.controls && player.prefs.controls.hotkeys) || {});
     return HOTKEY_NAMES.find(n => Array.isArray(hk[n]) && hk[n].includes(code)) || null;
   }
 
@@ -789,9 +783,9 @@
   player.on("cheats", () => { if (panelOpen() && S.tab === "cheats") renderCheats(); });
 
   // ----- Controls tab -----
-  function hotkeysOf(prefs, scope) {
+  function hotkeysOf(prefs) {
     const saved = (prefs && prefs.controls && prefs.controls.hotkeys) || {};
-    return C.buildMap(HOTKEY_NAMES, defaultHotkeys(scope || (player.game && player.game.console)), saved);
+    return C.buildMap(HOTKEY_NAMES, DEFAULT_HOTKEYS, saved);
   }
 
   function firstPad() {
@@ -835,7 +829,7 @@
       h("p", { class: "fine", text: "Click a key, then press the new key. Esc cancels." }));
       reset.textContent = "Reset " + name + " keys to defaults";
     } else if (S.ctlTab === "hot") {
-      const map = hotkeysOf(prefs, scope);
+      const map = hotkeysOf(prefs);
       out.replaceChildren(h("ul", { class: "binds" }, HOTKEYS.map(([k, label]) => h("li", {},
         h("span", { text: label }),
         keyButton(map[k].map(keyName).join(" / ") || "Not set", el => startListen({ kind: "hot", scope, name: k, el }), "Change the key for " + label.toLowerCase())))),
@@ -989,7 +983,7 @@
     const prefs = await prefsFor(L.scope);
     const controls = prefs.controls = Object.assign({}, prefs.controls);
     const keys = C.buildMap(C.BUTTONS[L.scope], C.defaultKeys(L.scope), controls.keyboard);
-    const hot = hotkeysOf(prefs, L.scope);
+    const hot = hotkeysOf(prefs);
     const lost = [];
     // One key does one thing: take it off anything else first.
     for (const [map, labelOf] of [[keys, b => buttonLabel(L.scope, b)], [hot, k => HOTKEYS.find(x => x[0] === k)[1].toLowerCase()]]) {
@@ -1060,24 +1054,19 @@
     pad.dataset.console = player.game.console;
     const has = C.BUTTONS[player.game.console] || C.BUTTONS.gba;
     const n64 = player.game.console === "n64";
-    const rpg = player.game.console === "rpgmaker";
-    // RPG Maker: the game's own word for the button where it has one (mkxp.json bindingNames), else the letter.
-    const own = b => rpg && player.buttonNames && player.buttonNames[b];
-    const btn = (b, cls) => h("div", { class: "tp-b " + cls + (own(b) ? " tp-word" : ""), data: { b }, title: buttonLabel(player.game.console, b),
-      text: own(b) || (n64 && N64_TOUCH[b]) || buttonLabel(player.game.console, b) });
+    const btn = (b, cls) => h("div", { class: "tp-b " + cls, data: { b }, text: (n64 && N64_TOUCH[b]) || buttonLabel(player.game.console, b) });
     pad.classList.toggle("ps", player.game.console === "psx"); // PS1: four shoulder buttons, L1 L2 left and R2 R1 right
     pad.classList.toggle("n64", n64); // N64: stick + small D-pad left, C buttons over A/B right, L Z left, R right
-    pad.classList.toggle("rpg", rpg); // RPG Maker: C right, B bottom, A top, X left; L R shoulders; Y Z small
 
     const dpad = h("div", { class: "tp-dpad" }, ["Up", "Down", "Left", "Right"].map(d => h("span", { data: { d } })));
-    const faces = (n64 ? ["CUp", "CLeft", "CRight", "CDown", "B", "A"] : rpg ? ["A", "X", "C", "B"] : ["X", "Y", "A", "B"]).filter(b => has.includes(b));
+    const faces = (n64 ? ["CUp", "CLeft", "CRight", "CDown", "B", "A"] : ["X", "Y", "A", "B"]).filter(b => has.includes(b));
     const face = h("div", { class: "tp-face" + (faces.length <= 2 ? " two" : "") + (n64 ? " n64" : "") }, faces.map(b => btn(b, "")));
     const kids = [dpad, face];
     const knob = h("span", { class: "tp-knob" });
     const stick = has.includes("StickUp") ? h("div", { class: "tp-stick" }, knob) : null;
     if (stick) kids.push(stick);
     for (const b of ["L", "Z", "L2", "R2", "R"]) if (has.includes(b)) kids.push(btn(b, "tp-sh"));
-    for (const b of rpg ? ["Y", "Z"] : ["Select", "Start"]) if (has.includes(b)) kids.push(btn(b, "tp-sm"));
+    for (const b of ["Select", "Start"]) if (has.includes(b)) kids.push(btn(b, "tp-sm"));
     pad.replaceChildren(...kids);
 
     // Buttons: each finger holds what it pressed until it lifts.
@@ -1207,9 +1196,7 @@
       const hk = hotkeysOf(p);
       const k = b => (keys[b] || []).map(keyName)[0] || "?";
       const n = b => buttonLabel(g.console, b);
-      $("intro-keys").textContent = (g.console === "rpgmaker"
-        ? "Keys: arrows (or your own) to move, " + k("C") + " = " + n("C") + ", " + k("B") + " = " + n("B") + ", " + k("A") + " = " + n("A") + ". Type names on your keyboard. "
-        : "Keys: arrows (or your own) to move, " + k("A") + " = " + n("A") + ", " + k("B") + " = " + n("B") + ", " + k("Start") + " = Start. ")
+      $("intro-keys").textContent = "Keys: arrows (or your own) to move, " + k("A") + " = " + n("A") + ", " + k("B") + " = " + n("B") + ", " + k("Start") + " = Start. "
         + keyName(hk.pause[0] || "") + " pauses, hold " + keyName(hk.ff[0] || "") + " to fast-forward. Change them in Settings, Controls.";
       $("intro-keys").hidden = false;
     }

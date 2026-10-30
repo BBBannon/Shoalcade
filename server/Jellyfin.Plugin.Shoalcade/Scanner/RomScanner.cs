@@ -65,8 +65,6 @@ public sealed record ScannedRom(string Path, string Name, GameConsole Console, s
 /// <item>A .j3u disc list (JellyEMU's format) is one game, tagged MultiDisc; the files it lists are not separate games.</item>
 /// <item>A console folder ("gba", "PSP", "Game Boy Advance") is never one game itself (JellyEMU would turn a console
 /// folder holding one .cue into a single game).</item>
-/// <item>RPG Maker (D147): a folder holding <c>Game.ini</c> (itself or in its one subfolder) directly inside an RPG Maker
-/// folder is one game, path = the folder; nothing inside it is ever a game (<see cref="RpgMakerGame"/>). No file is ever an RPG Maker game.</item>
 /// <item>Only consoles Shoalcade supports become games; other ROMs are left alone.</item>
 /// <item>A ROM file's extension must be one of <b>its own</b> console's (or .zip/.7z), so a PSP .iso in a PS1 folder is
 /// not a PS1 game. PS1 (D137) is one .chd or .pbp file only: no archives, .cue/.bin, discs folders or .j3u lists.
@@ -161,27 +159,12 @@ public static class RomScanner
             return null;
         }
 
-        // RPG Maker (D147): a folder holding Game.ini (itself or in its one subfolder) directly inside an RPG Maker folder
-        // is one game, path = the folder (Jellyfin never looks inside a game item, so its thousands of files are never
-        // items). Name from Game.ini, else the real game folder's name.
-        if (RpgMakerGame.GameRoot(trimmed, inConsoleFolder: true) is string root && RpgMakerGame.FindIni(root) is string ini
-            && GameConsole.FromKey("rpgmaker") is GameConsole rpg)
-        {
-            return new ScannedRom(path, RpgMakerGame.DisplayName(root, RpgMakerGame.ReadIni(ini)), rpg, null, null, false, false, ini);
-        }
-
-        // Nothing inside an RPG Maker game folder is ever a game of its own.
-        if (RpgMakerGame.IsInsideGameFolder(trimmed))
-        {
-            return null;
-        }
-
         // Rule: one .cue in the folder -> the game is its .bin (JellyEMU's rule, same path so the same id).
         var cues = Directory.GetFiles(trimmed, "*.cue");
         if (cues.Length == 1 && CueFirstBin(cues[0]) is string bin)
         {
             var console = ConsoleDetector.Resolve(cues[0]);
-            return console is null || !TakesDiscs(console)
+            return console is null || console.FilesOnly
                 ? null
                 : new ScannedRom(bin, ConsoleDetector.CleanName(dirName), console, FirstRegion(cues[0]), SeriesFor(trimmed), false, false, bin);
         }
@@ -197,7 +180,7 @@ public static class RomScanner
         }
 
         var discConsole = ConsoleDetector.Resolve(discs[0]);
-        if (discConsole is null || !TakesDiscs(discConsole))
+        if (discConsole is null || discConsole.FilesOnly)
         {
             return null;
         }
@@ -212,17 +195,11 @@ public static class RomScanner
         var dir = Path.GetDirectoryName(path) ?? string.Empty;
         var name = ConsoleDetector.CleanName(Path.GetFileNameWithoutExtension(path));
 
-        // A file inside an RPG Maker game folder (D147) is part of that game, never a game itself.
-        if (RpgMakerGame.IsInsideGameFolder(path))
-        {
-            return null;
-        }
-
         if (string.Equals(ext, ".j3u", StringComparison.OrdinalIgnoreCase))
         {
             var refs = J3uFiles(path).Where(File.Exists).ToList();
             var console = refs.Count == 0 ? null : ConsoleDetector.Resolve(refs[0]);
-            return console is null || !TakesDiscs(console) ? null : new ScannedRom(path, name, console, FirstRegion(path), SeriesFor(path), true, true, refs[0]);
+            return console is null || console.FilesOnly ? null : new ScannedRom(path, name, console, FirstRegion(path), SeriesFor(path), true, true, refs[0]);
         }
 
         if (string.Equals(ext, ".cue", StringComparison.OrdinalIgnoreCase))
@@ -235,7 +212,7 @@ public static class RomScanner
             }
 
             var console = ConsoleDetector.Resolve(path);
-            return console is null || !TakesDiscs(console) || IsListedByJ3u(path) ? null : new ScannedRom(path, name, console, FirstRegion(path), SeriesFor(path), true, false, bin);
+            return console is null || console.FilesOnly || IsListedByJ3u(path) ? null : new ScannedRom(path, name, console, FirstRegion(path), SeriesFor(path), true, false, bin);
         }
 
         if (!RomExtensions.Contains(ext) || IsListedByJ3u(path))
@@ -252,14 +229,9 @@ public static class RomScanner
     private static bool AllowsFile(GameConsole console, string path)
     {
         var ext = Path.GetExtension(path);
-        return !console.FolderGame
-            && (console.Extensions.Contains(ext, StringComparer.OrdinalIgnoreCase)
-                || (!console.SingleFileOnly && ArchiveExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase)));
+        return console.Extensions.Contains(ext, StringComparer.OrdinalIgnoreCase)
+            || (!console.SingleFileOnly && ArchiveExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase));
     }
-
-    /// <summary>True if a game of this console can be a .cue, a disc folder or a .j3u list (not PS1 / N64, which are
-    /// one file, nor RPG Maker, which is a game folder).</summary>
-    private static bool TakesDiscs(GameConsole console) => !console.FilesOnly && !console.FolderGame;
 
     /// <summary>
     /// Only for a file whose name and folders name no console at all: a .pbp whose DATA.PSAR starts with

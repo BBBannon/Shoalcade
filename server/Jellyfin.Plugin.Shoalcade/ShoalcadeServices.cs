@@ -33,7 +33,6 @@ public sealed class ShoalcadeServices
         Prefs = new PrefsStore(Path.Combine(DataRoot, "prefs"), TimeProvider.System, loggerFactory.CreateLogger<PrefsStore>());
         Cheats = new CheatStore(Path.Combine(DataRoot, "cheats"), TimeProvider.System, loggerFactory.CreateLogger<CheatStore>());
         Storage = new StorageReport(Path.Combine(DataRoot, "saves"), Path.Combine(DataRoot, "states"), Path.Combine(DataRoot, "prefs"), Path.Combine(DataRoot, "cheats"));
-        RpgMaker = new Scanner.RpgMakerFiles(Path.Combine(DataRoot, "rpgmaker"), TimeProvider.System, loggerFactory.CreateLogger<Scanner.RpgMakerFiles>());
         JellyEmu = new JellyEmuImporter(Path.Combine(paths.DataPath, "jellyemu-saves"), Saves, () => Config.ImportJellyEmuSaves, loggerFactory.CreateLogger<JellyEmuImporter>());
     }
 
@@ -54,9 +53,6 @@ public sealed class ShoalcadeServices
 
     /// <summary>Gets the settings store.</summary>
     public PrefsStore Prefs { get; }
-
-    /// <summary>Gets the RPG Maker file lists and their hash cache (D147).</summary>
-    public Scanner.RpgMakerFiles RpgMaker { get; }
 
     /// <summary>Gets the cheats store (D143).</summary>
     public CheatStore Cheats { get; }

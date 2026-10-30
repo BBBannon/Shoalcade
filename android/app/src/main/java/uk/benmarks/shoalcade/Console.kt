@@ -27,32 +27,15 @@ enum class Console(
      * ConsoleDetector writes the same). Save = the core's whole save RAM, 296,960 bytes ([N64Save]). Last, so no tag clash.
      */
     N64("n64", "N64", "N64", "n64", "libmupen64plusnext_libretro_android.so", setOf("z64", "n64", "v64")),
-    /**
-     * RPG Maker XP / VX / VX Ace (D147): mkxp-z libretro core (a GL core). A game is a whole folder, not one file; the
-     * core is given its Game.ini ([Storage.romFile]). Saves are the files the game writes into its save folder, synced
-     * as one zip like PSP ([hasFolderSaves]).
-     */
-    RPGMAKER("rpgmaker", "RPG Maker", "RPG Maker", "rpgmaker", "libmkxpz_libretro_android.so", setOf("ini")),
     ;
 
-    /** The game is a folder of many files (RPG Maker), downloaded file by file from a list the server sends. */
-    val isFolderGame get() = this == RPGMAKER
-
     /**
-     * Snapshots and cheats: every console but RPG Maker. RPG Maker games are programs, not a machine's memory, so the
-     * engine can't capture or poke them (D147); the game's own save is the only save.
+     * Maker the library's console bar groups it under ([ConsoleBar]). Same table as the plugin's GameConsole.Maker.
+     * No `else`, so a new console must be placed here.
      */
-    val hasSnapshots get() = this != RPGMAKER
-    val hasCheats get() = this != RPGMAKER
-
-    /**
-     * Maker the library's console bar groups it under ([ConsoleBar]); null = its own chip (RPG Maker). Same table as the
-     * plugin's GameConsole.Maker. No `else`, so a new console must be placed here.
-     */
-    val maker: Maker? get() = when (this) {
+    val maker: Maker get() = when (this) {
         GB, GBC, GBA, NDS, N3DS, N64 -> Maker.NINTENDO
         PSP, PSX -> Maker.SONY
-        RPGMAKER -> null
     }
 
     val isDualScreen get() = this == NDS
@@ -73,7 +56,7 @@ enum class Console(
      * PSP saves are a folder of files on a pretend memory stick, not one block of save memory.
      * Each game gets its own memory stick folder, uploaded to Jellyfin as one zip (D27).
      */
-    val hasFolderSaves get() = this == PSP || this == RPGMAKER
+    val hasFolderSaves get() = this == PSP
 
     /**
      * Consoles whose save is always one exact size: PS1 (memory card, [PsxCard.SIZE]) and N64 (save RAM, [N64Save.SIZE]).
@@ -123,7 +106,6 @@ enum class Console(
                 "mupen64plus-pak3" to "none",
                 "mupen64plus-pak4" to "none",
             )
-            RPGMAKER -> RpgMaker.coreVariables
             else -> emptyList()
         }
 

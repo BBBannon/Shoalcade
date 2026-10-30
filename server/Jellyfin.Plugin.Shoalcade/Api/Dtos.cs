@@ -191,10 +191,6 @@ public sealed record SaveWriteDto(
 /// <param name="LastPlayed">Last played (Jellyfin play data).</param>
 /// <param name="BrowserPlayable">Whether it plays in the browser.</param>
 /// <param name="Save">Current save, if any.</param>
-/// <param name="Engine">RPG Maker only (D147): "XP", "VX" or "VX Ace" (null when it can't be told); left out for others.</param>
-/// <param name="MayNotWork">RPG Maker only: the game ships Windows DLLs we don't recognise; left out for others.</param>
-/// <param name="Size">RPG Maker only: bytes of all its listed files (the download size); left out for others.</param>
-/// <param name="FileCount">RPG Maker only: files listed; left out for others.</param>
 public sealed record GameDto(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("name")] string Name,
@@ -206,11 +202,7 @@ public sealed record GameDto(
     [property: JsonPropertyName("imageTag")] string? ImageTag,
     [property: JsonPropertyName("lastPlayed")] DateTime? LastPlayed,
     [property: JsonPropertyName("browserPlayable")] bool BrowserPlayable,
-    [property: JsonPropertyName("save")] SaveVersionDto? Save,
-    [property: JsonPropertyName("engine"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Engine = null,
-    [property: JsonPropertyName("mayNotWork"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? MayNotWork = null,
-    [property: JsonPropertyName("size"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Size = null,
-    [property: JsonPropertyName("fileCount"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? FileCount = null);
+    [property: JsonPropertyName("save")] SaveVersionDto? Save);
 
 /// <summary>One entry in the save manager list.</summary>
 /// <param name="ItemId">Item id.</param>

@@ -89,32 +89,19 @@ class DownloadService : Service() {
 
         names[game.id] = game.name
         jobs[game.id] = scope.launch {
-            var msg = "Download stopped. Tap Download to try again."
-            try {
+            val msg = try {
                 val saveNote = download(game)
-                msg = "${game.name} downloaded." + (saveNote?.let { " $it" } ?: "")
+                "${game.name} downloaded." + (saveNote?.let { " $it" } ?: "")
             } catch (e: CancellationException) {
-                // The message is set first: withContext throws CancellationException again when it returns to this
-                // cancelled job, so nothing after it here runs. The bookkeeping is in finally for the same reason.
-                if (game.isFolderGame) {
-                    // A folder game keeps the files that arrived (it isn't "downloaded" until the list is written),
-                    // so a big game carries on where it stopped. Only half-written .part files go.
-                    msg = "${game.name} download stopped. Tap Download to carry on from where it stopped."
-                    withContext(NonCancellable + Dispatchers.IO) {
-                        Storage.downloadFolder(game).walkTopDown().filter { it.isFile && it.name.endsWith(".part") }.forEach { it.delete() }
-                    }
-                } else {
-                    msg = "${game.name} download cancelled."
-                    withContext(NonCancellable + Dispatchers.IO) { Storage.deleteDownload(game) } // drop the .part file
-                }
+                withContext(NonCancellable + Dispatchers.IO) { Storage.deleteDownload(game) } // drop the .part file
+                "${game.name} download cancelled."
             } catch (e: Exception) {
-                msg = "Download failed: ${e.message}"
-            } finally {
-                jobs.remove(game.id)
-                names.remove(game.id)
-                Downloads.done(game.id, msg)
-                stopIfIdle()
+                "Download failed: ${e.message}"
             }
+            jobs.remove(game.id)
+            names.remove(game.id)
+            Downloads.done(game.id, msg)
+            stopIfIdle()
         }
         return START_NOT_STICKY // if Android kills us, the .part file is simply left; tap Download again
     }
@@ -124,7 +111,7 @@ class DownloadService : Service() {
         val store = SessionStore(this)
         val client = JellyfinClient(store.deviceId, store.load() ?: throw java.io.IOException("Not logged in."))
         var lastPct = -1
-        val onProgress = { p: Float ->
+        val target = client.download(game.id, Storage.downloadFolder(game), Storage.fallbackRomName(game)) { p ->
             val pct = (p * 100).toInt()
             if (pct != lastPct) { // throttle: at most 100 UI/notification updates per game
                 lastPct = pct
@@ -134,21 +121,11 @@ class DownloadService : Service() {
                 }
             }
         }
-        if (game.isFolderGame) {
-            val list = client.folderFiles(game.id)
-            FolderDownload.run(Storage.downloadFolder(game), list, { f, dest -> client.fetchFolderFile(game.id, f, dest) }, onProgress)
-            return fetchSave(game)
-        }
-        val target = client.download(game.id, Storage.downloadFolder(game), Storage.fallbackRomName(game), onProgress)
         withContext(Dispatchers.IO) {
             Storage.unpackIfZipped(game, target)
             if (game.console == Console.PSP) PspAssets.ensure(this@DownloadService) // ready for offline play
         }
-        return fetchSave(game)
-    }
-
-    /** Pull the Jellyfin save if the phone has none yet. A failure here never fails the download, but is shown. */
-    private suspend fun fetchSave(game: Game): String? {
+        // Pull the Jellyfin save if the phone has none yet. A failure here never fails the download, but is shown.
         val r = try {
             SaveSync(this).fetchIfNoLocal(game)
         } catch (e: CancellationException) {

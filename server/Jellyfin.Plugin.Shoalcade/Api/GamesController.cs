@@ -44,25 +44,13 @@ public class GamesController : ShoalcadeControllerBase
         _web = web;
     }
 
-    /// <summary>True if a game can be played in the browser (console supported and the item is one file; an RPG Maker
-    /// game folder plays on its own mkxp-z page, which doesn't need EmulatorJS).</summary>
+    /// <summary>True if a game can be played in the browser (console supported and the item is one file).</summary>
     /// <param name="rom">ROM.</param>
     /// <param name="emulatorAvailable">EmulatorJS installed.</param>
     /// <returns>Whether it is browser-playable.</returns>
     internal static bool IsBrowserPlayable(RomItem rom, bool emulatorAvailable)
     {
-        if (rom.Console.BrowserCore is null || !ShoalcadeServices.Config.EnableBrowserPlayer)
-        {
-            return false;
-        }
-
-        // RomLibrary.ToRom only makes a RomItem of an RPG Maker item that is a real game folder.
-        if (rom.Console.FolderGame)
-        {
-            return true;
-        }
-
-        if (!emulatorAvailable)
+        if (!emulatorAvailable || rom.Console.BrowserCore is null || !ShoalcadeServices.Config.EnableBrowserPlayer)
         {
             return false;
         }
@@ -152,7 +140,6 @@ public class GamesController : ShoalcadeControllerBase
     private GameDto ToDto(RomItem r, User user, SaveVersion? save)
     {
         var played = _userData.GetUserData(user, r.Item)?.LastPlayedDate;
-        var rpg = r.Console.FolderGame && r.Item.Path is string folder ? Services.RpgMaker.GetSummary(folder) : null;
         return new GameDto(
             r.Id.ToString("N"),
             r.Name,
@@ -164,10 +151,6 @@ public class GamesController : ShoalcadeControllerBase
             r.ImageTag,
             played,
             IsBrowserPlayable(r, _web.EmulatorAvailable),
-            SaveVersionDto.From(save, save?.Version),
-            rpg?.Engine,
-            r.Console.FolderGame ? rpg?.MayNotWork ?? false : null,
-            rpg?.Total,
-            rpg?.Count);
+            SaveVersionDto.From(save, save?.Version));
     }
 }

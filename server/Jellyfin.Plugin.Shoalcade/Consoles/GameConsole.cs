@@ -62,16 +62,7 @@ public sealed class GameConsole
         // Placed AFTER psp, so a .chd/.pbp with no console in its name or folder still falls back to PSP (D89).
         new("psx", "PlayStation", ["PlayStation"], [".chd", ".pbp"], "pcsx_rearmed", BrowserSaveMode.Shared, "sav", PsxCardSize,
             [PsxCardSize], [0], exactSizes: true, singleFileOnly: true),
-
-        // RPG Maker XP / VX / VX Ace (D147): a game is a FOLDER holding Game.ini, directly inside an RPG Maker console
-        // folder; no file is ever a game. The mkxp-z core plays it on the phone and in the browser (its own page, not
-        // EmulatorJS). The save is the core's whole save folder as one zip (like PSP). Listed last in the platform order.
-        new("rpgmaker", "RPG Maker", ["RPG Maker"], [], RpgMakerCore, BrowserSaveMode.Shared, "zip", 64L * 1024 * 1024,
-            [], [0], folderGame: true),
     ];
-
-    /// <summary>The browser core name of RPG Maker games: the mkxp-z page, never an EmulatorJS core.</summary>
-    public const string RpgMakerCore = "mkxp-z";
 
     private static readonly Dictionary<string, GameConsole> ByKey = AllConsoles.ToDictionary(c => c.Key, StringComparer.Ordinal);
 
@@ -88,8 +79,7 @@ public sealed class GameConsole
         long[] footerSizes,
         bool exactSizes = false,
         bool singleFileOnly = false,
-        bool filesOnly = false,
-        bool folderGame = false)
+        bool filesOnly = false)
     {
         Key = key;
         DisplayName = displayName;
@@ -104,13 +94,12 @@ public sealed class GameConsole
         ExactSaveSizes = exactSizes;
         SingleFileOnly = singleFileOnly;
         FilesOnly = filesOnly || singleFileOnly;
-        FolderGame = folderGame;
     }
 
     /// <summary>Gets every known console.</summary>
     public static IReadOnlyList<GameConsole> All => AllConsoles;
 
-    /// <summary>Gets the short key used in URLs and folders (gb, gbc, gba, n64, nds, 3ds, psp, psx, rpgmaker).</summary>
+    /// <summary>Gets the short key used in URLs and folders (gb, gbc, gba, n64, nds, 3ds, psp, psx).</summary>
     public string Key { get; }
 
     /// <summary>Gets the name shown to people.</summary>
@@ -122,8 +111,7 @@ public sealed class GameConsole
     /// <summary>Gets the ROM file extensions, lower case with dot.</summary>
     public IReadOnlyList<string> Extensions { get; }
 
-    /// <summary>Gets the browser core: an EmulatorJS core, or <see cref="RpgMakerCore"/> (mkxp-z's own page) for RPG Maker;
-    /// null if not playable in the browser.</summary>
+    /// <summary>Gets the EmulatorJS core for the browser, or null if not playable in the browser.</summary>
     public string? BrowserCore { get; }
 
     /// <summary>Gets how browser saves relate to the app's save.</summary>
@@ -159,17 +147,6 @@ public sealed class GameConsole
     public bool FilesOnly { get; }
 
     /// <summary>
-    /// Gets a value indicating whether a game of this console is a whole folder, never a file (RPG Maker, D147): the
-    /// folder holding <c>Game.ini</c> directly inside the console folder. Nothing inside it is ever its own game, the
-    /// files are served one by one from the file list (no snapshots, cheats or EmulatorJS).
-    /// </summary>
-    public bool FolderGame { get; }
-
-    /// <summary>Gets a value indicating whether the browser plays this console with EmulatorJS (every console with a
-    /// browser core except the folder games, whose core has its own page).</summary>
-    public bool UsesEmulatorJs => BrowserCore is not null && !FolderGame;
-
-    /// <summary>
     /// Gets the save format family. Saves can only move between games of the same family: Game Boy and Game Boy Color
     /// share one (same core, same .sav layout); every other console is its own.
     /// </summary>
@@ -177,7 +154,7 @@ public sealed class GameConsole
 
     /// <summary>
     /// Gets the maker the library groups this console under ("Nintendo", "Sony"), or null for a console that is its own
-    /// button (RPG Maker). The browser library's console bar reads it from <c>/shoalcade/info</c>; the app has the same
+    /// button. The browser library's console bar reads it from <c>/shoalcade/info</c>; the app has the same
     /// table in <c>Console.maker</c>.
     /// </summary>
     public string? Maker => Key switch
@@ -216,8 +193,7 @@ public sealed class GameConsole
     }
 
     /// <summary>
-    /// True if a library item at <paramref name="path"/> can be a game of this console. A <see cref="FolderGame"/> console
-    /// (RPG Maker) only takes an RPG Maker game folder. Otherwise only <see cref="FilesOnly"/>
+    /// True if a library item at <paramref name="path"/> can be a game of this console. Only <see cref="FilesOnly"/>
     /// consoles (PS1, N64) are strict: their file must have one of the console's extensions (or, N64, be a .zip/.7z),
     /// so an item another scanner (JellyEMU) made for a PS1 .iso, .bin or folder, or for a stray file in an N64 folder,
     /// is never served. Other consoles keep every item they had (D89).
@@ -226,11 +202,6 @@ public sealed class GameConsole
     /// <returns>Whether the item can be this console's game.</returns>
     public bool AcceptsItemPath(string? path)
     {
-        if (FolderGame)
-        {
-            return Scanner.RpgMakerGame.IsGameFolder(path);
-        }
-
         if (!FilesOnly)
         {
             return true;

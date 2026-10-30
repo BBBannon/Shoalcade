@@ -3,7 +3,6 @@ using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Resolvers;
-using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Shoalcade.Scanner;
 
@@ -17,16 +16,10 @@ namespace Jellyfin.Plugin.Shoalcade.Scanner;
 public sealed class RomResolver : IItemResolver
 {
     private readonly ScannerGuard _guard;
-    private readonly ILogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="RomResolver"/> class.</summary>
     /// <param name="guard">Stands down while JellyEMU is installed.</param>
-    /// <param name="logger">Logger (notes packed RPG Maker games, which are never games).</param>
-    public RomResolver(ScannerGuard guard, ILogger<RomResolver> logger)
-    {
-        _guard = guard;
-        _logger = logger;
-    }
+    public RomResolver(ScannerGuard guard) => _guard = guard;
 
     /// <summary>Gets the priority: first, like JellyEMU's, so a .iso or .zip ROM is never taken for a film or a book.</summary>
     public ResolverPriority Priority => ResolverPriority.First;
@@ -41,13 +34,6 @@ public sealed class RomResolver : IItemResolver
     {
         if (args?.FileInfo is null || !IsGamesLibraryType(args.CollectionType) || _guard.StandDown)
         {
-            return null;
-        }
-
-        // A zipped RPG Maker game is never a game (D147 #3: folders only); say how to fix it.
-        if (!args.IsDirectory && RpgMakerGame.IsPackedGame(args.Path))
-        {
-            _logger.LogWarning("Skipped {Path}: RPG Maker games must be unzipped: put the game's folder (with Game.ini) inside RPG Maker.", args.Path);
             return null;
         }
 

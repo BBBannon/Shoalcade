@@ -128,6 +128,3 @@ server/Shoalcade.slnx
 # --- Raw screenshots (README copies live in docs/assets/screenshots/) and test-bed captures ---
 /Screenshots/
 /*.png
-
-# --- RPG Maker example game (local copy, never commit) ---
-rpgxp/
