@@ -115,7 +115,13 @@ TODO.md
 ChangeLog.txt
 
 # --- Not published: kept on Ben's PC only (public repo = bare minimum) ---
-tools/
+tools/*
+# ...except the 3DS build sources: we ship our own Azahar build and check scene, so GPL needs their source public (D154, D159)
+!tools/azahar-patches/
+!tools/n3ds-check/
+!tools/build_azahar_core.sh
+!tools/build_n3ds_check.sh
+!tools/vendor_lr3ds.py
 android/coretest/
 android/linktest/
 android/app/src/test/
@@ -128,3 +134,6 @@ server/Shoalcade.slnx
 # --- Raw screenshots (README copies live in docs/assets/screenshots/) and test-bed captures ---
 /Screenshots/
 /*.png
+
+# --- The 3DS check scene shipped in the app (built by tools/build_n3ds_check.sh) ---
+!android/app/src/main/assets/n3ds/check.3dsx

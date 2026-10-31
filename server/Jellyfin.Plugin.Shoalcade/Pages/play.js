@@ -445,12 +445,12 @@
       if (!c) return;
       try {
         if (choice === "browser") {
-          const r = await api.putSave(this.id, c.local, { mode: "force", afterSnapshot: this.guard.after });
+          const r = await api.putSave(this.id, c.local, { mode: "force", afterSnapshot: this.guard.after , cheats: this.p.cheatsUsed });
           this.base = r.body.current ? r.body.current.version : this.base;
           this.synced = c.local;
           this.guard.clear();
         } else if (choice === "server") {
-          await api.putSave(this.id, c.local, { mode: "history", afterSnapshot: this.guard.after });
+          await api.putSave(this.id, c.local, { mode: "history", afterSnapshot: this.guard.after , cheats: this.p.cheatsUsed });
           const s = await api.getSave(this.id);
           this.p.loadSave(s.bytes);
           this.base = s.version;

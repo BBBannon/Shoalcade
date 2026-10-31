@@ -234,7 +234,9 @@
     if (!api.hasLogin()) { show("signed-out"); return; }
     try {
       if (S.id && !/^[0-9a-f]{32}$/.test(S.id)) { show("missing"); return; }
-      const [info, games, list] = await Promise.all([api.info(), api.games(), api.saveList()]);
+      // The list view only needs the saves list (it carries each game's name, console and cover): the whole game list
+      // is fetched for one game's page (Move needs it).
+      const [info, games, list] = await Promise.all([api.info(), S.id ? api.games() : Promise.resolve([]), api.saveList()]);
       S.info = info;
       api.showVersion(info);
       S.games = Array.isArray(games) ? games : [];
@@ -367,6 +369,7 @@
     acts.querySelector("[data-act=fresh]").hidden = S.removed || !hist.current;
     const snaps = S.snaps;
     acts.querySelector("[data-act=move]").hidden = !vs.length && !snaps.length;
+    acts.querySelector("[data-act=delete-all]").hidden = !S.removed || (!vs.length && !snaps.length);
     acts.hidden = S.removed && !vs.length && !snaps.length;
     if (!vs.length && !snaps.length) closeMove();
 
@@ -541,6 +544,55 @@
     toast("Version " + v.version + " deleted");
   }
 
+  /** Same text, ignoring case and extra spaces: what counts as typing the game's name. */
+  function sameName(a, b) {
+    const f = s => String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
+    return f(a) !== "" && f(a) === f(b);
+  }
+
+  /** A game no longer in the library: delete every save version (pinned and in use too) and every snapshot (the server keeps a hidden copy 7 days, D168). */
+  async function doDeleteAll() {
+    const vs = S.hist.versions || [];
+    const snaps = S.snaps || [];
+    if (!S.removed || (!vs.length && !snaps.length)) return;
+    const e0 = S.entries[0];
+    const known = e0 && e0.gameName;
+    const name = known || "Unknown game";
+    const pinned = vs.filter(v => v.pinned).length;
+    const what = [vs.length ? vs.length + (vs.length === 1 ? " save version" : " save versions") + (pinned ? " (" + pinned + " pinned)" : "") : null,
+      snaps.length ? snaps.length + (snaps.length === 1 ? " browser snapshot" : " browser snapshots") : null].filter(Boolean).join(" and ");
+    const keep = S.hist.currentVersion || vs[vs.length - 1] || null;
+    for (;;) {
+      const r = await ask({
+        title: "Delete all saves for “" + name + "”?",
+        text: [what + " will be deleted, including pinned ones and the one in use. You can't undo this here.",
+          "The server keeps a hidden copy for 7 days, so your server admin can bring them back if this was a mistake.",
+          "If the game is only missing because a drive or folder is offline, it may come back: its saves would then be gone.",
+          keep ? "Download the save first if you might want it later." : null],
+        more: keep ? [{ v: "download", label: "Download first" }] : [],
+        ok: "Continue", okKind: "danger",
+      });
+      if (r === "download") { await doDownload(keep); continue; }
+      if (r !== "ok") return;
+      break;
+    }
+    const word = known ? name : "delete";
+    const r2 = await ask({
+      title: "Type to confirm",
+      text: [known ? "To delete everything for this game, type its name: “" + name + "”." : "This game's name isn't known. To delete everything, type: delete"],
+      input: { label: known ? "Game name" : "Type delete", value: "", max: 200 },
+      ok: "Delete all", okKind: "danger",
+    });
+    if (r2 !== "ok") return;
+    if (!sameName($("ask-input").value, word)) {
+      showError("That didn't match, so nothing was deleted.");
+      return;
+    }
+    await api.deleteAllSaves(S.id, { versions: vs.length, snapshots: snaps.length });
+    setFlash(null, "Deleted all saves for “" + name + "”.");
+    location.assign(addr({}));
+  }
+
   async function doFresh() {
     const cur = S.hist.currentVersion;
     if (!cur) return;
@@ -711,6 +763,7 @@
       case "label": run(() => doLabel(v)); break;
       case "delete": run(() => doDelete(v)); break;
       case "fresh": run(doFresh); break;
+      case "delete-all": run(doDeleteAll); break;
       case "upload": if (!S.busy) { $("file").value = ""; $("file").click(); } break;
       case "move": if ($("movebox").hidden) openMove(); else closeMove(); break;
       case "move-cancel": closeMove(); break;

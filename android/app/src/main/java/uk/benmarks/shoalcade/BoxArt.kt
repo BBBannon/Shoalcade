@@ -42,6 +42,7 @@ object BoxArt {
     /** Downloads any missing art. Failures are skipped quietly (art is nice-to-have). True if anything new arrived. */
     suspend fun fetchMissing(ctx: Context, client: JellyfinClient, games: List<Game>): Boolean = withContext(Dispatchers.IO) {
         val d = dir(ctx).apply { mkdirs() }
+        val existing = d.listFiles()?.toList().orEmpty() // listed once: a first sync of many games stays quick
         var got = false
         for (g in games) {
             val f = file(ctx, g) ?: continue
@@ -51,7 +52,7 @@ object BoxArt {
             tmp.writeBytes(bytes)
             if (tmp.renameTo(f)) {
                 got = true
-                d.listFiles()?.filter { it.name.startsWith("${g.id}-") && it != f }?.forEach { it.delete() }
+                existing.filter { it.name.startsWith("${g.id}-") && it != f }.forEach { it.delete() } // the old picture
             }
         }
         got

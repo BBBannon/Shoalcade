@@ -24,6 +24,8 @@
   const $ = id => document.getElementById(id);
   const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP" };
   const RECENT_MAX = 6;
+  /** The "★ Starred" filter (a pseudo console in ?c=, so Back from the player returns to it). */
+  const STARRED = "starred";
   const SORTS = ["name", "year", "platform", "played"];
   const DEFAULT_SORT = "played";
   /** Platform order (same as the app): the Game Boy family oldest first, then N64, DS, 3DS, PS1, PSP. Unknown consoles last. */
@@ -181,9 +183,9 @@
   }
 
   function card(g) {
-    return h("button", { type: "button", class: "card", "data-open": g.id, "aria-label": g.name + ", " + consoleName(g.console) }, [
+    return h("button", { type: "button", class: "card", "data-open": g.id, "aria-label": g.name + ", " + consoleName(g.console) + (g.favourite ? ", starred" : "") }, [
       art(g, 400),
-      h("span", { class: "card-t", text: g.name }),
+      h("span", { class: "card-t", text: (g.favourite ? "★ " : "") + g.name }),
       h("span", { class: "card-m", text: cardMeta(g) }),
     ]);
   }
@@ -241,7 +243,9 @@
     }
     // A group with one console is a plain button for it, so a ?c=sony link then means that console.
     if (groups.has(S.con) && groups.get(S.con).keys.length === 1) S.con = groups.get(S.con).keys[0];
-    if (S.con !== "all" && !counts.has(S.con) && !groups.has(S.con)) S.con = "all";
+    const starred = S.games.filter(g => g.favourite).length;
+    if (S.con === STARRED && !starred) S.con = "all";
+    if (S.con !== "all" && S.con !== STARRED && !counts.has(S.con) && !groups.has(S.con)) S.con = "all";
 
     S.menuBtn = null;
     const chip = (k, name, n) => h("button", { type: "button", class: "chip", "data-con": k, "aria-pressed": String(S.con === k) }, [
@@ -249,10 +253,10 @@
       h("span", { class: "chip-k", text: String(n) }),
     ]);
     const f = $("filters");
-    f.replaceChildren(chip("all", "All games", S.games.length), ...items.map(it => it.keys.length > 1
+    f.replaceChildren(chip("all", "All games", S.games.length), ...(starred ? [chip(STARRED, "★ Starred", starred)] : []), ...items.map(it => it.keys.length > 1
       ? groupMenu(it, counts)
       : chip(it.keys[0], consoleName(it.keys[0]), counts.get(it.keys[0]))));
-    f.hidden = keys.length < 2; // one console: the strip would only say "All"
+    f.hidden = keys.length < 2 && !starred; // one console and no stars: the strip would only say "All"
   }
 
   /** "Nintendo ▾" (or "Nintendo: GBA ▾" while one of its consoles is picked) and its menu: All Nintendo, then each console. */
@@ -339,13 +343,14 @@
 
   function renderGrid() {
     const q = fold(S.q.trim());
-    const list = sortGames(S.games, S.sort).filter(g => (S.con === "all" || g.console === S.con || S.groupOf.get(g.console) === S.con) && (!q || fold(g.name).includes(q) || fold(g.sortName).includes(q)));
+    const list = sortGames(S.games, S.sort).filter(g => (S.con === "all" || (S.con === STARRED ? g.favourite : g.console === S.con || S.groupOf.get(g.console) === S.con)) && (!q || fold(g.name).includes(q) || fold(g.sortName).includes(q)));
     const grid = $("grid");
     const kids = list.map(g => S.cards.get(g.id));
     if (!list.length) {
       kids.push(h("p", { class: "empty", text: !S.games.length
         ? "No games yet. Ask the server admin to add a games library you can see."
-        : q ? "No games match “" + S.q.trim() + "”. Clear the search or pick another console." : "No games for this console." }));
+        : q ? "No games match “" + S.q.trim() + "”. Clear the search or pick another console."
+        : S.con === STARRED ? "No starred games. Open a game and choose Star." : "No games for this console." }));
     }
     grid.replaceChildren(...kids);
     $("count").textContent = list.length + (list.length === 1 ? " game" : " games");
@@ -392,6 +397,10 @@
     $("sheet-why").hidden = !why;
     $("sheet-saves").href = savesLink(g.id);
     $("sheet-edit").hidden = !(S.info.user && S.info.user.isAdmin);
+    const star = $("sheet-star");
+    star.hidden = !(S.info.features || []).includes("favourites");
+    star.setAttribute("aria-pressed", String(!!g.favourite));
+    $("sheet-star-t").textContent = g.favourite ? "Starred" : "Star";
 
     const facts = [
       ["Console", consoleName(g.console)],
@@ -402,6 +411,26 @@
       ["Save", saveText(g.save) || "None on the server yet"],
     ].filter(([, v]) => v !== null && v !== undefined && v !== "");
     $("sheet-facts").replaceChildren(...facts.flatMap(([k, v]) => [h("dt", { text: k }), h("dd", { text: String(v) })]));
+  }
+
+  /** Stars or unstars the open game; the card, the Starred chip and the grid follow. */
+  async function toggleStar() {
+    const g = hashGame();
+    if (!g || S.starBusy) return;
+    S.starBusy = true;
+    try {
+      await api.setFavourite(g.id, !g.favourite);
+      g.favourite = !g.favourite;
+      S.cards.set(g.id, card(g));
+      fillSheet(g);
+      renderFilters();
+      renderGrid();
+    } catch (e) {
+      $("sheet-why").textContent = "Couldn't change the star: " + (e && e.message ? e.message : String(e));
+      $("sheet-why").hidden = false;
+    } finally {
+      S.starBusy = false;
+    }
   }
 
   function hashGame() {
@@ -712,6 +741,7 @@
       saveSort(S.sort);
     });
     $("sheet-edit").addEventListener("click", () => (S.edit ? closeEditor() : openEditor()));
+    $("sheet-star").addEventListener("click", toggleStar);
     $("ed-done").addEventListener("click", closeEditor);
     $("ed-name-form").addEventListener("submit", saveName);
     $("ed-upload").addEventListener("click", () => $("ed-file").click());

@@ -108,6 +108,8 @@ public static partial class ConsoleDetector
         { ".pce", "TurboGrafx-16" }, { ".col", "ColecoVision" }, { ".cv", "ColecoVision" },
         { ".ngp", "NeoGeo Pocket" }, { ".ngc", "NeoGeo Pocket" }, { ".cso", "PSP" }, { ".p8", "PICO-8" },
         { ".3ds", "Nintendo 3DS" }, { ".cci", "Nintendo 3DS" }, { ".cia", "Nintendo 3DS" },
+        // plan-3ds step 8: the other files Azahar opens (D161), compressed ones included.
+        { ".cxi", "Nintendo 3DS" }, { ".3dsx", "Nintendo 3DS" }, { ".zcci", "Nintendo 3DS" }, { ".zcxi", "Nintendo 3DS" }, { ".z3dsx", "Nintendo 3DS" },
     };
 
     /// <summary>JellyEMU's other-platform extensions (only so a zip holding one is never taken for one of ours).</summary>

@@ -52,7 +52,8 @@ enum class GameButton(val label: String, val keyCode: Int, val dx: Int = 0, val 
      * Name on screen for this console: PSP and PS1 face buttons by their symbols, as on the touch buttons
      * (by position on the libretro pad: △ = X, ○ = A, ✕ = B, □ = Y). PS1 shoulders are L1/R1/L2/R2.
      */
-    fun labelFor(console: Console): String = if (console != Console.PSP && console != Console.PSX) label else when (this) {
+    fun labelFor(console: Console): String = if (console == Console.N3DS) when (this) { L2 -> "ZL"; R2 -> "ZR"; else -> label }
+    else if (console != Console.PSP && console != Console.PSX) label else when (this) {
         X -> "△"; A -> "○"; B -> "✕"; Y -> "□"
         L -> if (console == Console.PSX) "L1" else label
         R -> if (console == Console.PSX) "R1" else label
@@ -71,7 +72,8 @@ enum class GameButton(val label: String, val keyCode: Int, val dx: Int = 0, val 
             Console.GBA -> listOf(A, B, L, R, START, SELECT)
             Console.PSX -> listOf(X, A, B, Y, L, R, L2, R2, START, SELECT) // △ ○ ✕ □ L1 R1 L2 R2
             Console.N64 -> listOf(N64_A, N64_B, Z, L, R, START, C_UP, C_DOWN, C_LEFT, C_RIGHT) // no Select on an N64
-            else -> listOf(A, B, X, Y, L, R, START, SELECT) // DS, PSP (3DS isn't playable in the app)
+            Console.N3DS -> listOf(A, B, X, Y, L, R, L2, R2, START, SELECT) // L2/R2 = ZL/ZR (plan-3ds step 5)
+            else -> listOf(A, B, X, Y, L, R, START, SELECT) // DS, PSP
         }
     }
 }

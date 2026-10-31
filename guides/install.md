@@ -52,7 +52,7 @@
 ├── Nintendo DS/         .nds
 ├── PS1/                 .chd .pbp   (one file per game)
 ├── PSP/                 .iso .cso .pbp .chd
-└── Nintendo 3DS/        .3ds .cci .cia
+└── Nintendo 3DS/        .3ds .cci .cxi .3dsx (+ .zcci .zcxi .z3dsx; .cia listed, not playable)
 ```
 
 - Short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`.

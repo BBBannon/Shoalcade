@@ -1,0 +1,35 @@
+diff --git a/src/citra_libretro/libretro_vk.cpp b/src/citra_libretro/libretro_vk.cpp
+index 8a1ac0a..47f994c 100644
+--- a/src/citra_libretro/libretro_vk.cpp
++++ b/src/citra_libretro/libretro_vk.cpp
+@@ -101,11 +101,13 @@ bool CreateVulkanDevice(struct retro_vulkan_context* context, VkInstance instanc
+     const bool has_custom_border_color = AddExtensionIfAvailable(
+         enabled_exts, available_exts, VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
+ 
++    // Shoalcade (D154): timeline semaphores on, as standalone Azahar uses them. Without them the
++    // fallback timing lets the GPU reuse memory too early on PowerVR (black tiles over moving parts).
++    const bool has_timeline_semaphore = AddExtensionIfAvailable(
++        enabled_exts, available_exts, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+     // These are beneficial but blacklisted on some platforms due to driver bugs
+     // For now, let the Instance class handle these decisions
+     // AddExtensionIfAvailable(enabled_exts, available_exts,
+-    // VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+-    // AddExtensionIfAvailable(enabled_exts, available_exts,
+     // VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
+ 
+     // Merge frontend's required features with our baseline
+@@ -180,6 +182,14 @@ bool CreateVulkanDevice(struct retro_vulkan_context* context, VkInstance instanc
+         enabled_features.pNext = &custom_border_color_features;
+     }
+ 
++    VkPhysicalDeviceTimelineSemaphoreFeaturesKHR timeline_semaphore_features{
++        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES_KHR};
++    if (has_timeline_semaphore) {
++        timeline_semaphore_features.timelineSemaphore = VK_TRUE;
++        timeline_semaphore_features.pNext = enabled_features.pNext;
++        enabled_features.pNext = &timeline_semaphore_features;
++    }
++
+     VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+     device_info.queueCreateInfoCount = 1;
+     device_info.pQueueCreateInfos = &queue_info;

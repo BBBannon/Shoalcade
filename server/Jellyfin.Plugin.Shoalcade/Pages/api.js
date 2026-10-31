@@ -122,6 +122,8 @@
     },
     games: () => json("/shoalcade/games"),
     game: id => json("/shoalcade/games/" + encodeURIComponent(id)),
+    /** Stars or unstars a game (Jellyfin favourites, shared with the phone app). */
+    setFavourite: (id, on) => request("/shoalcade/games/" + encodeURIComponent(id) + "/favourite" + q({ on: on ? "true" : "false" }), { method: "POST" }),
 
     /**
      * A game's cover (Jellyfin's Primary image). Jellyfin serves item images without a login,
@@ -299,8 +301,21 @@
     /** "Start fresh": no save in use afterwards; every version stays in history. */
     clearSave: (id, opts) => json(savePath(id) + "/clear" + q({ base: opts && opts.base }), { method: "POST" }),
 
+    /** Deletes every save and snapshot of a game no longer in the library; the counts shown must still be right. */
+    deleteAllSaves: (id, o) => json(savePath(id) + "/delete-all" + q({ versions: o.versions, snapshots: o.snapshots }), { method: "POST" }),
+
     /** Moves every version of a save to another game. */
     moveSave: (id, to) => json(savePath(id) + "/move" + q({ to }), { method: "POST" }),
+
+    /** Every save in use as one zip: { blob, name }. */
+    async exportSaves() {
+      const res = await request("/shoalcade/saves/export");
+      let name = null;
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename\*=UTF-8''([^;]+)/i.exec(cd) || /filename="?([^";]+)"?/i.exec(cd);
+      if (m) { try { name = decodeURIComponent(m[1]); } catch (e) { name = m[1]; } }
+      return { blob: await res.blob(), name };
+    },
 
     /** One version as a file: { blob, name }. Fetched with the login header, so the sign-in never goes in a URL. */
     async saveFile(id, version) {

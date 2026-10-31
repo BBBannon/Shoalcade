@@ -1,0 +1,306 @@
+/*
+ *     Copyright (C) 2019  Filippo Scognamiglio
+ *
+ *     This program is free software: you can redistribute it and/or modify
+ *     it under the terms of the GNU General Public License as published by
+ *     the Free Software Foundation, either version 3 of the License, or
+ *     (at your option) any later version.
+ *
+ *     This program is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ *     You should have received a copy of the GNU General Public License
+ *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+#ifndef LIBRETRODROID_LIBRETRODROID_H
+#define LIBRETRODROID_LIBRETRODROID_H
+
+#include <jni.h>
+
+#include <EGL/egl.h>
+
+#include <string>
+#include <vector>
+#include <unordered_set>
+#include <mutex>
+#include <memory>
+#include <optional>
+#include <atomic>
+
+#include "log.h"
+#include "core.h"
+#include "audio.h"
+#include "video.h"
+#include "renderers/renderer.h"
+#include "secondaryoutput.h"
+#include "fpssync.h"
+#include "input.h"
+#include "rumble.h"
+#include "achievements.h"
+#include "shadermanager.h"
+#include "utils/javautils.h"
+#include "environment.h"
+#include "vfs/vfsfile.h"
+#include "renderers/es3/framebufferrenderer.h"
+#include "renderers/es2/imagerendereres2.h"
+#include "renderers/es3/imagerendereres3.h"
+#include "utils/rect.h"
+#include "rewindbuffer.h"
+#include "stateloadpolicy.h"
+
+namespace libretrodroid {
+
+class LibretroDroid {
+public:
+    static LibretroDroid& getInstance()
+    {
+        static LibretroDroid instance;
+        return instance;
+    }
+    LibretroDroid(LibretroDroid const&) = delete;
+    void operator=(LibretroDroid const&) = delete;
+
+    void setViewport(Rect viewportRect);
+
+private:
+    LibretroDroid() {}
+
+public:
+    void setCheat(unsigned index, bool enabled, const std::string& code);
+    void resetCheat();
+
+    std::string coreLibraryName();
+
+    std::pair<int8_t*, size_t> serializeState();
+    size_t getSerializeSize();
+    bool unserializeState(int8_t *data, size_t size);
+    bool unserializePersistedState(int8_t *data, size_t size);
+
+    std::pair<int8_t *, size_t> serializeSRAM();
+    jboolean unserializeSRAM(int8_t *data, size_t size);
+
+    std::pair<int8_t *, size_t> getMemoryData(unsigned int memoryType);
+    size_t getMemorySize(unsigned int memoryType);
+    bool setMemoryData(unsigned int memoryType, const int8_t *data, size_t size);
+
+    std::vector<uint8_t> captureRawFrame(int& outWidth, int& outHeight);
+
+    void onSurfaceCreated();
+    void onSurfaceChanged(unsigned int width, unsigned int height);
+
+    void create(
+        unsigned int GLESVersion,
+        const std::string& soFilePath,
+        const std::string& systemDir,
+        const std::string& savesDir,
+        std::vector<Variable> variables,
+        const ShaderManager::Config& shaderConfig,
+        float refreshRate,
+        bool lowLatencyAudio,
+        bool forceSoftwareTiming,
+        bool enableMicrophone,
+        bool duplicateFrames,
+        bool timingFollowsGeometry,
+        std::optional<ImmersiveMode::Config> immersiveModeConfig,
+        const std::string& language
+    );
+    void resume();
+    void step();
+    void stepForNetplay();
+    void renderFrameOnly();
+    void pause();
+    void destroy();
+
+    void reset();
+
+    void loadGameFromPath(const std::string &gamePath);
+    void loadGameFromBytes(const int8_t *data, size_t size);
+    void loadGameFromVirtualFiles(std::vector<VFSFile> virtualFiles);
+
+    void onKeyEvent(unsigned int port, int action, int keyCode);
+    void onMotionEvent(unsigned int port, unsigned int source, float xAxis, float yAxis);
+    void onTouchEvent(float xAxis, float yAxis);
+    void setInputPortState(unsigned int port, uint32_t bitmask);
+    uint32_t getInputPortBitmask(unsigned int port);
+    void setNetplayActive(bool active);
+
+    void refreshAspectRatio();
+    float getAspectRatio();
+    void setAspectRatioOverride(float ratio);
+
+    bool requiresVideoRefresh() const;
+    void clearRequiresVideoRefresh();
+
+    std::vector<Variable> getVariables();
+    void updateVariable(const Variable& variable);
+
+    std::vector<std::vector<struct Controller>> getControllers();
+    void setControllerType(unsigned int port, unsigned int type);
+
+    int availableDisks();
+    int currentDisk();
+    void changeDisk(unsigned int index);
+    void changeDisk(unsigned int index, const std::string& path);
+
+    void setRumbleEnabled(bool enabled);
+    bool isRumbleEnabled() const;
+    void handleRumbleUpdates(const std::function<void(int, float, float)> &handler);
+
+    void initAchievements(const std::vector<AchievementDef>& achievements, uint32_t consoleId);
+    void clearAchievements();
+    void handleAchievementUnlocks(const std::function<void(uint32_t)>& handler);
+    Achievements& getAchievements() { return achievements; }
+
+    void setFrameSpeed(unsigned int speed);
+
+    void setRewindEnabled(bool enabled);
+    void setRewinding(bool rewinding);
+    void setRewindSpeed(unsigned int speed);
+    void initRewindBuffer(int maxSlots, jlong budgetBytes);
+    void destroyRewindBuffer();
+    void clearRewindBuffer();
+    float getRewindBufferUsage() const;
+    int getRewindBufferValidCount() const;
+    double getContentFps() const;
+
+    void setAudioEnabled(bool enabled);
+    void setPitchPreservationEnabled(bool enabled);
+    void setAudioVolume(float volume);
+
+    void setShaderConfig(ShaderManager::Config shaderConfig);
+    void setSensorReadings(
+        const std::array<float, 3>& gyroscope,
+        const std::array<float, 3>& accelerometer,
+        const std::array<float, 3>& accelerometerRest,
+        float illuminance
+    );
+    void handleCoreSensorRequests(const std::function<void(int)>& handler);
+    int prepareShaderAndGetSensorUsage();
+    void setFilterMode(int mode);
+    void setIntegerScaling(bool enabled);
+    void setTextureCrop(float left, float top, float right, float bottom);
+
+    /**
+     * Presents the same frame on a second display, showing the region [left, top, right, bottom]
+     * of the core's framebuffer. Pass a null window to stop; the window is adopted and released
+     * on the GL thread, so the caller may drop its reference immediately.
+     */
+    void setSecondaryWindow(ANativeWindow* window);
+
+    void setSecondaryCrop(float left, float top, float right, float bottom);
+
+    /**
+     * The aspect ratio of the cropped screen, so the other display centres it as its own picture
+     * rather than as a slice of the whole frame. Zero keeps the frame's own ratio.
+     */
+    void setSecondaryAspectRatio(float aspectRatio);
+
+    /**
+     * Splits a two-screen console's frame across the displays: the primary keeps [primaryCrop] at
+     * [primaryAspectRatio], the second display gets the rest.
+     *
+     * The split is held here rather than pushed through the texture crop and aspect override,
+     * because those belong to the video settings and are rewritten whenever they are applied. A
+     * user crop still composes on top of the split.
+     */
+    void setScreenSplit(
+        bool enabled,
+        float primaryLeft, float primaryTop, float primaryRight, float primaryBottom,
+        float primaryAspectRatio
+    );
+    void setBlackFrameInsertion(bool enabled);
+    void renderBlackFrame();
+
+    void setBackgroundFrame(const uint8_t* data, int width, int height);
+    void clearBackgroundFrame();
+    void setBackgroundFrameBehind(bool behind);
+
+    void resetGlobalVariables();
+
+    // Handle callbacks
+    void handleVideoRefresh(const void *data, unsigned width, unsigned height, size_t pitch);
+    size_t handleAudioCallback(const int16_t* data, size_t frames);
+    int16_t handleSetInputState(unsigned port, unsigned device, unsigned index, unsigned id);
+    uintptr_t handleGetCurrentFrameBuffer();
+
+private:
+    bool unserializeStateWithPolicy(int8_t *data, size_t size, StateLoadPolicy policy);
+    void updateAudioSampleRateMultiplier();
+    float findDefaultAspectRatio(const retro_system_av_info &system_av_info);
+    void afterGameLoad();
+    void refreshTimingFromCoreIfFollowingGeometry();
+    void attachVulkanFrame(unsigned int width, unsigned int height);
+
+protected:
+    static void callback_hw_video_refresh(const void *data, unsigned width, unsigned height, size_t pitch);
+    static size_t callback_set_audio_sample_batch(const int16_t* data, size_t frames);
+    static void callback_audio_sample(int16_t left, int16_t right);
+    static int16_t callback_set_input_state(unsigned port, unsigned device, unsigned index, unsigned id);
+    static uintptr_t callback_get_current_framebuffer();
+    static void callback_retro_set_input_poll();
+
+private:
+    unsigned int frameSpeed = 1;
+    bool audioEnabled = true;
+    bool pitchPreservationEnabled = false;
+    float audioVolume = 1.0f;
+    bool preferLowLatencyAudio = false;
+    bool forceSoftwareTiming = false;
+    bool rumbleEnabled = false;
+
+    std::unique_ptr<RewindBuffer> rewindBuffer;
+    std::vector<uint8_t> rewindTempBuffer;
+    std::atomic<bool> rewindEnabled{false};
+    std::atomic<bool> rewinding{false};
+    std::atomic<unsigned int> rewindSpeed{1};
+    double contentFps = 60.0;
+
+    ShaderManager::Config fragmentShaderConfig = ShaderManager::Config {
+        ShaderManager::Type::SHADER_DEFAULT, { }
+    };
+    int filterMode = -1;  // -1 = auto, 0 = nearest, 1 = linear
+    bool integerScaling = false;
+    bool bfiEnabled = false;
+
+    Rect viewportRect = Rect(0.0F, 0.0F, 1.0F, 1.0F);
+    float screenRefreshRate = 60.0;
+    int openglESVersion = 2;
+    bool skipDuplicateFrames = false;
+    bool timingFollowsGeometry = false;
+    bool immersiveModeEnabled = false;
+    bool vulkanContextReset = false;
+    bool backgroundFrameBehind = false;
+    ImmersiveMode::Config immersiveModeConfig {};
+
+    float defaultAspectRatio = 1.0;
+    bool dirtyVideo = false;
+
+    void renderSecondaryFrame();
+    void applyPrimaryCrop();
+    void clearScreenSplit();
+    void orientSplitCrop(const float* source, float* target);
+
+    SecondaryOutput secondaryOutput;
+    float requestedCrop[4] = { 0.0F, 0.0F, 0.0F, 0.0F };
+    float primaryCrop[4] = { 0.0F, 0.0F, 0.0F, 0.0F };
+    bool screenSplitEnabled = false;
+    float splitPrimaryCrop[4] = { 0.0F, 0.0F, 0.0F, 0.0F };
+    float splitPrimaryAspect = 0.0F;
+    float secondaryCrop[4] = { 0.0F, 0.0F, 0.0F, 0.0F };
+    float secondaryAspect = 0.0F;
+
+    std::unique_ptr<Core> core;
+    std::unique_ptr<Audio> audio;
+    std::unique_ptr<Video> video;
+    std::unique_ptr<FPSSync> fpsSync;
+    std::unique_ptr<Input> input;
+    std::unique_ptr<Rumble> rumble;
+    Achievements achievements;
+};
+
+} //namespace libretrodroid
+
+#endif //LIBRETRODROID_LIBRETRODROID_H

@@ -36,13 +36,15 @@ data class Game(
     val year: Int? = null,
     /** Last played on Jellyfin (epoch ms): the later of Jellyfin's last-played date and the current save's time. */
     val serverPlayed: Long? = null,
+    /** Starred by this user (Jellyfin favourites, shared with the browser library). */
+    val favourite: Boolean = false,
 )
 
 /** Game ↔ JSON, for the offline game list and for passing a game to the download service. */
 object GameJson {
     fun toJson(g: Game): JSONObject = JSONObject().put("id", g.id).put("name", g.name).put("console", g.console?.name)
         .put("file", g.fileName).put("dl", g.canDownload).put("img", g.imageTag)
-        .put("year", g.year).put("played", g.serverPlayed)
+        .put("year", g.year).put("played", g.serverPlayed).put("fav", g.favourite)
 
     fun fromJson(s: String) = fromJson(JSONObject(s))
 
@@ -56,6 +58,7 @@ object GameJson {
         imageTag = o.optString("img").takeIf { it.isNotEmpty() && it != "null" },
         year = if (o.has("year") && !o.isNull("year")) o.optInt("year") else null,
         serverPlayed = if (o.has("played") && !o.isNull("played")) o.optLong("played") else null,
+        favourite = o.optBoolean("fav", false),
     )
 }
 
@@ -229,6 +232,14 @@ class JellyfinClient(
         (0 until arr.length()).mapNotNull { i -> RemoteGame.parse(arr.getJSONObject(i), canDownload) }
     }
 
+    /** Version of the phone app inside the plugin (`/shoalcade/app/info`). Null if the admin turned it off or it isn't included. */
+    suspend fun serverAppVersion(): String? = plugin {
+        val conn = open(url("/shoalcade/app/info"))
+        if (conn.responseCode == 404) { conn.disconnect(); return@plugin null }
+        val o = JSONObject(conn.readOk())
+        o.optString("version").takeIf { o.optBoolean("available") && it.isNotEmpty() && it != "null" }
+    }
+
     /** One game with its current save(s). Null if hidden, removed or not a ROM. */
     suspend fun game(itemId: String): RemoteGame? = plugin {
         val conn = open(url("/shoalcade/games/${id(itemId)}"))
@@ -395,6 +406,14 @@ class JellyfinClient(
     }
 
     /** Deletes a cheat (and takes it off the active list). 404 ApiException "no_cheat" if it's already gone. */
+    /** Stars or unstars a game (Jellyfin favourites: the browser library shows the same stars). Needs "favourites". */
+    suspend fun setFavourite(itemId: String, on: Boolean): Unit = plugin {
+        val conn = open(url("/shoalcade/games/${id(itemId)}/favourite?on=$on"), "POST")
+        conn.doOutput = true
+        conn.setFixedLengthStreamingMode(0)
+        conn.checkOk().disconnect()
+    }
+
     suspend fun deleteCheat(itemId: String, cheatId: String): Unit = plugin {
         open(url("/shoalcade/cheats/${id(itemId)}/${cheatId(cheatId)}"), "DELETE").checkOk().disconnect()
     }
@@ -625,6 +644,7 @@ data class RemoteGame(val game: Game, val save: SaveVersion?) {
                     imageTag = o.optString("imageTag").takeIf { it.isNotEmpty() && it != "null" },
                     year = year,
                     serverPlayed = GameSort.lastPlayed(lastPlayed, save?.createdMillis),
+                    favourite = o.optBoolean("favourite", false),
                 ),
                 save,
             )

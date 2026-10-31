@@ -211,6 +211,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 offline = false
                 if (info == null || problem != null) return@launch
                 saveRules = info.keepRecent to info.keepDailyDays
+                hasFavourites = "favourites" in info.features
+                launch {
+                    // Never in the way: a server without it, or any error, just shows nothing.
+                    appUpdate = runCatching { withContext(Dispatchers.IO) { c.serverAppVersion() } }.getOrNull()
+                        ?.takeIf { Compat.updateAvailable(it) }
+                }
                 maxLabelLength = info.maxLabelLength
                 val before = games // names for phone saves whose game has left the server (N7)
                 games = c.listGames(info.canDownload).map { it.game }
@@ -255,6 +261,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** On return to the library (e.g. from a game whose upload hit a conflict): recheck badges and ⚠️ marks. */
     fun diskVersionBump() { localDiskVersion++; refreshConflicts() }
+
+    /** A newer phone app is inside the user's plugin (its version), offered at the top of the library. */
+    var appUpdate by mutableStateOf<String?>(null)
+
+    /** Server has favourites (plugin 0.9+): the Star menu item shows. */
+    var hasFavourites by mutableStateOf(false)
+
+    /** Stars or unstars a game on Jellyfin, then in the list here (and the offline copy). */
+    fun setFavourite(game: Game, on: Boolean) {
+        val c = client()
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.setFavourite(game.id, on) }
+                games = games.map { if (it.id == game.id) it.copy(favourite = on) else it }
+                val list = games
+                withContext(Dispatchers.IO) { writeCache(list) }
+            } catch (e: Exception) {
+                message = "Couldn't change the star: ${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+    }
 
     fun deleteDownload(game: Game) {
         Storage.deleteDownload(game) // saves are kept
@@ -506,7 +533,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun writeCache(list: List<Game>) {
         val arr = JSONArray()
         list.forEach { arr.put(GameJson.toJson(it)) }
-        cacheFile.writeText(arr.toString())
+        // Written whole, then swapped in: a crash mid-write never leaves a broken offline list.
+        val tmp = File(cacheFile.parentFile, "games.json.${System.nanoTime()}.part")
+        tmp.writeText(arr.toString())
+        if (!tmp.renameTo(cacheFile)) { cacheFile.delete(); if (!tmp.renameTo(cacheFile)) tmp.delete() }
     }
 
     /** Null when there is no readable saved list (L2: the game list is then not known). */

@@ -105,6 +105,10 @@ public sealed class GameEdits
         {
             return File.Exists(path) ? JsonSerializer.Deserialize<GameEdit>(File.ReadAllBytes(path)) : null;
         }
+        catch (FileNotFoundException)
+        {
+            return null; // reset (Delete) between the check and the read: nothing changed on the game, not damage
+        }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
             _logger.LogWarning("Could not read the game edit record {Path}: {Message}", path, ex.Message);

@@ -37,7 +37,7 @@ public class WebLinksController : ShoalcadeControllerBase
             return fail;
         }
 
-        return new WebLinksDto(JellyfinWebLinksMiddleware.Enabled && Library.ListRoms(user).Count > 0);
+        return new WebLinksDto(JellyfinWebLinksMiddleware.Enabled && Library.HasAnyRom(user));
     }
 
     /// <summary>Whether to show Play/Saves on this item's page.</summary>

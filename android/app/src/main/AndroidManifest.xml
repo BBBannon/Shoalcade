@@ -39,6 +39,17 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+        <!-- 3DS (D155): its own game screen on its own Vulkan emulator layer. Turns with the phone without restarting. -->
+        <activity
+            android:name=".Game3dsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+        <!-- 3DS check (D151): from Settings or a locked 3DS game's Download. -->
+        <activity
+            android:name=".N3dsCheckActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode" />
         <!-- Settings → Controls (D132). A controller connecting changes keyboard/navigation: keep the screen, don't restart it. -->
         <activity
             android:name=".ControlsActivity"

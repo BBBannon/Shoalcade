@@ -105,6 +105,8 @@ class GameActivity : ComponentActivity() {
             finish()
             return
         }
+        // A file that clearly isn't a game can crash the emulator, and the whole app with it: refuse it first.
+        RomCheck.problem(console, rom)?.let { toast(RomCheck.message(console, it)); finish(); return }
         LibraryPrefs.of(this).recordLaunch(userId, game.id) // "Last played" sort
 
         if (intent.getBooleanExtra(EXTRA_LINK, false)) {
@@ -123,7 +125,8 @@ class GameActivity : ComponentActivity() {
         }
         // PS1/N64: a save of the wrong size is never given to the core (it would start fresh without saying so, and a
         // game that saves at boot would hide that). The file stays on the phone (and in backups); saving goes off.
-        val (forCore, keptBack) = saveForCore(console, Storage.readSave(userId, game))
+        // PSP/3DS keep their save as a folder the core reads itself: no need to zip it up here as well.
+        val (forCore, keptBack) = if (console.hasFolderSaves) null to false else saveForCore(console, Storage.readSave(userId, game))
         loadedSave = forCore
         if (keptBack) {
             saveDisabled = true
@@ -1364,13 +1367,15 @@ class GameActivity : ComponentActivity() {
         private var owner: GameActivity? = null
 
         /** True while a game is open (Push all / Pull all wait for it to close). Main-thread only. */
-        val running: Boolean get() = owner != null
+        val running: Boolean get() = owner != null || Game3dsActivity.running // 3DS has its own screen (D155)
 
         /**
          * [snapshot] = the launch choice (D90): start from the phone's snapshot instead of straight from the save.
          * [offList] (F9): the game is no longer in the library, so the menu has no "Close Game (and Upload)".
          */
         fun intent(ctx: Context, game: Game, userId: String, link: Boolean = false, snapshot: Boolean = false, offList: Boolean = false) =
+            // 3DS plays in its own screen (D155); every other console as before.
+            if (game.console == Console.N3DS) Game3dsActivity.intent(ctx, game, userId, snapshot, offList) else
             Intent(ctx, GameActivity::class.java)
             .putExtra(EXTRA_OFF_LIST, offList)
             .putExtra(EXTRA_LINK, link)

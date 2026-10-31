@@ -94,6 +94,12 @@ internal fun SettingsScreen(vm: AppViewModel, onClose: () -> Unit) {
                 Text(SettingsModel.NOT_IN_LIBRARY + "…")
             }
 
+            // D151: the 3DS check, run once per phone before 3DS games can be downloaded.
+            Heading(N3dsCheck.TITLE)
+            Text(N3dsCheck.status(ctx), style = MaterialTheme.typography.bodyLarge)
+            OutlinedButton(onClick = { ctx.startActivity(android.content.Intent(ctx, N3dsCheckActivity::class.java)) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(N3dsCheck.OPEN) }
+
             Heading(SettingsModel.APP)
             var haptics by remember { mutableStateOf(Haptics.on(ctx)) }
             DrawerRow(MenuItem.Toggle(SettingsModel.ID_HAPTICS, SettingsModel.HAPTICS, haptics), focused = false) {

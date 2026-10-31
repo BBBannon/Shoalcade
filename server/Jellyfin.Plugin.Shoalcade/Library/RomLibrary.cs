@@ -90,14 +90,51 @@ public sealed class RomLibrary
     /// <returns>ROMs.</returns>
     public IReadOnlyList<RomItem> ListRoms(User user)
     {
+        var inLibrary = LibraryCheck();
+        return _library.GetItemList(RomQuery(user)).Select(i => ToRom(i, _images)).OfType<RomItem>().Where(r => inLibrary(r.Item)).ToList();
+    }
+
+    /// <summary>True if the user can see at least one ROM: the same rules as <see cref="ListRoms"/>, stopping at the
+    /// first one and with no cover tags worked out (asked on every Jellyfin web page load).</summary>
+    /// <param name="user">User.</param>
+    /// <returns>Whether there is one.</returns>
+    public bool HasAnyRom(User user)
+    {
+        var inLibrary = LibraryCheck();
+        return _library.GetItemList(RomQuery(user)).Any(i => ToRom(i) is not null && inLibrary(i));
+    }
+
+    private static InternalItemsQuery RomQuery(User user)
+    {
         ArgumentNullException.ThrowIfNull(user);
-        var query = new InternalItemsQuery(user)
+        return new InternalItemsQuery(user)
         {
             IncludeItemTypes = [BaseItemKind.Book],
             Recursive = true,
             Tags = RomTags.ToArray(),
         };
-        return _library.GetItemList(query).Select(i => ToRom(i, _images)).OfType<RomItem>().Where(r => IsInItsLibrary(r.Item)).ToList();
+    }
+
+    /// <summary>
+    /// <see cref="IsInItsLibrary"/> for a whole list: items in the same folder share their library's folders, so those are
+    /// looked up once per folder rather than once per game.
+    /// </summary>
+    private Func<BaseItem, bool> LibraryCheck()
+    {
+        var byParent = new Dictionary<Guid, string[]>();
+        return item =>
+        {
+            if (!byParent.TryGetValue(item.ParentId, out var folders))
+            {
+                folders = LibraryFolders(item);
+                if (item.ParentId != Guid.Empty)
+                {
+                    byParent[item.ParentId] = folders;
+                }
+            }
+
+            return IsInsideAny(item.Path, folders);
+        };
     }
 
     /// <summary>
@@ -117,8 +154,10 @@ public sealed class RomLibrary
         !string.IsNullOrEmpty(path) && folders.Any(f => Scanner.RomScanner.IsInside(path, f));
 
     // The item's own library folders (a ROM item is always inside one when it was found by a scan).
-    private bool IsInItsLibrary(BaseItem item) =>
-        IsInsideAny(item.Path, _library.GetCollectionFolders(item).OfType<CollectionFolder>().SelectMany(f => f.PhysicalLocations ?? []));
+    private bool IsInItsLibrary(BaseItem item) => IsInsideAny(item.Path, LibraryFolders(item));
+
+    private string[] LibraryFolders(BaseItem item) =>
+        _library.GetCollectionFolders(item).OfType<CollectionFolder>().SelectMany(f => f.PhysicalLocations ?? []).ToArray();
 
     /// <summary>Turns an item into a ROM, or null if it isn't one.</summary>
     /// <param name="item">Item.</param>

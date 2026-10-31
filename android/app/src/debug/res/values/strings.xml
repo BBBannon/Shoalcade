@@ -1,0 +1,4 @@
+<resources>
+    <!-- D152: debug builds are "Shoalcade Dev", so they can sit next to the real app. -->
+    <string name="app_name">Shoalcade Dev</string>
+</resources>

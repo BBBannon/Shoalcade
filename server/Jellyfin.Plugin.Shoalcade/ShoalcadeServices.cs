@@ -30,6 +30,7 @@ public sealed class ShoalcadeServices
         DataRoot = DataMigration.Folder;
         Saves = new SaveStore(Path.Combine(DataRoot, "saves"), SaveOptions, TimeProvider.System, loggerFactory.CreateLogger<SaveStore>());
         States = new StateStore(Path.Combine(DataRoot, "states"), TimeProvider.System, loggerFactory.CreateLogger<StateStore>());
+        Deleted = new DeletedSaves(Path.Combine(DataRoot, "deleted"), TimeProvider.System, loggerFactory.CreateLogger<DeletedSaves>());
         Prefs = new PrefsStore(Path.Combine(DataRoot, "prefs"), TimeProvider.System, loggerFactory.CreateLogger<PrefsStore>());
         Cheats = new CheatStore(Path.Combine(DataRoot, "cheats"), TimeProvider.System, loggerFactory.CreateLogger<CheatStore>());
         Storage = new StorageReport(Path.Combine(DataRoot, "saves"), Path.Combine(DataRoot, "states"), Path.Combine(DataRoot, "prefs"), Path.Combine(DataRoot, "cheats"));
@@ -50,6 +51,9 @@ public sealed class ShoalcadeServices
 
     /// <summary>Gets the snapshot store.</summary>
     public StateStore States { get; }
+
+    /// <summary>Gets the hidden copies kept by "Delete all saves" (D168).</summary>
+    public DeletedSaves Deleted { get; }
 
     /// <summary>Gets the settings store.</summary>
     public PrefsStore Prefs { get; }

@@ -116,6 +116,26 @@
       ? "You have saves for " + games + ". They use " + size(used) + (quota ? " of the " + size(quota) + " allowed." : ".")
       : "No saves yet. Play a game and its save appears here.";
     $("saves-open").href = withView("saves-manager");
+    $("saves-export").hidden = !saves.some(s => s.current);
+  }
+
+  async function exportSaves() {
+    const b = $("saves-export");
+    b.disabled = true;
+    try {
+      const f = await api.exportSaves();
+      const url = URL.createObjectURL(f.blob);
+      const a = h("a", { href: url, download: f.name || "Shoalcade saves.zip", class: "sr" });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      toast("Downloading all your saves (" + size(f.blob.size) + ").");
+    } catch (e) {
+      toast("Couldn't download your saves: " + message(e));
+    } finally {
+      b.disabled = false;
+    }
   }
 
   // ---------- phone app ----------
@@ -290,6 +310,7 @@
     $("home").href = withView("./");
     $("retry").addEventListener("click", load);
     $("app-dl").addEventListener("click", download);
+    $("saves-export").addEventListener("click", exportSaves);
     $("app-qr-new").addEventListener("click", newCode);
     load();
   }

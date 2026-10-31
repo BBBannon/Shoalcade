@@ -84,6 +84,8 @@ If the phone was offline when you logged out, remove it in **Dashboard → Devic
 - The games library and box art Jellyfin has stored
 - JellyEMU's old save files, if any (only ever read)
 
+**Deleted with "Delete all saves for this game":** a hidden copy stays in `<Jellyfin data>/shoalcade/deleted/` for **7 days**, so the admin can bring it back (a `read-me.txt` inside says how). The **Clear out deleted saves** task then removes it for good.
+
 **To remove everything:** delete `<Jellyfin data>/shoalcade/` after uninstalling. ⚠️ **This deletes every user's saves.** Back it up first.
 
 **Tip:** turn off **Keep games off Jellyfin's home page** *before* uninstalling. Otherwise each person re-ticks **Display in other home screen sections** in their own **Settings → Home screen**.

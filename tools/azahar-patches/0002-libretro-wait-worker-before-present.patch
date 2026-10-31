@@ -1,0 +1,16 @@
+diff --git a/src/citra_libretro/libretro_vk.cpp b/src/citra_libretro/libretro_vk.cpp
+index 8a1ac0a..70bf288 100644
+--- a/src/citra_libretro/libretro_vk.cpp
++++ b/src/citra_libretro/libretro_vk.cpp
+@@ -697,6 +697,11 @@ void PresentWindow::Present(Frame* frame) {
+         return;
+     }
+ 
++    // Shoalcade (D154): the frame's drawing (which starts by clearing to black) is handed to the
++    // scheduler's worker thread by Flush() and may not be submitted yet. Wait for it, so the
++    // frontend's copy is queued after the drawing, not alongside it (black tiles on PowerVR).
++    scheduler.WaitWorker();
++
+     // CRITICAL: Use persistent struct to avoid stack lifetime issues!
+     // RetroArch may cache this pointer for frame duping during pause
+     persistent_libretro_image.image_view = static_cast<VkImageView>(frame->image_view);

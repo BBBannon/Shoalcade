@@ -52,7 +52,8 @@ public sealed class GameConsole
             [N64SaveSize], [0], exactSizes: true, filesOnly: true),
         new("nds", "Nintendo DS", ["Nintendo DS"], [".nds"], "melonds", BrowserSaveMode.Shared, "sav", 16 * 1024 * 1024,
             NdsSaveSizes, [0], exactSizes: true),
-        new("3ds", "Nintendo 3DS", ["Nintendo 3DS"], [".3ds", ".cci", ".cia"], null, BrowserSaveMode.None, "sav", 64L * 1024 * 1024,
+        // 3DS (D158): the app's save is a zip of the core's SD card "Nintendo 3DS" folder, like PSP's memory stick.
+        new("3ds", "Nintendo 3DS", ["Nintendo 3DS"], [".3ds", ".cci", ".cia", ".cxi", ".3dsx", ".zcci", ".zcxi", ".z3dsx"], null, BrowserSaveMode.None, "zip", 64L * 1024 * 1024,
             [], [0]),
         new("psp", "PSP", ["PSP"], [".cso", ".iso", ".pbp", ".chd"], null, BrowserSaveMode.None, "zip", 64L * 1024 * 1024,
             [], [0]),

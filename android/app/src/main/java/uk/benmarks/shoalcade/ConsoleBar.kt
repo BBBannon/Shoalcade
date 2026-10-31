@@ -8,6 +8,8 @@ sealed interface ConsoleFilter {
     fun matches(c: Console?): Boolean
 
     data object All : ConsoleFilter { override fun matches(c: Console?) = true }
+    /** "★ Starred": every console; the library keeps only starred games ([Game.favourite]). */
+    data object Starred : ConsoleFilter { override fun matches(c: Console?) = true }
     data class Group(val maker: Maker) : ConsoleFilter { override fun matches(c: Console?) = c?.maker == maker }
     data class One(val console: Console) : ConsoleFilter { override fun matches(c: Console?) = c == console }
 }

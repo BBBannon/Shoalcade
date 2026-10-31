@@ -58,6 +58,7 @@ h2.sec { font: 700 1.05rem var(--cond); margin: 0 0 12px; display: flex; gap: 8p
 .empty { color: var(--muted); padding: 24px 0; grid-column: 1 / -1; margin: 0; }
 /* Plugin version (D88), small and out of the way: page footer, bottom of the player settings panel. */
 .ver { color: var(--muted); font-size: .72rem; margin: 32px 0 0; opacity: .8; }
+.ver a { color: inherit; }
 .panel-body .ver { color: var(--p-muted); margin-top: 24px; }
 
 /* ---------- search ---------- */

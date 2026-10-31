@@ -1,0 +1,217 @@
+/*
+ *     Copyright (C) 2019  Filippo Scognamiglio
+ *
+ *     This program is free software: you can redistribute it and/or modify
+ *     it under the terms of the GNU General Public License as published by
+ *     the Free Software Foundation, either version 3 of the License, or
+ *     (at your option) any later version.
+ *
+ *     This program is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ *     You should have received a copy of the GNU General Public License
+ *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+#ifndef LIBRETRODROID_VIDEO_H
+#define LIBRETRODROID_VIDEO_H
+
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <android/hardware_buffer.h>
+#include <optional>
+#include <array>
+#include <vector>
+#include <mutex>
+
+#include "renderers/renderer.h"
+#include "shadermanager.h"
+#include "utils/rect.h"
+#include "immersivemode.h"
+#include "videolayout.h"
+#include "backgroundframe.h"
+
+namespace libretrodroid {
+
+class Video {
+public:
+    enum SensorUsage { SENSOR_ACCELEROMETER = 1, SENSOR_GYROSCOPE = 2 };
+
+    struct RenderingOptions {
+        bool hardwareAccelerated = false;
+        unsigned int width;
+        unsigned int height;
+        bool useDepth;
+        bool useStencil;
+        int openglESVersion;
+        int pixelFormat;
+        bool vulkan = false;
+    };
+
+    struct ShaderChainEntry {
+        GLint gProgram = 0;
+        GLint gvPositionHandle = 0;
+        GLint gvCoordinateHandle = 0;
+        GLint gTextureHandle = 0;
+        GLint gPreviousPassTextureHandle = 0;
+        GLint gScreenDensityHandle = 0;
+        GLint gTextureSizeHandle = 0;
+        GLint gOrigTextureHandle = -1;
+        GLint gOrigTextureSizeHandle = -1;
+        GLint gOrigInputSizeHandle = -1;
+        GLint gInputSizeHandle = -1;
+        GLint gOutputSizeHandle = -1;
+        GLint gFrameCountHandle = -1;
+        GLint gFrameDirectionHandle = -1;
+        GLint gMVPMatrixHandle = -1;
+        GLint gGyroscopeHandle = -1;
+        GLint gAccelerometerHandle = -1;
+        GLint gAccelerometerRestHandle = -1;
+    };
+
+    Video(
+        RenderingOptions renderingOptions,
+        ShaderManager::Config shaderConfig,
+        bool bottomLeftOrigin,
+        float rotation,
+        bool skipDuplicateFrames,
+        bool immersiveMode,
+        Rect viewportRect,
+        ImmersiveMode::Config immersiveModeConfig
+    );
+
+    ~Video();
+
+    VideoLayout& getLayout() { return videoLayout; }
+
+    void updateAspectRatio(float aspectRatio);
+    void updateScreenSize(unsigned screenWidth, unsigned screenHeight);
+    void updateViewportSize(Rect viewportRect);
+    void updateRendererSize(unsigned width, unsigned height);
+    void updateRotation(float rotation);
+    void updateShaderType(ShaderManager::Config shaderConfig);
+    void setFilterMode(int mode);
+    void setIntegerScaling(bool enabled);
+    void setTextureCrop(float left, float top, float right, float bottom);
+    void setBlackFrameInsertion(bool enabled);
+    void setShaderSensorState(const std::array<float, 9>& state);
+    int prepareShaderAndGetSensorUsage();
+
+    void setBackgroundFrame(const uint8_t* data, int width, int height);
+    void clearBackgroundFrame();
+    void setBackgroundFrameBehind(bool behind);
+
+    /**
+     * Draws the current frame. Pass force = true when the caller has no new core frame to show
+     * but still owns a swap (e.g. while emulation is paused): skipping the draw there leaves the
+     * surface undrawn on every swap, which some drivers answer with a dequeue timeout.
+     */
+    void renderFrame(bool force = false);
+    void renderBlackFrame();
+
+    void onNewFrame(const void *data, unsigned width, unsigned height, size_t pitch);
+
+    std::vector<uint8_t> captureRawFrame(int& outWidth, int& outHeight);
+
+    uintptr_t getCurrentFramebuffer() {
+        if (hwRenderFBO != 0) return hwRenderFBO;
+        return renderer->getFramebuffer();
+    };
+
+    bool rendersInVideoCallback() {
+        return !hwAccelerated && renderer->rendersInVideoCallback();
+    }
+
+    bool isHWAccelerated() const {
+        return hwAccelerated;
+    }
+
+    void bindHWContext();
+    void bindMainContext();
+
+    /**
+     * Reallocates the hardware render target when the core raises its maximum framebuffer size,
+     * which is how an internal-resolution change reaches the GPU without restarting the session.
+     */
+    void resizeHWRenderTarget(unsigned int width, unsigned int height);
+
+    bool presentsExternalFrames() const { return externalFrames; }
+
+    /**
+     * Samples [buffer] as the hardware frame from now on. Used when the core renders through
+     * Vulkan and hands its frames over in an AHardwareBuffer; replaces any earlier buffer.
+     */
+    bool attachExternalFrame(AHardwareBuffer* buffer, unsigned int width, unsigned int height);
+
+private:
+    void updateProgram();
+    bool tryBuildShaderChain(const ShaderManager::Chain& shaders, std::vector<ShaderChainEntry>& outChain);
+
+    float getScreenDensity();
+    float getTextureWidth();
+    float getTextureHeight();
+
+    void initializeRenderer(RenderingOptions renderingOptions);
+    void initializeHWRenderContext(unsigned int width, unsigned int height,
+                                   bool useDepth, bool useStencil);
+
+private:
+    ShaderManager::Config requestedShaderConfig = ShaderManager::Config {
+        ShaderManager::Type::SHADER_DEFAULT
+    };
+    std::optional<ShaderManager::Config> loadedShaderType = std::nullopt;
+
+    bool isDirty = false;
+    bool hwAccelerated = false;
+    bool skipDuplicateFrames = false;
+    int filterMode = -1;  // -1 = auto (shader decides), 0 = nearest, 1 = linear
+    bool bfiEnabled = false;
+    unsigned int bfiFrameCounter = 0;
+    unsigned int frameCount = 0;
+
+    std::vector<ShaderChainEntry> shadersChain;
+
+    bool immersiveModeEnabled = false;
+    bool backgroundFrameBehind = false;
+    ImmersiveMode immersiveMode;
+    BackgroundFrame backgroundFrame;
+    std::array<float, 9> shaderSensorState {};
+    int shaderSensorUsage = 0;
+    VideoLayout videoLayout;
+
+    Renderer* renderer;
+
+    // Last software frame retained for raw capture (software cores read back black
+    // from an FBO since their source texture is not a color-renderable format).
+    int framePixelFormat = 0;
+    std::mutex frameMutex;
+    std::vector<uint8_t> lastFrameData;
+    int lastFrameWidth = 0;
+    int lastFrameHeight = 0;
+    size_t lastFramePitch = 0;
+
+    // Shared EGL context for HW-accelerated cores
+    EGLDisplay eglDisplay = EGL_NO_DISPLAY;
+    EGLSurface eglSurface = EGL_NO_SURFACE;
+    EGLContext mainCtx = EGL_NO_CONTEXT;
+    EGLContext hwCtx = EGL_NO_CONTEXT;
+    GLuint hwRenderFBO = 0;
+    GLuint hwRenderTexture = 0;
+    GLuint hwRenderDepthStencil = 0;
+    unsigned hwFBOWidth = 0;
+    unsigned hwFBOHeight = 0;
+    bool hwUseDepth = false;
+    bool hwUseStencil = false;
+
+    bool externalFrames = false;
+    EGLImageKHR externalFrameImage = EGL_NO_IMAGE_KHR;
+    void releaseExternalFrame();
+};
+
+}
+
+#endif //LIBRETRODROID_VIDEO_H

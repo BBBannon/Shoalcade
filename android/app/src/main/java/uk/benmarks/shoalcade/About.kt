@@ -41,6 +41,14 @@ object Licences {
         Part("Mupen64Plus-Next (3.0-GLES3 15bada8)", "Nintendo 64",
             "GPL-3.0 as combined (parts: mupen64plus-core GPL-2.0-or-later, GLideN64 GPL-2.0 (combined upstream with GPL-3.0 code), xBRZ GPL-3.0, GNU lightning LGPL-3.0-or-later, cxd4 CC0, parallel-rsp, parallel-rdp, angrylion and libretro-common MIT, xxHash BSD-2, zlib, libpng and minizip zlib)",
             "https://github.com/libretro/mupen64plus-libretro-nx/tree/15bada85906593376e8fd697f1b0b3af3a20f512"),
+        // 3DS (D153, D154, D159): our own Azahar build with Shoalcade's patches, its own Vulkan front-end, and the check scene.
+        Part("Azahar 2126.2 (commit 219d743) + Shoalcade patches", "Nintendo 3DS", "GPL-3.0-or-later (some parts GPL-2.0-or-later)",
+            "https://github.com/azahar-emu/azahar/tree/2126.2 (patches: tools/azahar-patches in Shoalcade's source)"),
+        Part("LibretroDroid, Argosy's Vulkan version (commit 68f1368)", "3DS emulator front-end (Vulkan)",
+            "GPL-3.0 (bundled: libadrenotools BSD-2-Clause, rcheevos MIT, Oboe Apache-2.0, SoundTouch LGPL-2.1)",
+            "https://github.com/rommapp/argosy-launcher/tree/68f1368b61707f8c4ad001b89eb095a705a46143/libretrodroid"),
+        Part("3DS check scene", "The 3DS check's test scene", "GPL-3.0-or-later; based on devkitPro 3ds-examples (Public Domain); libctru and citro3d (zlib)",
+            "https://github.com/devkitPro/3ds-examples (scene: tools/n3ds-check in Shoalcade's source)"),
         Part("gpSP (v1.1.0-5819380)", "GBA link play", "GPL-2.0-or-later", "https://github.com/libretro/gpsp/tree/5819380"),
         Part("AndroidX, Jetpack Compose, Kotlin", "App framework", "Apache-2.0", "https://android.googlesource.com/platform/frameworks/support"),
     )

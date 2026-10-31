@@ -1,0 +1,95 @@
+/*
+ *     Copyright (C) 2019  Filippo Scognamiglio
+ *
+ *     This program is free software: you can redistribute it and/or modify
+ *     it under the terms of the GNU General Public License as published by
+ *     the Free Software Foundation, either version 3 of the License, or
+ *     (at your option) any later version.
+ *
+ *     This program is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ *     You should have received a copy of the GNU General Public License
+ *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+#include <cmath>
+#include "fpssync.h"
+#include "log.h"
+
+namespace libretrodroid {
+
+unsigned FPSSync::advanceFrames() {
+    if (lastFrame == MIN_TIME) {
+        start();
+    }
+
+    if (useVSync) {
+        // Always advance lastFrame so wait() has a valid target,
+        // even when vsync is nominally active. This provides a
+        // backstop on devices where eglSwapBuffers doesn't block.
+        lastFrame = lastFrame + sampleInterval;
+        return 1;
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    auto frames = std::max((now - lastFrame) / sampleInterval, (long long) 1);
+    lastFrame = lastFrame + sampleInterval * frames;
+
+    return frames;
+}
+
+FPSSync::FPSSync(double contentRefreshRate, double screenRefreshRate, bool forceSoftwareTiming) {
+    this->contentRefreshRate = contentRefreshRate;
+    this->screenRefreshRate = screenRefreshRate;
+    this->forceSoftwareTiming = forceSoftwareTiming;
+    this->useVSync = !forceSoftwareTiming && std::abs(contentRefreshRate - screenRefreshRate) < FPS_TOLERANCE;
+    this->sampleInterval = std::chrono::microseconds((long) ((1000000L / contentRefreshRate)));
+    reset();
+}
+
+void FPSSync::start() {
+    LOGI("Starting game with fps %f on a screen with refresh rate %f. Using vsync: %d", contentRefreshRate, screenRefreshRate, useVSync);
+    lastFrame = std::chrono::steady_clock::now();
+}
+
+void FPSSync::reset() {
+    lastFrame = MIN_TIME;
+}
+
+double FPSSync::getTimeStretchFactor() {
+    return useVSync ? contentRefreshRate / screenRefreshRate : 1.0;
+}
+
+void FPSSync::wait() {
+    auto now = std::chrono::steady_clock::now();
+    auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(lastFrame - now).count();
+    if (delta > 1000) {
+        LOGI("FPSSync::wait: lastFrame is %lldms in the future, resetting", (long long)delta);
+        lastFrame = now;
+    }
+    std::this_thread::sleep_until(lastFrame);
+}
+
+void FPSSync::setExternalTimingControl(bool enabled) {
+    if (forceSoftwareTiming) {
+        useVSync = false;
+    } else if (enabled) {
+        useVSync = true;
+    } else {
+        useVSync = std::abs(contentRefreshRate - screenRefreshRate) < FPS_TOLERANCE;
+    }
+    reset();
+}
+
+void FPSSync::updateContentRefreshRate(double newContentRefreshRate) {
+    LOGI("Updating content refresh rate from %f to %f", contentRefreshRate, newContentRefreshRate);
+    contentRefreshRate = newContentRefreshRate;
+    sampleInterval = std::chrono::microseconds((long) ((1000000L / contentRefreshRate)));
+    useVSync = !forceSoftwareTiming && std::abs(contentRefreshRate - screenRefreshRate) < FPS_TOLERANCE;
+    reset();
+}
+
+} //namespace libretrodroid

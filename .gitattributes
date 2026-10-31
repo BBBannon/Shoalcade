@@ -1,0 +1,7 @@
+# Build sources that must keep Unix line endings on every checkout (Windows too): patches only apply byte for byte,
+# and shell scripts break with CRLF.
+*.patch text eol=lf
+*.sh    text eol=lf
+*.pica  text eol=lf
+Makefile text eol=lf
+*.lock  text eol=lf

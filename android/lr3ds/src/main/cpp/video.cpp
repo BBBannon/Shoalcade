@@ -1,0 +1,858 @@
+/*
+ *     Copyright (C) 2019  Filippo Scognamiglio
+ *
+ *     This program is free software: you can redistribute it and/or modify
+ *     it under the terms of the GNU General Public License as published by
+ *     the Free Software Foundation, either version 3 of the License, or
+ *     (at your option) any later version.
+ *
+ *     This program is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ *     You should have received a copy of the GNU General Public License
+ *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
+#include <EGL/egl.h>
+#include <algorithm>
+#include <cstdlib>
+#include <string>
+#include <cmath>
+#include <utility>
+#include <sstream>
+
+#include "log.h"
+#include "libretro/libretro-common/include/libretro.h"
+
+#include "video.h"
+#include "renderers/es3/framebufferrenderer.h"
+#include "renderers/es3/imagerendereres3.h"
+#include "renderers/es2/imagerendereres2.h"
+
+namespace libretrodroid {
+
+static void printGLString(const char *name, GLenum s) {
+    const char *v = (const char *) glGetString(s);
+    LOGI("GL %s = %s\n", name, v);
+}
+
+GLuint loadShader(GLenum shaderType, const char* pSource) {
+    GLuint shader = glCreateShader(shaderType);
+    if (shader) {
+        glShaderSource(shader, 1, &pSource, nullptr);
+        glCompileShader(shader);
+        GLint compiled = 0;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
+        if (!compiled) {
+            GLint infoLen = 0;
+            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &infoLen);
+            if (infoLen) {
+                char* buf = (char*) malloc(infoLen);
+                if (buf) {
+                    glGetShaderInfoLog(shader, infoLen, nullptr, buf);
+                    LOGE("Could not compile shader %d:\n%s\n",
+                         shaderType, buf);
+                    free(buf);
+                }
+                glDeleteShader(shader);
+                shader = 0;
+            }
+        }
+    }
+    return shader;
+}
+
+GLuint createProgram(const char* pVertexSource, const char* pFragmentSource) {
+    GLuint vertexShader = loadShader(GL_VERTEX_SHADER, pVertexSource);
+    if (!vertexShader) {
+        return 0;
+    }
+
+    GLuint pixelShader = loadShader(GL_FRAGMENT_SHADER, pFragmentSource);
+    if (!pixelShader) {
+        return 0;
+    }
+
+    GLuint program = glCreateProgram();
+    if (program) {
+        glAttachShader(program, vertexShader);
+        glAttachShader(program, pixelShader);
+        glLinkProgram(program);
+        GLint linkStatus = GL_FALSE;
+        glGetProgramiv(program, GL_LINK_STATUS, &linkStatus);
+        if (linkStatus != GL_TRUE) {
+            GLint bufLength = 0;
+            glGetProgramiv(program, GL_INFO_LOG_LENGTH, &bufLength);
+            if (bufLength) {
+                char* buf = (char*) malloc(bufLength);
+                if (buf) {
+                    glGetProgramInfoLog(program, bufLength, nullptr, buf);
+                    LOGE("Could not link program:\n%s\n", buf);
+                    free(buf);
+                }
+            }
+            glDeleteProgram(program);
+            program = 0;
+        }
+    }
+    return program;
+}
+
+bool Video::tryBuildShaderChain(const ShaderManager::Chain& shaders, std::vector<ShaderChainEntry>& outChain) {
+    outChain.clear();
+
+    for (const auto& item : shaders.passes) {
+        auto shader = ShaderChainEntry { };
+
+        shader.gProgram = createProgram(item.vertex.data(), item.fragment.data());
+        if (!shader.gProgram) {
+            LOGE("Shader pass failed to compile, will fall back to default shader");
+            for (auto& entry : outChain) {
+                if (entry.gProgram) glDeleteProgram(entry.gProgram);
+            }
+            outChain.clear();
+            return false;
+        }
+
+        shader.gvPositionHandle = glGetAttribLocation(shader.gProgram, "vPosition");
+        if (shader.gvPositionHandle == -1)
+            shader.gvPositionHandle = glGetAttribLocation(shader.gProgram, "VertexCoord");
+
+        shader.gvCoordinateHandle = glGetAttribLocation(shader.gProgram, "vCoordinate");
+        if (shader.gvCoordinateHandle == -1)
+            shader.gvCoordinateHandle = glGetAttribLocation(shader.gProgram, "TexCoord");
+
+        shader.gTextureHandle = glGetUniformLocation(shader.gProgram, "texture");
+        if (shader.gTextureHandle == -1)
+            shader.gTextureHandle = glGetUniformLocation(shader.gProgram, "Texture");
+
+        shader.gPreviousPassTextureHandle = glGetUniformLocation(shader.gProgram, "previousPass");
+
+        shader.gTextureSizeHandle = glGetUniformLocation(shader.gProgram, "textureSize");
+        if (shader.gTextureSizeHandle == -1)
+            shader.gTextureSizeHandle = glGetUniformLocation(shader.gProgram, "TextureSize");
+
+        shader.gScreenDensityHandle = glGetUniformLocation(shader.gProgram, "screenDensity");
+
+        shader.gOrigTextureHandle = glGetUniformLocation(shader.gProgram, "OrigTexture");
+        shader.gOrigTextureSizeHandle = glGetUniformLocation(shader.gProgram, "OrigTextureSize");
+        shader.gOrigInputSizeHandle = glGetUniformLocation(shader.gProgram, "OrigInputSize");
+        shader.gInputSizeHandle = glGetUniformLocation(shader.gProgram, "InputSize");
+        shader.gOutputSizeHandle = glGetUniformLocation(shader.gProgram, "OutputSize");
+        shader.gFrameCountHandle = glGetUniformLocation(shader.gProgram, "FrameCount");
+        shader.gFrameDirectionHandle = glGetUniformLocation(shader.gProgram, "FrameDirection");
+        shader.gMVPMatrixHandle = glGetUniformLocation(shader.gProgram, "MVPMatrix");
+        shader.gGyroscopeHandle = glGetUniformLocation(shader.gProgram, "Gyroscope");
+        shader.gAccelerometerHandle = glGetUniformLocation(shader.gProgram, "Accelerometer");
+        shader.gAccelerometerRestHandle = glGetUniformLocation(shader.gProgram, "AccelerometerRest");
+
+        outChain.push_back(shader);
+    }
+
+    return true;
+}
+
+void Video::updateProgram() {
+    if (loadedShaderType.has_value() && loadedShaderType.value() == requestedShaderConfig) {
+        return;
+    }
+
+    loadedShaderType = requestedShaderConfig;
+
+    auto shaders = ShaderManager::getShader(requestedShaderConfig);
+
+    // Apply filter mode override if set
+    if (filterMode == 0) {
+        shaders.linearTexture = false;  // Nearest
+    } else if (filterMode == 1) {
+        shaders.linearTexture = true;   // Linear/Bilinear
+    }
+    // filterMode == -1 means auto (use shader's default)
+
+    for (auto& entry : shadersChain) {
+        if (entry.gProgram) glDeleteProgram(entry.gProgram);
+    }
+
+    std::vector<ShaderChainEntry> newChain;
+    if (!tryBuildShaderChain(shaders, newChain)) {
+        LOGE("Requested shader failed to compile, falling back to default shader");
+        auto defaultShaders = ShaderManager::getShader(ShaderManager::Config { ShaderManager::Type::SHADER_DEFAULT });
+        if (filterMode == 0) {
+            defaultShaders.linearTexture = false;
+        } else if (filterMode == 1) {
+            defaultShaders.linearTexture = true;
+        }
+
+        if (!tryBuildShaderChain(defaultShaders, newChain)) {
+            LOGE("Default shader also failed to compile - this should not happen");
+            throw std::runtime_error("Cannot create default gl program");
+        }
+        shaders = defaultShaders;
+    }
+
+    shadersChain = std::move(newChain);
+    renderer->setShaders(shaders);
+    shaderSensorUsage = 0;
+    for (const auto& shader : shadersChain) {
+        if (shader.gAccelerometerHandle != -1 || shader.gAccelerometerRestHandle != -1)
+            shaderSensorUsage |= SENSOR_ACCELEROMETER;
+        if (shader.gGyroscopeHandle != -1)
+            shaderSensorUsage |= SENSOR_ACCELEROMETER | SENSOR_GYROSCOPE;
+    }
+}
+
+int Video::prepareShaderAndGetSensorUsage() {
+    bool shaderPending = !loadedShaderType.has_value() || !(loadedShaderType.value() == requestedShaderConfig);
+    updateProgram();
+    if (shaderPending) isDirty = true;
+    return shaderSensorUsage;
+}
+
+void Video::renderFrame(bool force) {
+    bool shaderPending = !loadedShaderType.has_value() || !(loadedShaderType.value() == requestedShaderConfig);
+    if (!force && skipDuplicateFrames && !bfiEnabled && !isDirty && !shaderPending) {
+        return;
+    }
+    isDirty = false;
+    frameCount++;
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_STENCIL_TEST);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // For HW cores, use the shared hwRenderTexture; for SW cores, use renderer texture
+    GLuint sourceTexture = (hwRenderTexture != 0)
+        ? hwRenderTexture
+        : renderer->getTexture();
+
+    bool frameDrawsBehind =
+        backgroundFrameBehind &&
+        (backgroundFrame.hasImage() || backgroundFrame.hasPendingImage());
+
+    if (frameDrawsBehind) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        backgroundFrame.render(
+            videoLayout.getScreenWidth(),
+            videoLayout.getScreenHeight(),
+            videoLayout.getBackgroundVertices()
+        );
+        glDisable(GL_BLEND);
+    }
+
+    if (!backgroundFrame.hasImage() && immersiveModeEnabled) {
+        immersiveMode.renderBackground(
+            videoLayout.getScreenWidth(),
+            videoLayout.getScreenHeight(),
+            videoLayout.getBackgroundVertices(),
+            videoLayout.getRelativeForegroundBounds(),
+            videoLayout.getFramebufferVertices().data(),
+            sourceTexture
+        );
+    }
+
+    updateProgram();
+    float originalTextureWidth = hwRenderTexture != 0 ? hwFBOWidth : getTextureWidth();
+    float originalTextureHeight = hwRenderTexture != 0 ? hwFBOHeight : getTextureHeight();
+    for (int i = 0; i < shadersChain.size(); ++i) {
+        auto shader = shadersChain[i];
+        auto passData = renderer->getPassData(i);
+        auto isLastPass = i == shadersChain.size() - 1;
+
+        glBindFramebuffer(GL_FRAMEBUFFER, passData.framebuffer.value_or(0));
+
+        glViewport(
+            0,
+            0,
+            passData.width.value_or(videoLayout.getScreenWidth()),
+            passData.height.value_or(videoLayout.getScreenHeight())
+        );
+
+        glUseProgram(shader.gProgram);
+
+        auto vertices = isLastPass ? videoLayout.getForegroundVertices() : videoLayout.getFramebufferVertices();
+        glVertexAttribPointer(shader.gvPositionHandle, 2, GL_FLOAT, GL_FALSE, 0, vertices.data());
+        glEnableVertexAttribArray(shader.gvPositionHandle);
+
+        auto coordinates = i == 0
+            ? videoLayout.getTextureCoordinates()
+            : videoLayout.getFramebufferTextureCoordinates();
+        glVertexAttribPointer(shader.gvCoordinateHandle, 2, GL_FLOAT, GL_FALSE, 0, coordinates.data());
+        glEnableVertexAttribArray(shader.gvCoordinateHandle);
+
+        // For multi-pass shaders: first pass reads original, subsequent passes read previous output
+        GLuint mainTexture = (i > 0 && passData.texture.has_value())
+            ? passData.texture.value()
+            : sourceTexture;
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, mainTexture);
+        glUniform1i(shader.gTextureHandle, 0);
+
+        if (shader.gPreviousPassTextureHandle != -1 || shader.gOrigTextureHandle != -1) {
+            glActiveTexture(GL_TEXTURE0 + 1);
+            glBindTexture(GL_TEXTURE_2D, sourceTexture);
+            glUniform1i(shader.gPreviousPassTextureHandle, 1);
+            glUniform1i(shader.gOrigTextureHandle, 1);
+        }
+
+        // Input size: for pass 0 use original, for subsequent passes use previous output size
+        float inputWidth, inputHeight;
+        if (i > 0 && passData.texture.has_value()) {
+            auto prevPassData = renderer->getPassData(i - 1);
+            inputWidth = static_cast<float>(prevPassData.width.value_or(getTextureWidth()));
+            inputHeight = static_cast<float>(prevPassData.height.value_or(getTextureHeight()));
+        } else {
+            inputWidth = getTextureWidth();
+            inputHeight = getTextureHeight();
+        }
+
+        float textureWidth = i > 0 && passData.texture.has_value() ? inputWidth : originalTextureWidth;
+        float textureHeight = i > 0 && passData.texture.has_value() ? inputHeight : originalTextureHeight;
+        glUniform2f(shader.gTextureSizeHandle, textureWidth, textureHeight);
+
+        if (shader.gOrigTextureSizeHandle != -1) {
+            glUniform2f(shader.gOrigTextureSizeHandle, originalTextureWidth, originalTextureHeight);
+        }
+        if (shader.gOrigInputSizeHandle != -1)
+            glUniform2f(shader.gOrigInputSizeHandle, getTextureWidth(), getTextureHeight());
+
+        glUniform1f(shader.gScreenDensityHandle, getScreenDensity());
+
+        if (shader.gInputSizeHandle != -1)
+            glUniform2f(shader.gInputSizeHandle, inputWidth, inputHeight);
+
+        auto passWidth = static_cast<float>(passData.width.value_or(videoLayout.getScreenWidth()));
+        auto passHeight = static_cast<float>(passData.height.value_or(videoLayout.getScreenHeight()));
+        if (isLastPass && !passData.width.has_value()) {
+            auto& bounds = videoLayout.getRelativeForegroundBounds();
+            passWidth = static_cast<float>(videoLayout.getScreenWidth()) * (bounds[2] - bounds[0]);
+            passHeight = static_cast<float>(videoLayout.getScreenHeight()) * (bounds[3] - bounds[1]);
+        }
+
+        if (shader.gOutputSizeHandle != -1)
+            glUniform2f(shader.gOutputSizeHandle, passWidth, passHeight);
+
+        if (shader.gFrameCountHandle != -1)
+            glUniform1i(shader.gFrameCountHandle, static_cast<GLint>(frameCount));
+
+        if (shader.gFrameDirectionHandle != -1)
+            glUniform1i(shader.gFrameDirectionHandle, 1);
+        if (shader.gGyroscopeHandle != -1)
+            glUniform3fv(shader.gGyroscopeHandle, 1, shaderSensorState.data());
+        if (shader.gAccelerometerHandle != -1)
+            glUniform3fv(shader.gAccelerometerHandle, 1, shaderSensorState.data() + 3);
+        if (shader.gAccelerometerRestHandle != -1)
+            glUniform3fv(shader.gAccelerometerRestHandle, 1, shaderSensorState.data() + 6);
+
+        if (shader.gMVPMatrixHandle != -1) {
+            static const GLfloat identity[16] = {
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+            };
+            glUniformMatrix4fv(shader.gMVPMatrixHandle, 1, GL_FALSE, identity);
+        }
+
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+
+        glDisableVertexAttribArray(shader.gvPositionHandle);
+        glDisableVertexAttribArray(shader.gvCoordinateHandle);
+
+        if (shader.gPreviousPassTextureHandle != -1 || shader.gOrigTextureHandle != -1) {
+            glActiveTexture(GL_TEXTURE0 + 1);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        glUseProgram(0);
+    }
+
+    // A cutout bezel is drawn ON TOP of game content and shows it through its transparent
+    // middle. A plate has no cutout, so it is drawn behind and the game is placed on it.
+    bool hasFrame =
+        !frameDrawsBehind &&
+        (backgroundFrame.hasImage() || backgroundFrame.hasPendingImage());
+    if (hasFrame) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        backgroundFrame.render(
+            videoLayout.getScreenWidth(),
+            videoLayout.getScreenHeight(),
+            videoLayout.getBackgroundVertices()
+        );
+        glDisable(GL_BLEND);
+    }
+}
+
+float Video::getScreenDensity() {
+    return std::min(videoLayout.getScreenWidth() / getTextureWidth(), videoLayout.getScreenHeight() / getTextureHeight());
+}
+
+float Video::getTextureWidth() {
+    return renderer->lastFrameSize.first;
+}
+
+float Video::getTextureHeight() {
+    return renderer->lastFrameSize.second;
+}
+
+std::vector<uint8_t> Video::captureRawFrame(int& outWidth, int& outHeight) {
+    {
+        std::lock_guard<std::mutex> lock(frameMutex);
+        if (!hwAccelerated && !lastFrameData.empty() && lastFrameWidth > 0 && lastFrameHeight > 0) {
+            outWidth = lastFrameWidth;
+            outHeight = lastFrameHeight;
+            std::vector<uint8_t> rgba((size_t) outWidth * outHeight * 4);
+            for (int y = 0; y < outHeight; y++) {
+                const uint8_t* srcRow = lastFrameData.data() + (size_t) y * lastFramePitch;
+                uint8_t* dstRow = rgba.data() + (size_t) y * outWidth * 4;
+                for (int x = 0; x < outWidth; x++) {
+                    uint8_t r, g, b;
+                    if (framePixelFormat == RETRO_PIXEL_FORMAT_XRGB8888) {
+                        const uint8_t* p = srcRow + x * 4;
+                        b = p[0]; g = p[1]; r = p[2];
+                    } else if (framePixelFormat == RETRO_PIXEL_FORMAT_0RGB1555) {
+                        uint16_t p = *reinterpret_cast<const uint16_t*>(srcRow + x * 2);
+                        uint8_t r5 = (p >> 10) & 0x1F, g5 = (p >> 5) & 0x1F, b5 = p & 0x1F;
+                        r = (r5 << 3) | (r5 >> 2); g = (g5 << 3) | (g5 >> 2); b = (b5 << 3) | (b5 >> 2);
+                    } else {
+                        uint16_t p = *reinterpret_cast<const uint16_t*>(srcRow + x * 2);
+                        uint8_t r5 = (p >> 11) & 0x1F, g6 = (p >> 5) & 0x3F, b5 = p & 0x1F;
+                        r = (r5 << 3) | (r5 >> 2); g = (g6 << 2) | (g6 >> 4); b = (b5 << 3) | (b5 >> 2);
+                    }
+                    uint8_t* d = dstRow + x * 4;
+                    d[0] = r; d[1] = g; d[2] = b; d[3] = 255;
+                }
+            }
+            return rgba;
+        }
+    }
+
+    outWidth = (int)getTextureWidth();
+    outHeight = (int)getTextureHeight();
+    if (outWidth == 0 || outHeight == 0) return {};
+
+    GLuint fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+        GL_TEXTURE_2D, (hwRenderTexture != 0) ? hwRenderTexture : renderer->getTexture(), 0);
+
+    std::vector<uint8_t> pixels(outWidth * outHeight * 4);
+    glReadPixels(0, 0, outWidth, outHeight, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &fbo);
+
+    if (hwAccelerated && !externalFrames) {
+        int rowBytes = outWidth * 4;
+        std::vector<uint8_t> tempRow(rowBytes);
+        for (int y = 0; y < outHeight / 2; y++) {
+            int topOffset = y * rowBytes;
+            int bottomOffset = (outHeight - 1 - y) * rowBytes;
+            memcpy(tempRow.data(), &pixels[topOffset], rowBytes);
+            memcpy(&pixels[topOffset], &pixels[bottomOffset], rowBytes);
+            memcpy(&pixels[bottomOffset], tempRow.data(), rowBytes);
+        }
+    }
+
+    return pixels;
+}
+
+void Video::onNewFrame(const void *data, unsigned width, unsigned height, size_t pitch) {
+    if (data != nullptr && data != RETRO_HW_FRAME_BUFFER_VALID) {
+        renderer->onNewFrame(data, width, height, pitch);
+        videoLayout.updateContentSize(width, height);
+        {
+            std::lock_guard<std::mutex> lock(frameMutex);
+            int bytesPerPixel = framePixelFormat == RETRO_PIXEL_FORMAT_XRGB8888 ? 4 : 2;
+            size_t frameBytes = height > 0
+                ? (size_t) (height - 1) * pitch + (size_t) width * bytesPerPixel
+                : 0;
+            const auto* src = static_cast<const uint8_t*>(data);
+            lastFrameData.assign(src, src + frameBytes);
+            lastFrameWidth = (int) width;
+            lastFrameHeight = (int) height;
+            lastFramePitch = pitch;
+        }
+        isDirty = true;
+    } else if (data == RETRO_HW_FRAME_BUFFER_VALID) {
+        renderer->lastFrameSize = { (int)width, (int)height };
+        videoLayout.updateContentSize(width, height);
+        if (hwFBOWidth > 0 && hwFBOHeight > 0) {
+            float usedWidth = std::min(1.0f, (float)width / (float)hwFBOWidth);
+            float usedHeight = std::min(1.0f, (float)height / (float)hwFBOHeight);
+            videoLayout.setHWFrameCrop(0.0f, 1.0f - usedWidth, 0.0f, 1.0f - usedHeight);
+        } else {
+            videoLayout.setHWFrameCrop(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+        isDirty = true;
+    }
+}
+
+void Video::updateScreenSize(unsigned width, unsigned height) {
+    videoLayout.updateScreenSize(width, height);
+    if (hwAccelerated && eglDisplay != EGL_NO_DISPLAY) {
+        EGLSurface current = eglGetCurrentSurface(EGL_DRAW);
+        if (current != EGL_NO_SURFACE && current != eglSurface) {
+            LOGI("HW core window surface recreated, refreshing cached EGLSurface");
+            eglSurface = current;
+        }
+    }
+}
+
+void Video::updateViewportSize(Rect viewportRect) {
+    videoLayout.updateViewportSize(viewportRect);
+}
+
+void Video::updateRendererSize(unsigned int width, unsigned int height) {
+    LOGD("Updating renderer size: %d x %d", width, height);
+    renderer->updateRenderedResolution(width, height);
+}
+
+void Video::updateRotation(float rotation) {
+    videoLayout.updateRotation(rotation);
+}
+
+Video::Video(
+    RenderingOptions renderingOptions,
+    ShaderManager::Config shaderConfig,
+    bool bottomLeftOrigin,
+    float rotation,
+    bool skipDuplicateFrames,
+    bool immersiveModeEnabled,
+    Rect viewportRect,
+    ImmersiveMode::Config immersiveModeConfig
+) :
+    requestedShaderConfig(std::move(shaderConfig)),
+    skipDuplicateFrames(skipDuplicateFrames),
+    immersiveModeEnabled(immersiveModeEnabled),
+    immersiveMode(immersiveModeConfig),
+    videoLayout(bottomLeftOrigin, rotation, viewportRect) {
+
+    printGLString("Version", GL_VERSION);
+    printGLString("Vendor", GL_VENDOR);
+    printGLString("Renderer", GL_RENDERER);
+    printGLString("Extensions", GL_EXTENSIONS);
+    initializeGLESLogCallbackIfNeeded();
+
+    LOGI("Initializing graphics");
+
+    glViewport(0, 0, videoLayout.getScreenWidth(), videoLayout.getScreenHeight());
+
+    glUseProgram(0);
+
+    initializeRenderer(renderingOptions);
+}
+
+Video::~Video() {
+    for (auto& entry : shadersChain) {
+        if (entry.gProgram) glDeleteProgram(entry.gProgram);
+    }
+    shadersChain.clear();
+
+    delete renderer;
+    renderer = nullptr;
+
+    releaseExternalFrame();
+
+    if (hwAccelerated && eglDisplay != EGL_NO_DISPLAY) {
+        if (hwRenderFBO != 0) {
+            glDeleteFramebuffers(1, &hwRenderFBO);
+            hwRenderFBO = 0;
+        }
+        if (hwRenderTexture != 0) {
+            glDeleteTextures(1, &hwRenderTexture);
+            hwRenderTexture = 0;
+        }
+        if (hwRenderDepthStencil != 0) {
+            glDeleteRenderbuffers(1, &hwRenderDepthStencil);
+            hwRenderDepthStencil = 0;
+        }
+        if (hwCtx != EGL_NO_CONTEXT) {
+            eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            eglDestroyContext(eglDisplay, hwCtx);
+            hwCtx = EGL_NO_CONTEXT;
+        }
+    }
+
+    LOGD("Video resources destroyed");
+}
+
+void Video::updateShaderType(ShaderManager::Config shaderConfig) {
+    requestedShaderConfig = std::move(shaderConfig);
+    loadedShaderType = std::nullopt;  // Force shader rebuild on next frame
+}
+
+void Video::setFilterMode(int mode) {
+    if (filterMode != mode) {
+        filterMode = mode;
+        loadedShaderType = std::nullopt;  // Force shader rebuild on next frame
+    }
+}
+
+void Video::setIntegerScaling(bool enabled) {
+    videoLayout.setIntegerScaling(enabled);
+}
+
+void Video::setTextureCrop(float left, float top, float right, float bottom) {
+    videoLayout.setTextureCrop(left, top, right, bottom);
+}
+
+void Video::setShaderSensorState(const std::array<float, 9>& state) {
+    if (shaderSensorState == state) return;
+    shaderSensorState = state;
+    if (shaderSensorUsage != 0) isDirty = true;
+}
+
+void Video::setBlackFrameInsertion(bool enabled) {
+    bfiEnabled = enabled;
+    bfiFrameCounter = 0;
+}
+
+void Video::setBackgroundFrame(const uint8_t* data, int width, int height) {
+    backgroundFrame.setImage(data, width, height);
+}
+
+void Video::clearBackgroundFrame() {
+    backgroundFrame.clearImage();
+}
+
+void Video::setBackgroundFrameBehind(bool behind) {
+    backgroundFrameBehind = behind;
+}
+
+void Video::renderBlackFrame() {
+    glDisable(GL_DEPTH_TEST);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+void Video::bindHWContext() {
+    if (hwCtx != EGL_NO_CONTEXT) {
+        eglMakeCurrent(eglDisplay, eglSurface, eglSurface, hwCtx);
+    }
+}
+
+void Video::bindMainContext() {
+    if (mainCtx != EGL_NO_CONTEXT) {
+        eglMakeCurrent(eglDisplay, eglSurface, eglSurface, mainCtx);
+    }
+}
+
+void Video::initializeHWRenderContext(unsigned int width, unsigned int height,
+                                       bool useDepth, bool useStencil) {
+    eglDisplay = eglGetCurrentDisplay();
+    eglSurface = eglGetCurrentSurface(EGL_DRAW);
+    mainCtx = eglGetCurrentContext();
+
+    // Query the EGL config from the current context
+    EGLint configId;
+    eglQueryContext(eglDisplay, mainCtx, EGL_CONFIG_ID, &configId);
+    EGLConfig config;
+    EGLint numConfigs;
+    EGLint configAttribs[] = { EGL_CONFIG_ID, configId, EGL_NONE };
+    eglChooseConfig(eglDisplay, configAttribs, &config, 1, &numConfigs);
+
+    EGLint contextAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
+    hwCtx = eglCreateContext(eglDisplay, config, mainCtx, contextAttribs);
+    if (hwCtx == EGL_NO_CONTEXT) {
+        LOGE("Failed to create shared EGL context");
+        return;
+    }
+    LOGI("Shared EGL context created for HW core");
+
+    // Switch to hw context to create the FBO
+    eglMakeCurrent(eglDisplay, eglSurface, eglSurface, hwCtx);
+
+    glGenFramebuffers(1, &hwRenderFBO);
+    glGenTextures(1, &hwRenderTexture);
+    glBindFramebuffer(GL_FRAMEBUFFER, hwRenderFBO);
+    glBindTexture(GL_TEXTURE_2D, hwRenderTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hwRenderTexture, 0);
+
+    if (useDepth) {
+        glGenRenderbuffers(1, &hwRenderDepthStencil);
+        glBindRenderbuffer(GL_RENDERBUFFER, hwRenderDepthStencil);
+        glRenderbufferStorage(GL_RENDERBUFFER,
+            useStencil ? GL_DEPTH24_STENCIL8 : GL_DEPTH_COMPONENT16, width, height);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER,
+            useStencil ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT,
+            GL_RENDERBUFFER, hwRenderDepthStencil);
+    }
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        LOGE("HW render FBO incomplete: 0x%x", status);
+    }
+
+    // Clear the FBO once
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    hwFBOWidth = width;
+    hwFBOHeight = height;
+    hwUseDepth = useDepth;
+    hwUseStencil = useStencil;
+    LOGI("HW render FBO created: fbo=%u tex=%u %ux%u depth=%d stencil=%d",
+         hwRenderFBO, hwRenderTexture, width, height, useDepth, useStencil);
+
+    // Switch back to main context
+    eglMakeCurrent(eglDisplay, eglSurface, eglSurface, mainCtx);
+}
+
+void Video::releaseExternalFrame() {
+    if (!externalFrames) return;
+    if (hwRenderTexture != 0) {
+        glDeleteTextures(1, &hwRenderTexture);
+        hwRenderTexture = 0;
+    }
+    if (externalFrameImage != EGL_NO_IMAGE_KHR) {
+        auto destroyImage = reinterpret_cast<PFNEGLDESTROYIMAGEKHRPROC>(eglGetProcAddress("eglDestroyImageKHR"));
+        if (destroyImage != nullptr) destroyImage(eglGetCurrentDisplay(), externalFrameImage);
+        externalFrameImage = EGL_NO_IMAGE_KHR;
+    }
+}
+
+bool Video::attachExternalFrame(AHardwareBuffer* buffer, unsigned int width, unsigned int height) {
+    if (!externalFrames || buffer == nullptr) return false;
+
+    auto getClientBuffer = reinterpret_cast<PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC>(
+        eglGetProcAddress("eglGetNativeClientBufferANDROID"));
+    auto createImage = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(eglGetProcAddress("eglCreateImageKHR"));
+    auto targetTexture = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
+        eglGetProcAddress("glEGLImageTargetTexture2DOES"));
+    if (getClientBuffer == nullptr || createImage == nullptr || targetTexture == nullptr) {
+        LOGE("EGL cannot import AHardwareBuffer frames on this device");
+        return false;
+    }
+
+    releaseExternalFrame();
+
+    EGLint attributes[] = { EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE };
+    externalFrameImage = createImage(
+        eglGetCurrentDisplay(), EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID, getClientBuffer(buffer), attributes);
+    if (externalFrameImage == EGL_NO_IMAGE_KHR) {
+        LOGE("eglCreateImageKHR failed for the Vulkan frame buffer: 0x%x", eglGetError());
+        return false;
+    }
+
+    glGenTextures(1, &hwRenderTexture);
+    glBindTexture(GL_TEXTURE_2D, hwRenderTexture);
+    targetTexture(GL_TEXTURE_2D, static_cast<GLeglImageOES>(externalFrameImage));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    hwFBOWidth = width;
+    hwFBOHeight = height;
+    if (renderer != nullptr) {
+        renderer->updateRenderedResolution(width, height);
+    }
+    LOGI("Vulkan frame buffer imported into GLES: tex=%u %ux%u", hwRenderTexture, width, height);
+    return true;
+}
+
+void Video::resizeHWRenderTarget(unsigned int width, unsigned int height) {
+    if (!hwAccelerated || hwCtx == EGL_NO_CONTEXT) return;
+    if (width == 0 || height == 0) return;
+    if (width == hwFBOWidth && height == hwFBOHeight) return;
+
+    eglMakeCurrent(eglDisplay, eglSurface, eglSurface, hwCtx);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, hwRenderFBO);
+    glBindTexture(GL_TEXTURE_2D, hwRenderTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hwRenderTexture, 0);
+
+    if (hwUseDepth && hwRenderDepthStencil != 0) {
+        glBindRenderbuffer(GL_RENDERBUFFER, hwRenderDepthStencil);
+        glRenderbufferStorage(GL_RENDERBUFFER,
+            hwUseStencil ? GL_DEPTH24_STENCIL8 : GL_DEPTH_COMPONENT16, width, height);
+    }
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        LOGE("HW render FBO incomplete after resize: 0x%x", status);
+    }
+
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    hwFBOWidth = width;
+    hwFBOHeight = height;
+    LOGI("HW render FBO resized to %ux%u", width, height);
+
+    eglMakeCurrent(eglDisplay, eglSurface, eglSurface, mainCtx);
+
+    if (renderer != nullptr) {
+        renderer->updateRenderedResolution(width, height);
+    }
+}
+
+void Video::initializeRenderer(RenderingOptions renderingOptions) {
+    auto shaders = ShaderManager::getShader(requestedShaderConfig);
+
+    if (renderingOptions.hardwareAccelerated) {
+        hwAccelerated = true;
+        externalFrames = renderingOptions.vulkan;
+        if (externalFrames) {
+            hwFBOWidth = renderingOptions.width;
+            hwFBOHeight = renderingOptions.height;
+        } else {
+            initializeHWRenderContext(
+                renderingOptions.width, renderingOptions.height,
+                renderingOptions.useDepth, renderingOptions.useStencil
+            );
+        }
+        renderer = new FramebufferRenderer(
+            renderingOptions.width,
+            renderingOptions.height,
+            renderingOptions.useDepth,
+            renderingOptions.useStencil,
+            std::move(shaders)
+        );
+        renderer->lastFrameSize = { (int)renderingOptions.width, (int)renderingOptions.height };
+    } else {
+        if (renderingOptions.openglESVersion >= 3) {
+            renderer = new ImageRendererES3();
+        } else {
+            renderer = new ImageRendererES2();
+        }
+    }
+
+    renderer->setPixelFormat(renderingOptions.pixelFormat);
+    framePixelFormat = renderingOptions.pixelFormat;
+    updateProgram();
+}
+
+void Video::updateAspectRatio(float aspectRatio) {
+    videoLayout.updateAspectRatio(aspectRatio);
+}
+
+} //namespace libretrodroid

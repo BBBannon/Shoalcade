@@ -34,8 +34,8 @@ object SettingsModel {
     const val STORAGE_HELP = "Games, saves, backups and snapshots."
     const val ABOUT = "About and licences"
 
-    /** Consoles the app plays, in the library's platform order (3DS isn't playable yet, so it has no settings). */
-    val CONSOLES = listOf(Console.GB, Console.GBC, Console.GBA, Console.N64, Console.NDS, Console.PSX, Console.PSP)
+    /** Consoles the app plays, in the library's platform order. 3DS (D155): Screen and Controls here; its 3DS screens choice is in the game menu. */
+    val CONSOLES = listOf(Console.GB, Console.GBC, Console.GBA, Console.N64, Console.NDS, Console.N3DS, Console.PSX, Console.PSP)
 
     // Ids. Screen and touch buttons use the in-game menu's own ids; the DS has one set per way up here.
     fun dsId(landscape: Boolean, l: DsLayout) = "ds.${way(landscape)}.${l.key}"

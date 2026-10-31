@@ -191,6 +191,7 @@ public sealed record SaveWriteDto(
 /// <param name="LastPlayed">Last played (Jellyfin play data).</param>
 /// <param name="BrowserPlayable">Whether it plays in the browser.</param>
 /// <param name="Save">Current save, if any.</param>
+/// <param name="Favourite">Starred by this user (Jellyfin favourites).</param>
 public sealed record GameDto(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("name")] string Name,
@@ -202,7 +203,8 @@ public sealed record GameDto(
     [property: JsonPropertyName("imageTag")] string? ImageTag,
     [property: JsonPropertyName("lastPlayed")] DateTime? LastPlayed,
     [property: JsonPropertyName("browserPlayable")] bool BrowserPlayable,
-    [property: JsonPropertyName("save")] SaveVersionDto? Save);
+    [property: JsonPropertyName("save")] SaveVersionDto? Save,
+    [property: JsonPropertyName("favourite")] bool Favourite = false);
 
 /// <summary>One entry in the save manager list.</summary>
 /// <param name="ItemId">Item id.</param>
@@ -227,6 +229,13 @@ public sealed record SaveListEntryDto(
     [property: JsonPropertyName("totalBytes")] long TotalBytes,
     [property: JsonPropertyName("imageTag")] string? ImageTag,
     [property: JsonPropertyName("snapshotCount")] int SnapshotCount = 0);
+
+/// <summary>Result of deleting all saves of a game no longer in the library.</summary>
+/// <param name="Versions">Save versions deleted.</param>
+/// <param name="Snapshots">Snapshots deleted.</param>
+public sealed record SaveDeleteAllDto(
+    [property: JsonPropertyName("versions")] int Versions,
+    [property: JsonPropertyName("snapshots")] int Snapshots);
 
 /// <summary>The save manager list with storage use.</summary>
 /// <param name="Saves">Entries.</param>

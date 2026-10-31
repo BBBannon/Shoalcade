@@ -425,6 +425,43 @@ public sealed class StateStore
         }
     }
 
+    /// <summary>Deletes every snapshot of a game for good (no .bak kept: nothing would ever show it again).</summary>
+    /// <param name="user">User id.</param>
+    /// <param name="item">Item id.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>How many snapshots there were.</returns>
+    public async Task<int> DeleteAllAsync(Guid user, Guid item, CancellationToken cancellationToken)
+    {
+        var dir = Dir(user, item);
+        using (await _locks.AcquireAsync(dir, cancellationToken).ConfigureAwait(false))
+        {
+            var n = List(user, item).Count;
+            if (!Directory.Exists(dir))
+            {
+                return n;
+            }
+
+            foreach (var f in Directory.EnumerateFiles(dir))
+            {
+                TryDelete(f);
+            }
+
+            try
+            {
+                if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                {
+                    Directory.Delete(dir);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // An empty folder left behind is harmless.
+            }
+
+            return n;
+        }
+    }
+
     /// <summary>Every game this user has at least one snapshot slot for (F8: including games no longer in the library).</summary>
     /// <param name="user">User id.</param>
     /// <returns>Item ids.</returns>
@@ -563,11 +600,11 @@ public sealed class StateStore
         {
             File.Delete(path);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Not important.
+            // Not important (e.g. a file held open by antivirus).
         }
     }
 
-    private string Dir(Guid user, Guid item) => Path.Combine(_root, user.ToString("N"), item.ToString("N"));
+    internal string Dir(Guid user, Guid item) => Path.Combine(_root, user.ToString("N"), item.ToString("N"));
 }

@@ -14,6 +14,7 @@ using Jellyfin.Plugin.Shoalcade.Library;
 using Jellyfin.Plugin.Shoalcade.Saves;
 using Jellyfin.Plugin.Shoalcade.Web;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Entities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -86,8 +87,8 @@ public class GamesController : ShoalcadeControllerBase
     }
 
     /// <summary>Gets what this server can do beyond its API level, so newer apps can offer it and older ones ignore it.
-    /// "cheats": the cheats routes (D143).</summary>
-    internal static IReadOnlyList<string> Features { get; } = ["cheats"];
+    /// "cheats": the cheats routes (D143). "favourites": the favourite flag on games and the route to set it.</summary>
+    internal static IReadOnlyList<string> Features { get; } = ["cheats", "favourites"];
 
     /// <summary>Every game the user can see, with their current save and last played time.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -137,9 +138,42 @@ public class GamesController : ShoalcadeControllerBase
         return ToDto(rom, user, main.CurrentVersion());
     }
 
+    /// <summary>
+    /// Stars or unstars a game for the signed-in user. Kept in Jellyfin's own favourites, so the phone app, the browser
+    /// library and Jellyfin itself all show the same stars.
+    /// </summary>
+    /// <param name="id">Item id.</param>
+    /// <param name="on">True to star, false to unstar.</param>
+    /// <returns>204 when done.</returns>
+    [HttpPost("games/{id:guid}/favourite")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult SetFavourite([FromRoute] Guid id, [FromQuery] bool on)
+    {
+        if (RequireUser(out var user) is ActionResult fail)
+        {
+            return fail;
+        }
+
+        if (RequireRom(id, user, out var rom) is ActionResult notFound)
+        {
+            return notFound;
+        }
+
+        var data = _userData.GetUserData(user, rom.Item);
+        if (data is not null && data.IsFavorite != on)
+        {
+            data.IsFavorite = on;
+            _userData.SaveUserData(user, rom.Item, data, UserDataSaveReason.UpdateUserRating, CancellationToken.None);
+        }
+
+        return NoContent();
+    }
+
     private GameDto ToDto(RomItem r, User user, SaveVersion? save)
     {
-        var played = _userData.GetUserData(user, r.Item)?.LastPlayedDate;
+        var data = _userData.GetUserData(user, r.Item);
+        var played = data?.LastPlayedDate;
         return new GameDto(
             r.Id.ToString("N"),
             r.Name,
@@ -151,6 +185,7 @@ public class GamesController : ShoalcadeControllerBase
             r.ImageTag,
             played,
             IsBrowserPlayable(r, _web.EmulatorAvailable),
-            SaveVersionDto.From(save, save?.Version));
+            SaveVersionDto.From(save, save?.Version),
+            data?.IsFavorite == true);
     }
 }

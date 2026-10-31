@@ -1,0 +1,1010 @@
+/*
+ *     Copyright (C) 2022  Filippo Scognamiglio
+ *
+ *     This program is free software: you can redistribute it and/or modify
+ *     it under the terms of the GNU General Public License as published by
+ *     the Free Software Foundation, either version 3 of the License, or
+ *     (at your option) any later version.
+ *
+ *     This program is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ *     You should have received a copy of the GNU General Public License
+ *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.swordfish.libretrodroid3ds
+
+import android.app.ActivityManager
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.PointF
+import android.graphics.RectF
+import android.opengl.GLSurfaceView
+import android.util.Log
+import android.view.InputDevice
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.WindowManager
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.coroutineScope
+import com.swordfish.libretrodroid3ds.KtUtils.awaitUninterruptibly
+import com.swordfish.libretrodroid3ds.gamepad.GamepadsManager
+import java.util.*
+import java.util.concurrent.CountDownLatch
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
+import kotlin.properties.Delegates
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
+
+class GLRetroView(
+    context: Context,
+    private val data: GLRetroViewData
+) : GLSurfaceView(context), DefaultLifecycleObserver {
+
+    private val motionSensors = MotionSensors(context)
+    private var sensorsResumed = false
+    private var shaderSensorUsage = 0
+    private var coreSensorUsage = 0
+
+    var motionSensorsEnabled: Boolean by Delegates.observable(data.motionSensorsEnabled) { _, _, _ ->
+        updateCoreSensorAccess()
+    }
+
+    var sunSensorEnabled: Boolean by Delegates.observable(data.sunSensorEnabled) { _, _, _ ->
+        updateCoreSensorAccess()
+    }
+
+    private var coreSensorsBlocked: Boolean by Delegates.observable(false) { _, _, _ ->
+        updateCoreSensorAccess()
+    }
+
+    @Volatile
+    var illuminance: Float = 0f
+
+    private val coreMotionAllowed get() = motionSensorsEnabled && !coreSensorsBlocked
+
+    private fun updateCoreSensorAccess() {
+        val motion = if (coreMotionAllowed) motionSensors.availableSensors else 0
+        val sun = if (sunSensorEnabled && !coreSensorsBlocked) LibretroDroid.SENSOR_ILLUMINANCE else 0
+        LibretroDroid.setCoreSensorAccess(motion or sun)
+        updateMotionSensors()
+    }
+
+    private fun updateMotionSensors() {
+        val active = sensorsResumed && !isDestroyed && isAttachedToWindow
+        val coreMotion = if (coreMotionAllowed) coreSensorUsage else 0
+        motionSensors.setRequiredSensors(if (active) shaderSensorUsage or coreMotion else 0)
+    }
+
+    private fun prepareShaderAndUpdateSensors() {
+        val usage = LibretroDroid.prepareShaderAndGetSensorUsage()
+        KtUtils.runOnUIThread {
+            shaderSensorUsage = usage
+            updateMotionSensors()
+        }
+    }
+
+    @Suppress("unused")
+    private fun onCoreSensorsRequested(usage: Int) {
+        KtUtils.runOnUIThread {
+            coreSensorUsage = usage
+            updateMotionSensors()
+        }
+    }
+
+    override fun onResume(owner: LifecycleOwner) {
+        sensorsResumed = true
+        updateMotionSensors()
+    }
+
+    override fun onPause(owner: LifecycleOwner) {
+        sensorsResumed = false
+        updateMotionSensors()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        updateMotionSensors()
+    }
+
+    var audioEnabled: Boolean by Delegates.observable(true) { _, _, value ->
+        LibretroDroid.setAudioEnabled(value)
+    }
+
+    var pitchPreservationEnabled: Boolean by Delegates.observable(false) { _, _, value ->
+        LibretroDroid.setPitchPreservationEnabled(value)
+    }
+
+    var audioVolume: Float by Delegates.observable(1f) { _, _, value ->
+        LibretroDroid.setAudioVolume(value)
+    }
+
+    var frameSpeed: Int by Delegates.observable(1) { _, _, value ->
+        queueEvent { LibretroDroid.setFrameSpeed(value) }
+    }
+
+    var rotation: Int by Delegates.observable(-1) { _, _, value ->
+        LibretroDroid.setRotation(value)
+    }
+
+    var shader: ShaderConfig by Delegates.observable(data.shader) { _, _, value ->
+        queueEvent {
+            catchExceptions {
+                LibretroDroid.setShaderConfig(buildShader(value))
+                prepareShaderAndUpdateSensors()
+            }
+        }
+    }
+
+    var filterMode: Int by Delegates.observable(-1) { _, _, value ->
+        queueEvent {
+            catchExceptions {
+                LibretroDroid.setFilterMode(value)
+                prepareShaderAndUpdateSensors()
+            }
+        }
+    }
+
+    var integerScaling: Boolean by Delegates.observable(false) { _, _, value ->
+        runOnGLThread {
+            LibretroDroid.setIntegerScaling(value)
+        }
+    }
+
+    var blackFrameInsertion: Boolean by Delegates.observable(false) { _, _, value ->
+        runOnGLThread {
+            LibretroDroid.setBlackFrameInsertion(value)
+        }
+        // Always use RENDERMODE_CONTINUOUSLY - libretro cores expect continuous frame calls
+    }
+
+    /**
+     * Draws the background frame behind the game rather than over it. A cutout bezel shows the
+     * game through its transparent middle and must stay on top; a plate has no cutout, so it goes
+     * behind and [viewport] places the game on it.
+     */
+    var backgroundFrameBehind: Boolean by Delegates.observable(false) { _, _, value ->
+        runOnGLThread {
+            LibretroDroid.setBackgroundFrameBehind(value)
+        }
+    }
+
+    var viewport: RectF by Delegates.observable(RectF(0f, 0f, 1f, 1f)) { _, _, value ->
+        runOnGLThread {
+            LibretroDroid.setViewport(value.left, value.top, value.width(), value.height())
+        }
+    }
+
+    var textureCrop: RectF by Delegates.observable(RectF(0f, 0f, 0f, 0f)) { _, _, value ->
+        runOnGLThread {
+            LibretroDroid.setTextureCrop(value.left, value.top, value.right, value.bottom)
+        }
+    }
+
+    var aspectRatioOverride: Float by Delegates.observable(-1f) { _, _, value ->
+        runOnGLThread {
+            LibretroDroid.setAspectRatioOverride(value)
+        }
+    }
+
+    /**
+     * The part of the frame drawn on the second display, as a crop of the core's framebuffer.
+     */
+    var secondaryCrop: RectF by Delegates.observable(RectF(0f, 0f, 0f, 0f)) { _, _, value ->
+        runOnGLThread {
+            LibretroDroid.setSecondaryCrop(value.left, value.top, value.right, value.bottom)
+        }
+    }
+
+    /**
+     * The aspect ratio of the cropped screen shown on the second display. Zero keeps the ratio of
+     * the whole frame, which squashes a screen that is only part of it.
+     */
+    var secondaryAspectRatio: Float by Delegates.observable(0f) { _, _, value ->
+        runOnGLThread {
+            LibretroDroid.setSecondaryAspectRatio(value)
+        }
+    }
+
+    /**
+     * Splits a two-screen console's frame across the displays. Held below the video settings, so
+     * applying an aspect ratio or an overscan crop does not clear it.
+     */
+    /**
+     * A touch on the second display, given as a position in the whole frame rather than in the
+     * screen being shown there: the core composites both screens into that frame and decides for
+     * itself which part its touch screen occupies. Pass null to lift the touch.
+     */
+    fun sendSecondaryTouch(position: PointF?) {
+        val point = position ?: TOUCH_EVENT_OUTSIDE
+        LibretroDroid.onMotionEvent(0, MOTION_SOURCE_POINTER, point.x, point.y)
+    }
+
+    fun setScreenSplit(primaryCrop: RectF?, primaryAspectRatio: Float) {
+        val crop = primaryCrop ?: RectF(0f, 0f, 0f, 0f)
+        runOnGLThread {
+            LibretroDroid.setScreenSplit(
+                primaryCrop != null,
+                crop.left,
+                crop.top,
+                crop.right,
+                crop.bottom,
+                primaryAspectRatio
+            )
+        }
+    }
+
+    /**
+     * Presents the frame on a second display, or stops when given null.
+     *
+     * Hand over the surface a Presentation just created and null the moment it is destroyed. The
+     * window is adopted on the GL thread, so a surface withdrawn here is never drawn into again.
+     */
+    fun setSecondaryOutput(surface: android.view.Surface?) {
+        runOnGLThread {
+            LibretroDroid.setSecondaryOutput(surface)
+        }
+    }
+
+    var portResolver: PortResolver? = null
+    var keyMapper: KeyMapper? = null
+
+    @Volatile var netplayTick: (() -> Unit)? = null
+        set(value) {
+            field = value
+            KtUtils.runOnUIThread { coreSensorsBlocked = value != null }
+        }
+
+    private val openGLESVersion: Int
+
+    private var isGameLoaded = false
+    @Volatile private var isEmulationReady = false
+    private var isNativeResumed = false
+    var suppressAutoResume = false
+    private var isAborted = false
+    @Volatile private var isDestroyed = false
+    private var previewModeEnabled = false
+
+    private val retroGLEventsSubject = MutableSharedFlow<GLRetroEvents>(1)
+    private val retroGLIssuesErrors = MutableSharedFlow<Int>(1)
+
+    /** True if the on-disk SRAM couldn't be applied to the core at load (e.g. size mismatch). */
+    @Volatile
+    var sramLoadFailed: Boolean = false
+        private set
+
+    private val rumbleEventsSubject = MutableSharedFlow<RumbleEvent>()
+
+    private var lifecycle: Lifecycle? = null
+
+    init {
+        openGLESVersion = getGLESVersion(context)
+        preserveEGLContextOnPause = true
+        setEGLContextClientVersion(openGLESVersion)
+        setRenderer(Renderer())
+        renderMode = RENDERMODE_CONTINUOUSLY
+        keepScreenOn = true
+        holder.addCallback(object : android.view.SurfaceHolder.Callback {
+            override fun surfaceCreated(h: android.view.SurfaceHolder) {}
+            override fun surfaceChanged(h: android.view.SurfaceHolder, f: Int, w: Int, ht: Int) {}
+            override fun surfaceDestroyed(h: android.view.SurfaceHolder) {
+                Log.i(TAG_LOG, "TEARDOWN surfaceDestroyed callback ran (GLSurfaceView internal survived) destroyed=$isDestroyed")
+            }
+        })
+    }
+
+    override fun onPause() {
+        motionSensors.setRequiredSensors(0)
+        Log.i(TAG_LOG, "TEARDOWN GLSurfaceView.onPause BEGIN destroyed=$isDestroyed")
+        super<GLSurfaceView>.onPause()
+        Log.i(TAG_LOG, "TEARDOWN GLSurfaceView.onPause END")
+    }
+
+    override fun onDetachedFromWindow() {
+        motionSensors.setRequiredSensors(0)
+        Log.i(TAG_LOG, "TEARDOWN onDetachedFromWindow BEGIN destroyed=$isDestroyed")
+        super<GLSurfaceView>.onDetachedFromWindow()
+        Log.i(TAG_LOG, "TEARDOWN onDetachedFromWindow END")
+    }
+
+    override fun onCreate(owner: LifecycleOwner) = catchExceptions {
+        lifecycle = owner.lifecycle
+        LibretroDroid.setVulkanConfig(
+            data.preferVulkan,
+            data.vulkanDriver?.directory,
+            data.vulkanDriver?.libraryName,
+            context.applicationInfo.nativeLibraryDir,
+            context.cacheDir.absolutePath
+        )
+        updateCoreSensorAccess()
+        LibretroDroid.setCoreAccelerometerScale(data.coreAccelerometerScale)
+        LibretroDroid.create(
+            openGLESVersion,
+            data.coreFilePath,
+            data.systemDirectory,
+            data.savesDirectory,
+            data.variables,
+            buildShader(data.shader),
+            getDefaultRefreshRate(),
+            data.preferLowLatencyAudio,
+            data.forceSoftwareTiming,
+            data.enableMicrophone,
+            data.skipDuplicateFrames,
+            data.timingFollowsGeometry,
+            data.immersiveMode,
+            getDeviceLanguage()
+        )
+        LibretroDroid.setRumbleEnabled(data.rumbleEventsEnabled)
+    }
+
+    override fun onDestroy(owner: LifecycleOwner) {
+        sensorsResumed = false
+        motionSensors.setRequiredSensors(0)
+        // Native resources are destroyed via destroyNative() in onPause,
+        // while the GL thread is still alive. No cleanup needed here.
+        lifecycle = null
+    }
+
+    private fun getDeviceLanguage() = Locale.getDefault().language
+
+    private fun getDefaultRefreshRate(): Float {
+        return (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.refreshRate
+    }
+
+    fun sendKeyEvent(action: Int, keyCode: Int, port: Int = 0) {
+        LibretroDroid.onKeyEvent(port, action, keyCode)
+    }
+
+    fun sendMotionEvent(source: Int, xAxis: Float, yAxis: Float, port: Int = 0) {
+        LibretroDroid.onMotionEvent(port, source, xAxis, yAxis)
+    }
+
+    override fun onTouchEvent(event: MotionEvent?): Boolean {
+        val position = when (event?.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                normalizeTouchCoordinates(event.x, event.y)
+            }
+            MotionEvent.ACTION_UP -> {
+                TOUCH_EVENT_OUTSIDE
+            }
+            else -> null
+        }
+
+        if (position != null) {
+            LibretroDroid.onTouchEvent(position.x, position.y)
+        }
+
+        return true
+    }
+
+    private fun clamp(x: Float, min: Float, max: Float) = minOf(maxOf(x, min), max)
+
+    private fun normalizeTouchCoordinates(x: Float, y: Float): PointF {
+        val x = clamp(2f * x / width - 1f, -1f, +1f)
+        val y = clamp(2f * y / height - 1f, -1f, +1f)
+        return PointF(x, y)
+    }
+
+    fun pauseEmulation() {
+        isEmulationReady = false
+    }
+
+    fun resumeEmulation() {
+        isEmulationReady = true
+    }
+
+    fun serializeState(): ByteArray = runOnGLThread {
+        LibretroDroid.serializeState()
+    }
+    fun getSerializeSize(): Long = runOnGLThread {
+        LibretroDroid.getSerializeSize()
+    }
+    fun setCheat(index : Int, enable : Boolean, code : String) = runOnGLThread {
+        LibretroDroid.setCheat(index, enable, code)
+    }
+
+    fun resetCheat() = runOnGLThread {
+        LibretroDroid.resetCheat()
+    }
+
+    fun unserializeState(data: ByteArray): Boolean = runOnGLThread {
+        LibretroDroid.unserializeState(data)
+    }
+
+    fun unserializePersistedState(data: ByteArray): Boolean = runOnGLThread {
+        LibretroDroid.unserializePersistedState(data)
+    }
+
+    fun serializeSRAM(): ByteArray =
+        if (isDestroyed) ByteArray(0) else runOnGLThread { LibretroDroid.serializeSRAM() }
+
+    fun unserializeSRAM(data: ByteArray): Boolean = runOnGLThread {
+        LibretroDroid.unserializeSRAM(data)
+    }
+
+    fun getMemoryData(memoryType: Int): ByteArray? = runOnGLThread {
+        LibretroDroid.getMemoryData(memoryType)
+    }
+
+    fun setMemoryData(memoryType: Int, data: ByteArray): Boolean = runOnGLThread {
+        LibretroDroid.setMemoryData(memoryType, data)
+    }
+
+    fun getRtcData(): ByteArray? =
+        if (isDestroyed) null else getMemoryData(LibretroDroid.MEMORY_RTC)?.takeIf { it.isNotEmpty() }
+
+    fun getMemorySize(memoryType: Int): Int = runOnGLThread {
+        LibretroDroid.getMemorySize(memoryType)
+    } ?: 0
+
+    fun getSystemRam(): ByteArray? = getMemoryData(LibretroDroid.MEMORY_SYSTEM_RAM)
+
+    fun getSystemRamSize(): Int = getMemorySize(LibretroDroid.MEMORY_SYSTEM_RAM)
+
+    fun captureRawFrame(): Bitmap? = runOnGLThread {
+        val data = LibretroDroid.captureRawFrame()
+        if (data == null || data.size < 8) return@runOnGLThread null
+        val bb = java.nio.ByteBuffer.wrap(data, 0, 8)
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        val w = bb.getInt()
+        val h = bb.getInt()
+        if (w <= 0 || h <= 0) return@runOnGLThread null
+        val pixels = IntArray(w * h)
+        for (i in 0 until w * h) {
+            val offset = 8 + i * 4
+            val r = data[offset].toInt() and 0xFF
+            val g = data[offset + 1].toInt() and 0xFF
+            val b = data[offset + 2].toInt() and 0xFF
+            val a = data[offset + 3].toInt() and 0xFF
+            pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888)
+    }
+
+    fun reset() = runOnGLThread {
+        LibretroDroid.reset()
+    }
+
+    fun setBackgroundFrame(bitmap: Bitmap) = runOnGLThread {
+        val width = bitmap.width
+        val height = bitmap.height
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        val rgbaData = ByteArray(width * height * 4)
+        for (i in pixels.indices) {
+            val pixel = pixels[i]
+            val offset = i * 4
+            rgbaData[offset] = ((pixel shr 16) and 0xFF).toByte()     // R
+            rgbaData[offset + 1] = ((pixel shr 8) and 0xFF).toByte()  // G
+            rgbaData[offset + 2] = (pixel and 0xFF).toByte()          // B
+            rgbaData[offset + 3] = ((pixel shr 24) and 0xFF).toByte() // A
+        }
+        LibretroDroid.setBackgroundFrame(rgbaData, width, height)
+    }
+
+    fun clearBackgroundFrame() = runOnGLThread {
+        LibretroDroid.clearBackgroundFrame()
+    }
+
+    fun enablePreviewMode() {
+        previewModeEnabled = true
+        isEmulationReady = false
+        onResume()
+    }
+
+    fun disablePreviewMode() {
+        previewModeEnabled = false
+        onResume()
+    }
+
+    fun getGLRetroEvents(): Flow<GLRetroEvents> {
+        return retroGLEventsSubject
+    }
+
+    fun getGLRetroErrors(): Flow<Int> {
+        return retroGLIssuesErrors
+    }
+
+    fun getRumbleEvents(): Flow<RumbleEvent> {
+        return rumbleEventsSubject
+    }
+
+    fun getControllers(): Array<Array<Controller>> {
+        return LibretroDroid.getControllers()
+    }
+
+    fun setControllerType(port: Int, type: Int) {
+        LibretroDroid.setControllerType(port, type)
+    }
+
+    fun getVariables(): Array<Variable> {
+        return LibretroDroid.getVariables()
+    }
+
+    fun updateVariables(vararg variables: Variable) {
+        queueEvent {
+            variables.forEach { LibretroDroid.updateVariable(it) }
+        }
+    }
+
+    fun getAvailableDisks() = runOnGLThread { LibretroDroid.availableDisks() }
+    fun getCurrentDisk() = runOnGLThread { LibretroDroid.currentDisk() }
+    fun changeDisk(index: Int) = runOnGLThread { LibretroDroid.changeDisk(index) }
+    fun changeDisk(index: Int, path: String) = runOnGLThread { LibretroDroid.changeDiskWithPath(index, path) }
+
+    var rewindEnabled: Boolean by Delegates.observable(false) { _, _, value ->
+        LibretroDroid.setRewindEnabled(value)
+    }
+
+    var isRewinding: Boolean by Delegates.observable(false) { _, _, value ->
+        LibretroDroid.setRewinding(value)
+    }
+
+    var rewindSpeed: Int by Delegates.observable(1) { _, _, value ->
+        LibretroDroid.setRewindSpeed(value)
+    }
+
+    fun initRewindBuffer(maxSlots: Int, budgetBytes: Long) = runOnGLThread {
+        LibretroDroid.initRewindBuffer(maxSlots, budgetBytes)
+    }
+
+    fun clearRewindBuffer() = runOnGLThread {
+        LibretroDroid.clearRewindBuffer()
+    }
+
+    fun destroyRewindBuffer() = runOnGLThread {
+        LibretroDroid.destroyRewindBuffer()
+    }
+
+    fun destroyNative() {
+        if (isDestroyed) return
+        isDestroyed = true
+        post { updateMotionSensors() }
+        renderMode = RENDERMODE_WHEN_DIRTY
+        runOnGLThreadVoid {
+            LibretroDroid.destroy()
+        }
+    }
+
+    fun getRewindBufferUsage(): Float = LibretroDroid.getRewindBufferUsage()
+
+    fun getRewindBufferValidCount(): Int = LibretroDroid.getRewindBufferValidCount()
+
+    private fun getGLESVersion(context: Context): Int {
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        return if (activityManager.deviceConfigurationInfo.reqGlEsVersion >= 0x30000) { 3 } else { 2 }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        val device = event?.device
+        val mappedKey = mapKey(device, keyCode)
+        val port = resolvePort(device)
+
+        if (event != null && port >= 0 && isPadKey(keyCode, mappedKey)) {
+            if (mappedKey in GamepadsManager.GAMEPAD_KEYS) {
+                sendKeyEvent(KeyEvent.ACTION_DOWN, mappedKey, port)
+            }
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        val device = event?.device
+        val mappedKey = mapKey(device, keyCode)
+        val port = resolvePort(device)
+
+        if (event != null && port >= 0 && isPadKey(keyCode, mappedKey)) {
+            if (mappedKey in GamepadsManager.GAMEPAD_KEYS) {
+                sendKeyEvent(KeyEvent.ACTION_UP, mappedKey, port)
+            }
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
+    override fun onGenericMotionEvent(event: MotionEvent?): Boolean {
+        val port = resolvePort(event?.device)
+        if (port >= 0) {
+            when (event?.source) {
+                InputDevice.SOURCE_JOYSTICK -> {
+                    sendMotionEvent(
+                        MOTION_SOURCE_DPAD,
+                        event.getAxisValue(MotionEvent.AXIS_HAT_X),
+                        event.getAxisValue(MotionEvent.AXIS_HAT_Y),
+                        port
+                    )
+                    sendMotionEvent(
+                        MOTION_SOURCE_ANALOG_LEFT,
+                        event.getAxisValue(MotionEvent.AXIS_X),
+                        event.getAxisValue(MotionEvent.AXIS_Y),
+                        port
+                    )
+                    sendMotionEvent(
+                        MOTION_SOURCE_ANALOG_RIGHT,
+                        event.getAxisValue(MotionEvent.AXIS_Z),
+                        event.getAxisValue(MotionEvent.AXIS_RZ),
+                        port
+                    )
+                }
+            }
+        }
+        return super.onGenericMotionEvent(event)
+    }
+
+    private fun resolvePort(device: InputDevice?): Int {
+        if (device == null) return -1
+        return portResolver?.getPort(device) ?: ((device.controllerNumber - 1).coerceAtLeast(0))
+    }
+
+    /**
+     * A pad button the mapper deliberately silenced still has to be swallowed here. Letting it
+     * reach the platform unhandled invites Android's fallback mapping to rewrite it into something
+     * else entirely, so an unbound B would arrive back as BACK and open the menu.
+     */
+    private fun isPadKey(keyCode: Int, mappedKey: Int): Boolean =
+        keyCode in GamepadsManager.GAMEPAD_KEYS || mappedKey in GamepadsManager.GAMEPAD_KEYS
+
+    private fun mapKey(device: InputDevice?, keyCode: Int): Int {
+        if (device != null && keyMapper != null) {
+            return keyMapper!!.mapKey(device, keyCode)
+        }
+        return GamepadsManager.getGamepadKeyEvent(keyCode)
+    }
+
+    // These functions are called only after the GLSurfaceView has been created.
+    private inner class RenderLifecycleObserver : DefaultLifecycleObserver {
+        fun manualResume() = catchExceptions {
+            LibretroDroid.resume()
+            isEmulationReady = true
+        }
+
+        override fun onResume(owner: LifecycleOwner) = catchExceptions {
+            if (!isNativeResumed) {
+                isNativeResumed = true
+                LibretroDroid.resume()
+                // GLSurfaceView.onResume() is called by LibretroActivity.onResume() --
+                // do NOT call it again here or it corrupts the GL thread state mid-frame.
+                if (!suppressAutoResume) {
+                    isEmulationReady = true
+                }
+            }
+        }
+
+        override fun onPause(owner: LifecycleOwner) = catchExceptions {
+            isNativeResumed = false
+            isEmulationReady = false
+            // GLSurfaceView.onPause() is called by LibretroActivity.onPause() --
+            // do NOT call it again here.
+            LibretroDroid.pause()
+        }
+    }
+
+    inner class Renderer : GLSurfaceView.Renderer {
+        private var bfiShowBlackNext = false
+        private var lastSensorState: MotionSensorState? = null
+        private var lastIlluminance = 0f
+
+        override fun onDrawFrame(gl: GL10) = catchExceptions {
+            if (isDestroyed) return@catchExceptions
+            val sensors = motionSensors.state
+            val lux = illuminance
+            if (sensors !== lastSensorState || lux != lastIlluminance) {
+                LibretroDroid.setSensorReadings(
+                    sensors.gyroscope.x, sensors.gyroscope.y, sensors.gyroscope.z,
+                    sensors.accelerometer.x, sensors.accelerometer.y, sensors.accelerometer.z,
+                    sensors.accelerometerRest.x, sensors.accelerometerRest.y, sensors.accelerometerRest.z,
+                    lux
+                )
+                lastSensorState = sensors
+                lastIlluminance = lux
+            }
+            val tick = netplayTick
+            if (tick != null) {
+                if (isEmulationReady) {
+                    tick()
+                    lifecycle?.coroutineScope?.launch {
+                        retroGLEventsSubject.emit(GLRetroEvents.FrameRendered)
+                    }
+                } else {
+                    LibretroDroid.renderFrameOnly()
+                }
+                return@catchExceptions
+            }
+            if (isEmulationReady) {
+                if (blackFrameInsertion) {
+                    if (bfiShowBlackNext) {
+                        LibretroDroid.renderBlackFrame()
+                        bfiShowBlackNext = false
+                    } else {
+                        LibretroDroid.step(this@GLRetroView)
+                        bfiShowBlackNext = true
+                        lifecycle?.coroutineScope?.launch {
+                            retroGLEventsSubject.emit(GLRetroEvents.FrameRendered)
+                        }
+                    }
+                } else {
+                    LibretroDroid.step(this@GLRetroView)
+                    lifecycle?.coroutineScope?.launch {
+                        retroGLEventsSubject.emit(GLRetroEvents.FrameRendered)
+                    }
+                }
+            } else {
+                LibretroDroid.renderFrameOnly()
+            }
+        }
+
+        override fun onSurfaceChanged(gl: GL10, width: Int, height: Int) = catchExceptions {
+            Thread.currentThread().priority = Thread.MAX_PRIORITY
+            LibretroDroid.onSurfaceChanged(width, height)
+        }
+
+
+        override fun onSurfaceCreated(gl: GL10, config: EGLConfig) = catchExceptions {
+            Thread.currentThread().priority = Thread.MAX_PRIORITY
+            initializeCore()
+            prepareShaderAndUpdateSensors()
+            lastSensorState = null
+            lifecycle?.coroutineScope?.launch {
+                retroGLEventsSubject.emit(GLRetroEvents.SurfaceCreated)
+            }
+        }
+    }
+
+    // These functions are called from the GL thread.
+    private fun initializeCore() = catchExceptions {
+        if (isGameLoaded) {
+            LibretroDroid.onSurfaceCreated()
+            return@catchExceptions
+        }
+        when {
+            data.gameFilePath != null -> loadGameFromPath(data.gameFilePath!!)
+            data.gameFileBytes != null -> loadGameFromBytes(data.gameFileBytes!!)
+            data.gameVirtualFiles.isNotEmpty() -> loadGameFromVirtualFiles(data.gameVirtualFiles)
+        }
+        data.saveRAMState?.let { sram ->
+            // A false result means the on-disk SRAM couldn't be applied (e.g. it's larger than
+            // the core's save memory -- a cross-core mismatch). Record it so the UI can warn
+            // instead of silently booting with a fresh save.
+            if (!LibretroDroid.unserializeSRAM(sram)) {
+                sramLoadFailed = true
+            }
+            data.saveRAMState = null
+        }
+        data.rtcState?.let { rtc ->
+            if (!LibretroDroid.setMemoryData(LibretroDroid.MEMORY_RTC, rtc)) {
+                Log.w(TAG_LOG, "RTC state not applied: ${rtc.size} bytes rejected by the core")
+            }
+            data.rtcState = null
+        }
+        LibretroDroid.onSurfaceCreated()
+        isGameLoaded = true
+
+        KtUtils.runOnUIThread {
+            val observer = RenderLifecycleObserver()
+            lifecycle?.addObserver(observer)
+        }
+    }
+
+    private fun loadGameFromVirtualFiles(virtualFiles: List<VirtualFile>) {
+        val detachedVirtualFiles = virtualFiles
+            .map { DetachedVirtualFile(it.virtualPath, it.fileDescriptor.detachFd()) }
+        LibretroDroid.loadGameFromVirtualFiles(detachedVirtualFiles)
+    }
+
+    private fun loadGameFromBytes(gameFileBytes: ByteArray) {
+        LibretroDroid.loadGameFromBytes(gameFileBytes)
+    }
+
+    private fun loadGameFromPath(gameFilePath: String) {
+        LibretroDroid.loadGameFromPath(gameFilePath)
+    }
+
+    private fun catchExceptions(block: () -> Unit) {
+        try {
+            if (isAborted || isDestroyed) return
+            block()
+        } catch (e: RetroException) {
+            GlobalScope.launch {
+                retroGLIssuesErrors.emit(e.errorCode)
+            }
+            isAborted = true
+        } catch (e: Exception) {
+            Log.e(TAG_LOG, "Error in GLRetroView", e)
+            GlobalScope.launch {
+                retroGLIssuesErrors.emit(LibretroDroid.ERROR_GENERIC)
+            }
+        }
+    }
+
+    private fun <T> runOnGLThread(block: () -> T): T {
+        if (Thread.currentThread().name.startsWith("GLThread")) {
+            return block()
+        }
+
+        val latch = CountDownLatch(1)
+        var result: T? = null
+        var failure: Throwable? = null
+        queueEvent {
+            try {
+                result = block()
+            } catch (t: Throwable) {
+                failure = t
+            } finally {
+                latch.countDown()
+            }
+        }
+
+        check(latch.awaitUninterruptibly(GL_THREAD_OP_TIMEOUT_MS)) {
+            "runOnGLThread: GL thread did not drain within ${GL_THREAD_OP_TIMEOUT_MS}ms"
+        }
+        failure?.let { throw it }
+        @Suppress("UNCHECKED_CAST")
+        return result as T
+    }
+
+    private fun runOnGLThreadVoid(block: () -> Unit) {
+        if (Thread.currentThread().name.startsWith("GLThread")) {
+            block()
+            return
+        }
+
+        val latch = CountDownLatch(1)
+        var failure: Throwable? = null
+        queueEvent {
+            try {
+                block()
+            } catch (t: Throwable) {
+                failure = t
+            } finally {
+                latch.countDown()
+            }
+        }
+
+        if (!latch.awaitUninterruptibly(GL_THREAD_OP_TIMEOUT_MS)) {
+            Log.w(TAG_LOG, "runOnGLThreadVoid: GL thread did not drain within ${GL_THREAD_OP_TIMEOUT_MS}ms")
+        }
+        failure?.let { throw it }
+    }
+
+    private fun buildShader(config: ShaderConfig): GLRetroShader {
+        return when (config) {
+            is ShaderConfig.Default -> GLRetroShader(LibretroDroid.SHADER_DEFAULT)
+            is ShaderConfig.CRT -> GLRetroShader(LibretroDroid.SHADER_CRT)
+            is ShaderConfig.LCD -> GLRetroShader(LibretroDroid.SHADER_LCD)
+            is ShaderConfig.Sharp -> GLRetroShader(LibretroDroid.SHADER_SHARP)
+            is ShaderConfig.CUT -> GLRetroShader(
+                LibretroDroid.SHADER_UPSCALE_CUT,
+                buildParams(
+                    LibretroDroid.SHADER_UPSCALE_CUT_PARAM_USE_DYNAMIC_BLEND to toParam(config.useDynamicBlend),
+                    LibretroDroid.SHADER_UPSCALE_CUT_PARAM_BLEND_MIN_CONTRAST_EDGE to toParam(config.blendMinContrastEdge),
+                    LibretroDroid.SHADER_UPSCALE_CUT_PARAM_BLEND_MAX_CONTRAST_EDGE to toParam(config.blendMaxContrastEdge),
+                    LibretroDroid.SHADER_UPSCALE_CUT_PARAM_BLEND_MIN_SHARPNESS to toParam(config.blendMinSharpness),
+                    LibretroDroid.SHADER_UPSCALE_CUT_PARAM_BLEND_MAX_SHARPNESS to toParam(config.blendMaxSharpness),
+                    LibretroDroid.SHADER_UPSCALE_CUT_PARAM_STATIC_BLEND_SHARPNESS to toParam(config.staticSharpness),
+                    LibretroDroid.SHADER_UPSCALE_CUT_PARAM_EDGE_USE_FAST_LUMA to toParam(config.edgeUseFastLuma),
+                    LibretroDroid.SHADER_UPSCALE_CUT_PARAM_EDGE_MIN_VALUE to toParam(config.edgeMinValue),
+                    LibretroDroid.SHADER_UPSCALE_CUT_PARAM_EDGE_MIN_CONTRAST to toParam(config.edgeMinContrast),
+                )
+            )
+            is ShaderConfig.CUT2 -> GLRetroShader(
+                LibretroDroid.SHADER_UPSCALE_CUT2,
+                buildParams(
+                    LibretroDroid.SHADER_UPSCALE_CUT2_PARAM_USE_DYNAMIC_BLEND to toParam(config.useDynamicBlend),
+                    LibretroDroid.SHADER_UPSCALE_CUT2_PARAM_BLEND_MIN_CONTRAST_EDGE to toParam(config.blendMinContrastEdge),
+                    LibretroDroid.SHADER_UPSCALE_CUT2_PARAM_BLEND_MAX_CONTRAST_EDGE to toParam(config.blendMaxContrastEdge),
+                    LibretroDroid.SHADER_UPSCALE_CUT2_PARAM_BLEND_MIN_SHARPNESS to toParam(config.blendMinSharpness),
+                    LibretroDroid.SHADER_UPSCALE_CUT2_PARAM_BLEND_MAX_SHARPNESS to toParam(config.blendMaxSharpness),
+                    LibretroDroid.SHADER_UPSCALE_CUT2_PARAM_STATIC_BLEND_SHARPNESS to toParam(config.staticSharpness),
+                    LibretroDroid.SHADER_UPSCALE_CUT2_PARAM_EDGE_USE_FAST_LUMA to toParam(config.edgeUseFastLuma),
+                    LibretroDroid.SHADER_UPSCALE_CUT2_PARAM_SOFT_EDGES_SHARPENING to toParam(config.softEdgesSharpening),
+                    LibretroDroid.SHADER_UPSCALE_CUT2_PARAM_SOFT_EDGES_SHARPENING_AMOUNT to toParam(config.softEdgesSharpeningAmount),
+                    LibretroDroid.SHADER_UPSCALE_CUT2_PARAM_HARD_EDGES_SEARCH_MAX_ERROR to toParam(config.hardEdgesSearchMaxError),
+                )
+            )
+            is ShaderConfig.CUT3 -> GLRetroShader(
+                LibretroDroid.SHADER_UPSCALE_CUT3,
+                buildParams(
+                    LibretroDroid.SHADER_UPSCALE_CUT3_PARAM_USE_DYNAMIC_BLEND to toParam(config.useDynamicBlend),
+                    LibretroDroid.SHADER_UPSCALE_CUT3_PARAM_BLEND_MIN_CONTRAST_EDGE to toParam(config.blendMinContrastEdge),
+                    LibretroDroid.SHADER_UPSCALE_CUT3_PARAM_BLEND_MAX_CONTRAST_EDGE to toParam(config.blendMaxContrastEdge),
+                    LibretroDroid.SHADER_UPSCALE_CUT3_PARAM_BLEND_MIN_SHARPNESS to toParam(config.blendMinSharpness),
+                    LibretroDroid.SHADER_UPSCALE_CUT3_PARAM_BLEND_MAX_SHARPNESS to toParam(config.blendMaxSharpness),
+                    LibretroDroid.SHADER_UPSCALE_CUT3_PARAM_STATIC_BLEND_SHARPNESS to toParam(config.staticSharpness),
+                    LibretroDroid.SHADER_UPSCALE_CUT3_PARAM_EDGE_USE_FAST_LUMA to toParam(config.edgeUseFastLuma),
+                    LibretroDroid.SHADER_UPSCALE_CUT3_PARAM_SOFT_EDGES_SHARPENING to toParam(config.softEdgesSharpening),
+                    LibretroDroid.SHADER_UPSCALE_CUT3_PARAM_SOFT_EDGES_SHARPENING_AMOUNT to toParam(config.softEdgesSharpeningAmount),
+                    LibretroDroid.SHADER_UPSCALE_CUT3_PARAM_HARD_EDGES_SEARCH_MAX_ERROR to toParam(config.hardEdgesSearchMaxError),
+                    LibretroDroid.SHADER_UPSCALE_CUT3_PARAM_HARD_EDGES_SEARCH_MAX_DISTANCE to toParam(config.hardEdgesSearchMaxDistance),
+                )
+            )
+            is ShaderConfig.Custom -> GLRetroShader(
+                LibretroDroid.SHADER_CUSTOM,
+                passes = config.passes.map { pass ->
+                    GLRetroShaderPass(
+                        vertex = pass.vertex,
+                        fragment = pass.fragment,
+                        linear = pass.linear,
+                        scale = pass.scale
+                    )
+                }
+            )
+        }
+    }
+
+    private fun toParam(param: Float): String {
+        return param.toString()
+    }
+
+    private fun toParam(param: Boolean): String {
+        return if (param) {
+            "1"
+        } else {
+            "0"
+        }
+    }
+
+    private fun toParam(param: Int): String {
+        return param.toString()
+    }
+
+    private fun buildParams(vararg pairs: Pair<String, String?>): Map<String, String> {
+        return pairs
+            .filter { (key, value) -> value != null }
+            .associate { (key, value) -> key to value!! }
+    }
+
+    /** This function gets called from the jni side.*/
+    private fun sendRumbleEvent(port: Int, strengthWeak: Float, strengthStrong: Float) {
+        lifecycle?.coroutineScope?.launch {
+            rumbleEventsSubject.emit(RumbleEvent(port, strengthWeak, strengthStrong))
+        }
+    }
+
+    /** Called from native when an achievement is unlocked. */
+    @Suppress("unused")
+    private fun onAchievementUnlocked(achievementId: Long) {
+        achievementUnlockListener?.invoke(achievementId)
+    }
+
+    var achievementUnlockListener: ((Long) -> Unit)? = null
+
+    private fun refreshAspectRatio() {
+        runOnGLThread {
+            LibretroDroid.refreshAspectRatio()
+        }
+    }
+
+    sealed class GLRetroEvents {
+        object FrameRendered: GLRetroEvents()
+        object SurfaceCreated: GLRetroEvents()
+    }
+
+    companion object {
+        private val TAG_LOG = GLRetroView::class.java.simpleName
+
+        private const val GL_THREAD_OP_TIMEOUT_MS = 8000L
+
+        const val MOTION_SOURCE_DPAD = LibretroDroid.MOTION_SOURCE_DPAD
+        const val MOTION_SOURCE_ANALOG_LEFT = LibretroDroid.MOTION_SOURCE_ANALOG_LEFT
+        const val MOTION_SOURCE_ANALOG_RIGHT = LibretroDroid.MOTION_SOURCE_ANALOG_RIGHT
+        const val MOTION_SOURCE_POINTER = LibretroDroid.MOTION_SOURCE_POINTER
+
+        const val ERROR_LOAD_LIBRARY = LibretroDroid.ERROR_LOAD_LIBRARY
+        const val ERROR_LOAD_GAME = LibretroDroid.ERROR_LOAD_GAME
+        const val ERROR_GL_NOT_COMPATIBLE = LibretroDroid.ERROR_GL_NOT_COMPATIBLE
+        const val ERROR_SERIALIZATION = LibretroDroid.ERROR_SERIALIZATION
+        const val ERROR_CHEAT = LibretroDroid.ERROR_CHEAT
+        const val ERROR_GENERIC = LibretroDroid.ERROR_GENERIC
+
+        private val TOUCH_EVENT_OUTSIDE = PointF(-10f, 10f)
+    }
+}

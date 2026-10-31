@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -40,6 +41,11 @@ public class SavesController : ShoalcadeControllerBase
         : base(library, services)
     {
     }
+
+    private const string DeleteAllChanged = "Your saves for this game changed since you opened the page, so nothing was deleted. Check the list and try again.";
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, byte> Exporting = new();
+    private static readonly SemaphoreSlim ExportSlots = new(2, 2);
 
     private enum Access
     {
@@ -113,6 +119,120 @@ public class SavesController : ShoalcadeControllerBase
             Math.Max(0, c.SaveQuotaMegabytes) * 1024L * 1024L,
             Services.States.UsedBytes(user.Id),
             Math.Max(0, c.SnapshotQuotaMegabytes) * 1024L * 1024L);
+    }
+
+    /// <summary>
+    /// Every save in use, as one zip (a backup: <c>console/Game name.ext</c>, each file's time = when it was saved).
+    /// Games no longer in the library are included; games hidden from this user are not. Only the save in use per game,
+    /// not the older versions.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The zip.</returns>
+    [HttpGet("saves/export")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult> Export(CancellationToken cancellationToken)
+    {
+        if (RequireUser(out var user) is ActionResult fail)
+        {
+            return fail;
+        }
+
+        // One export per user at a time, and a few at once on the server: each builds a whole zip before sending.
+        if (!Exporting.TryAdd(user.Id, 0))
+        {
+            return Fail(StatusCodes.Status429TooManyRequests, "busy", "Your saves are already being downloaded. Wait for that to finish.");
+        }
+
+        if (!await ExportSlots.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        {
+            Exporting.TryRemove(user.Id, out _);
+            return Fail(StatusCodes.Status429TooManyRequests, "busy", "The server is busy making other downloads. Try again in a minute.");
+        }
+
+        try
+        {
+            return await ExportAsync(user, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ExportSlots.Release();
+            Exporting.TryRemove(user.Id, out _);
+        }
+    }
+
+    private async Task<ActionResult> ExportAsync(User user, CancellationToken cancellationToken)
+    {
+        // In the plugin's own data folder (Jellyfin's account only), not the shared temp folder; only this account can
+        // read it on Linux. Deleted when the download is closed.
+        var tmpDir = Path.Combine(Services.DataRoot, "export-tmp");
+        Directory.CreateDirectory(tmpDir);
+        var tmp = Path.Combine(tmpDir, Guid.NewGuid().ToString("N") + ".zip");
+        var opts = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.None,
+            BufferSize = 81920,
+            Options = FileOptions.DeleteOnClose | FileOptions.Asynchronous,
+        };
+        if (!OperatingSystem.IsWindows())
+        {
+            opts.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
+
+        var fs = new FileStream(tmp, opts);
+        try
+        {
+            using (var zip = new ZipArchive(fs, ZipArchiveMode.Create, true))
+            {
+                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var s in await Services.Saves.ListAsync(user.Id, cancellationToken).ConfigureAwait(false))
+                {
+                    var rom = Library.GetRom(s.ItemId, user);
+                    if (s.Current is null || (rom is null && Library.Exists(s.ItemId)))
+                    {
+                        continue; // no save in use, or hidden from this user (never revealed)
+                    }
+
+                    var opened = await Services.Saves.OpenAsync(user.Id, s.ItemId, null, cancellationToken).ConfigureAwait(false);
+                    if (opened is not { } o)
+                    {
+                        continue;
+                    }
+
+                    using (o.Data)
+                    {
+                        var folder = SafeFileName(rom?.Console.Key ?? s.Console ?? "unknown");
+                        var stem = folder + "/" + SafeFileName(rom?.Name ?? s.GameName ?? s.ItemId.ToString("N"));
+                        var ext = Path.GetExtension(o.Version.File);
+                        var name = stem + ext;
+                        for (var n = 2; !names.Add(name); n++)
+                        {
+                            name = stem + " (" + n.ToString(CultureInfo.InvariantCulture) + ")" + ext;
+                        }
+
+                        var entry = zip.CreateEntry(name, CompressionLevel.Fastest);
+                        var t = o.Version.Created;
+                        entry.LastWriteTime = t.Year is >= 1980 and <= 2107 ? t : DateTimeOffset.UtcNow; // zip times only go 1980-2107
+                        var es = await entry.OpenAsync(cancellationToken).ConfigureAwait(false);
+                        await using (es.ConfigureAwait(false))
+                        {
+                            await o.Data.CopyToAsync(es, cancellationToken).ConfigureAwait(false);
+                        }
+                    }
+                }
+            }
+
+            fs.Position = 0;
+        }
+        catch
+        {
+            await fs.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        Response.Headers.CacheControl = "no-store";
+        return File(fs, "application/zip", "Shoalcade saves " + DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".zip");
     }
 
     /// <summary>Downloads the current save (raw bytes). 404 with error "no_save" if there is none.</summary>
@@ -335,6 +455,64 @@ public class SavesController : ShoalcadeControllerBase
 
         var r = await Services.Saves.ClearCurrentAsync(ctx.User.Id, id, baseVersion, cancellationToken).ConfigureAwait(false);
         return ToResult(r, StatusCodes.Status200OK);
+    }
+
+    /// <summary>
+    /// Deletes every save version (pinned and in use too) and every snapshot of a game that is no longer in the library.
+    /// Refused for a game still in the library (422 <c>in_library</c>: delete old versions one at a time there). The page
+    /// sends the counts it showed; if either changed since, nothing is deleted (409 <c>conflict</c>).
+    /// </summary>
+    /// <param name="id">Item id.</param>
+    /// <param name="versions">Save versions the person was shown.</param>
+    /// <param name="snapshots">Snapshots the person was shown.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>How many were deleted.</returns>
+    [HttpPost("save/{id:guid}/delete-all")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult<SaveDeleteAllDto>> DeleteAll([FromRoute] Guid id, [FromQuery] int? versions, [FromQuery] int? snapshots, CancellationToken cancellationToken)
+    {
+        var (ctx, fail) = await ResolveAsync(id, null, false, cancellationToken).ConfigureAwait(false);
+        if (fail is not null)
+        {
+            return fail;
+        }
+
+        if (ctx.Access == Access.Game)
+        {
+            return Fail(StatusCodes.Status422UnprocessableEntity, "in_library", "This game is in your library. Delete old versions one at a time instead.");
+        }
+
+        if (versions is not int v || snapshots is not int n || v < 0 || n < 0)
+        {
+            return Fail(StatusCodes.Status400BadRequest, "bad_expect", "Say how many saves and snapshots you were shown.");
+        }
+
+        if (Services.States.List(ctx.User.Id, id).Count != n)
+        {
+            return Fail(StatusCodes.Status409Conflict, "conflict", DeleteAllChanged);
+        }
+
+        // A hidden copy first, kept 7 days (D168): if it can't be made, nothing is deleted.
+        string kept;
+        try
+        {
+            var name = (await Services.Saves.GetHistoryAsync(ctx.User.Id, id, cancellationToken).ConfigureAwait(false)).GameName;
+            kept = Services.Deleted.Keep(ctx.User.Id, id, name, Services.Saves.GameDir(ctx.User.Id, id), Services.States.Dir(ctx.User.Id, id));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Fail(StatusCodes.Status500InternalServerError, "keep_failed", "The server couldn't keep a safety copy of these saves, so nothing was deleted. Try again later.");
+        }
+
+        var r = await Services.Saves.DeleteAllAsync(ctx.User.Id, id, v, cancellationToken).ConfigureAwait(false);
+        if (r.Status == SaveWriteStatus.Conflict)
+        {
+            Services.Deleted.Discard(kept);
+            return Fail(StatusCodes.Status409Conflict, "conflict", DeleteAllChanged);
+        }
+
+        var gone = await Services.States.DeleteAllAsync(ctx.User.Id, id, cancellationToken).ConfigureAwait(false);
+        return Ok(new SaveDeleteAllDto(r.Deleted, gone));
     }
 
     /// <summary>

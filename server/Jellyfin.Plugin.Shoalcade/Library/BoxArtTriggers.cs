@@ -35,7 +35,15 @@ public class SwitchOnBoxArtTask : IScheduledTask
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(progress);
-        await _switch.SyncAsync().ConfigureAwait(false);
+        try
+        {
+            await _switch.SyncAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
+        {
+            return; // Jellyfin is shutting down or restarting mid-run: the task runs again at the next start.
+        }
+
         progress.Report(100);
     }
 

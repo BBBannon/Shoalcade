@@ -33,6 +33,17 @@ object Compat {
         return parts
     }
 
+    /**
+     * True if the app inside the user's plugin ([server], e.g. "0.12.0") is newer than this one, so the library can offer
+     * it. A release beats a dev build of the same version. Unreadable versions never offer anything.
+     */
+    fun updateAvailable(server: String?, mine: String = BuildConfig.VERSION_NAME): Boolean {
+        val s = parse(server) ?: return false
+        val m = parse(mine) ?: return false
+        val d = compare(s, m)
+        return d > 0 || (d == 0 && devNumber(mine) > 0 && devNumber(server) == 0)
+    }
+
     /** The dev build number: "0.6.0-dev1" → 1, "s0.2 dev 1" → 1; 0 for a release ("1.0.0", "s1.0"). */
     fun devNumber(v: String?): Int = v?.trim()?.let { DEV.find(it) }?.groupValues?.get(1)?.toIntOrNull() ?: 0
 

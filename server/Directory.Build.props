@@ -3,7 +3,7 @@
        Dev builds before a release (D88): ShoalcadeDevBuild = 1, 2, ... -> 0.2.0.1, 0.2.0.2 ..., shown as "s0.2 dev 1".
        A release has ShoalcadeDevBuild = 0 (shown as "s1.0", no "dev"). The 4th part of the version is the dev number. -->
   <PropertyGroup>
-    <ShoalcadeServerVersion>0.7</ShoalcadeServerVersion>
+    <ShoalcadeServerVersion>0.9</ShoalcadeServerVersion>
     <ShoalcadeDevBuild>0</ShoalcadeDevBuild>
     <Version>$(ShoalcadeServerVersion).0.$(ShoalcadeDevBuild)</Version>
     <AssemblyVersion>$(ShoalcadeServerVersion).0.$(ShoalcadeDevBuild)</AssemblyVersion>

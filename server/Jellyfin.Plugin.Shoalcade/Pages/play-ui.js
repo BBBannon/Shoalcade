@@ -670,7 +670,7 @@
     gb: "Game Boy: GameShark codes like 01FF16D0, or Game Genie codes like 00A-17B-C49.",
     gbc: "Game Boy Color: GameShark codes like 01FF16D0, or Game Genie codes like 00A-17B-C49.",
     gba: "Game Boy Advance: CodeBreaker, GameShark or Action Replay codes, like 82025CE4 03E7. Put each line of a long code on its own line.",
-    nds: "DS: Action Replay codes, like 02000000 0000270F. Put each line on its own line.",
+    nds: "DS: Action Replay codes (cheat sites often call them GameShark DS: they're the same), like 02000000 0000270F. Put each line on its own line.",
     psx: "PlayStation: GameShark codes, like 800A1234 03E7. Put each line on its own line.",
     n64: "Nintendo 64: GameShark codes, like 8XXXXXXX YYYY. Put each code on its own line.",
   };

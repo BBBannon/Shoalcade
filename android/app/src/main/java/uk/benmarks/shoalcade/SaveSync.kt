@@ -125,7 +125,7 @@ class SaveSyncCore(
             val note = state.get(goneNameKey(id))?.split('\n', limit = 2)
             val rom = if (note == null) Storage.findRom(id) else null
             val folder = Storage.hasSaveFolder(userId, id)
-            val console = downloads[id] ?: note?.let { Console.fromKey(it[0]) } ?: rom?.first ?: if (folder) Console.PSP else null
+            val console = downloads[id] ?: note?.let { Console.fromKey(it[0]) } ?: rom?.first ?: if (folder) Storage.folderSaveConsole(userId, id) else null
             val name = note?.getOrNull(1)?.ifEmpty { null } ?: rom?.second?.nameWithoutExtension
             val game = OrphanSave.gameFor(id, name, console, folder)
             val bytes = Storage.readSave(userId, game)
@@ -496,7 +496,8 @@ class SaveSyncCore(
 /** Android wiring for [SaveSyncCore]: session from the encrypted store, sync state in shared prefs. */
 class SaveSync(context: Context) {
     private val app = context.applicationContext
-    private val store = SessionStore(app)
+    // Lazy: opening the encrypted store is slow, and marking a save (on the game's main thread) never needs it.
+    private val store by lazy { SessionStore(app) }
     private val syncStore: SyncStore = PrefsSyncStore(app)
 
     /** Null when logged out. */

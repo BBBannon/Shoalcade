@@ -1,0 +1,2 @@
+Copied from rommapp/argosy-launcher 68f1368b61707f8c4ad001b89eb095a705a46143 (libretrodroid/), GPL-3.0.
+Renamed for Shoalcade 3DS only (D153) by tools/vendor_lr3ds.py. Do not edit by hand: change the script and re-run.

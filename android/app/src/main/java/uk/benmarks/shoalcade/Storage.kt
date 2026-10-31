@@ -92,8 +92,15 @@ object Storage {
     /** PSP: the folder the emulator uses as this game's memory stick. */
     fun memstickDir(userId: String, game: Game) = File(root, "memstick/$userId/${game.id}")
 
-    /** Only the game saves on the memory stick; the emulator keeps its own housekeeping files elsewhere on it. */
-    private fun savedataDir(userId: String, game: Game) = File(memstickDir(userId, game), "PSP/SAVEDATA")
+    /**
+     * Only the game saves in the folder; the emulator keeps its own housekeeping files elsewhere in it. 3DS (D158):
+     * the core's pretend SD card, `Nintendo 3DS` (the game's save data and extra data), not its pretend NAND.
+     */
+    private fun savedataDir(userId: String, game: Game) = File(memstickDir(userId, game), folderSaves(game.console))
+
+    private fun folderSaves(c: Console?) = if (c == Console.N3DS) N3DS_SAVES else PSP_SAVES
+    private const val PSP_SAVES = "PSP/SAVEDATA"
+    private const val N3DS_SAVES = "Azahar/sdmc/Nintendo 3DS"
 
     /** The save as bytes: the save file, or for folder-save consoles a zip of the memory stick. */
     fun readSave(userId: String, game: Game): ByteArray? =
@@ -110,13 +117,24 @@ object Storage {
     fun savedGameIds(userId: String): Set<String> {
         val files = saveDir(userId).listFiles { f -> f.isFile && f.name.endsWith(".sav") }?.map { it.name.removeSuffix(".sav") } ?: emptyList()
         val sticks = File(root, "memstick/$userId").listFiles { f -> f.isDirectory }
-            ?.filter { File(it, "PSP/SAVEDATA").walkTopDown().any { f -> f.isFile && !f.name.startsWith(".") } }?.map { it.name } ?: emptyList()
+            ?.filter { stick -> listOf(PSP_SAVES, N3DS_SAVES).any { File(stick, it).walkTopDown().any { f -> f.isFile && !f.name.startsWith(".") } } }
+            ?.map { it.name } ?: emptyList()
         return (files + sticks).toSet()
     }
 
-    /** True if this game's phone save is a PSP memory stick (a folder), not a save file. Reads only. */
-    fun hasSaveFolder(userId: String, gameId: String) =
-        File(root, "memstick/$userId/$gameId/PSP/SAVEDATA").walkTopDown().any { it.isFile && !it.name.startsWith(".") }
+    /**
+     * Which console a folder save on the phone belongs to, from the folder itself: 3DS SD card or PSP memory stick
+     * (null = no folder save). For a save whose game has gone, so it is read from the right place (D158). Reads only.
+     */
+    fun folderSaveConsole(userId: String, gameId: String): Console? =
+        listOf(Console.N3DS to N3DS_SAVES, Console.PSP to PSP_SAVES).firstOrNull { (_, dir) ->
+            File(root, "memstick/$userId/$gameId/$dir").walkTopDown().any { it.isFile && !it.name.startsWith(".") }
+        }?.first
+
+    /** True if this game's phone save is a folder (PSP memory stick, 3DS SD card), not a save file. Reads only. */
+    fun hasSaveFolder(userId: String, gameId: String) = listOf(PSP_SAVES, N3DS_SAVES).any { dir ->
+        File(root, "memstick/$userId/$gameId/$dir").walkTopDown().any { it.isFile && !it.name.startsWith(".") }
+    }
 
     /** A ROM still on the phone for [gameId] (any console), e.g. for a game Jellyfin no longer lists. Reads only. */
     fun findRom(gameId: String): Pair<Console, File>? = Console.entries.firstNotNullOfOrNull { c ->

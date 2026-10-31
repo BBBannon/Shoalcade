@@ -185,7 +185,10 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
     // Android 13+: ask once so the download progress notification can show. Downloads work either way.
     val notifPermission = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+    // D151: 3DS games download only after the 3DS check (or "Unlock anyway").
+    var locked3ds by remember { mutableStateOf(false) }
     fun download(g: Game) {
+        if (g.console == Console.N3DS && !N3dsCheck.unlocked(ctx)) { locked3ds = true; return }
         if (android.os.Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
             != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -223,11 +226,36 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
                 }
             }
 
+            // A newer app inside the user's own plugin: the browser's Settings → Phone app page downloads it.
+            var updateHidden by rememberSaveable { mutableStateOf<String?>(null) }
+            vm.appUpdate?.takeIf { it != updateHidden }?.let { v ->
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Shoalcade $v is ready on your Jellyfin.", Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        TextButton(onClick = {
+                            vm.session?.serverUrl?.let { base ->
+                                runCatching {
+                                    ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(base.trimEnd('/') + "/shoalcade/settings#app-s")))
+                                }.onFailure { vm.message = "No web browser to open the download page." }
+                            }
+                        }) { Text("Get it") }
+                        TextButton(onClick = { updateHidden = v }) { Text("Later") }
+                    }
+                }
+            }
+
             SyncAllProgress(vm) // a running Push all / Pull all stays in sight and stoppable (buttons in Settings, D132)
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 12.dp)) {
                     FilterChip(filter == ConsoleFilter.All, { filter = ConsoleFilter.All }, { Text("All") }, Modifier.padding(end = 6.dp))
+                    if (vm.games.any { it.favourite }) {
+                        FilterChip(filter == ConsoleFilter.Starred, { filter = ConsoleFilter.Starred }, { Text("★ Starred") }, Modifier.padding(end = 6.dp))
+                    }
+                    // The last star removed: back to All rather than an empty list.
+                    LaunchedEffect(vm.games) { if (filter == ConsoleFilter.Starred && vm.games.none { it.favourite }) filter = ConsoleFilter.All }
                     // Nintendo ▾ / Sony ▾ menus and plain chips, only consoles that have games.
                     val bar = remember(vm.games) { ConsoleBar.items(vm.games.mapNotNull { it.console }.toSet()) }
                     bar.forEach { item ->
@@ -245,7 +273,7 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
 
             // diskVersion: bumped on return from a game, so a game just played moves up under "Last played".
             val shown = remember(vm.games, filter, vm.sort, vm.diskVersion) {
-                vm.sorted(vm.games.filter { filter.matches(it.console) })
+                vm.sorted(vm.games.filter { if (filter == ConsoleFilter.Starred) it.favourite else filter.matches(it.console) })
             }
             if (shown.isEmpty() && !vm.loading) {
                 Text(
@@ -275,6 +303,15 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
         }
     }
 
+    if (locked3ds) AlertDialog(
+        onDismissRequest = { locked3ds = false },
+        title = { Text(N3dsCheck.LOCKED_TITLE) },
+        text = { Text(N3dsCheck.LOCKED_TEXT) },
+        confirmButton = { TextButton(onClick = {
+            locked3ds = false; ctx.startActivity(android.content.Intent(ctx, N3dsCheckActivity::class.java))
+        }) { Text(N3dsCheck.OPEN) } },
+        dismissButton = { TextButton(onClick = { locked3ds = false }) { Text("Not now") } },
+    )
     getSaveGame?.let { game -> GetSaveDialog(vm, game) { getSaveGame = null } }
     savesPanelGame?.let { game -> SavesPanel(vm, game) { savesPanelGame = null } }
     vm.conflictPrompt?.let { (game, server) -> ConflictDialog(vm, game, server) }
@@ -346,17 +383,23 @@ private fun GameRow(
     val prog = vm.progress[g.id]
     val conflict = g.id in vm.conflicts
     var menu by remember { mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    // Read once per change (returning from the 3DS check bumps diskVersion), not on every redraw during a download.
+    val lock3ds = remember(g.console, vm.diskVersion) { if (g.console == Console.N3DS) N3dsCheck.status(ctx).takeIf { it.startsWith("🔒") } else null }
 
     ListItem(
         leadingContent = { BoxArtImage(g, vm.artVersion) },
-        headlineContent = { Text(g.name) },
+        headlineContent = {
+            Text(if (g.favourite) "★ ${g.name}" else g.name,
+                Modifier.semantics { if (g.favourite) contentDescription = "${g.name}, starred" })
+        },
         supportingContent = {
             Column {
                 Text(
                     listOfNotNull(
                         g.console?.shortName ?: "Unknown console",
                         if (downloaded) "On phone" else null,
-                        if (g.console == Console.N3DS) "3DS support coming later" else null,
+                        if (!downloaded) lock3ds else null,
                     ).joinToString(" · ")
                 )
                 if (conflict) {
@@ -384,6 +427,9 @@ private fun GameRow(
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem({ Text("Saves on Jellyfin…") }, { menu = false; onSavesPanel() })
+                        if (vm.hasFavourites && !vm.offline) {
+                            DropdownMenuItem({ Text(if (g.favourite) "Unstar" else "Star") }, { menu = false; vm.setFavourite(g, !g.favourite) })
+                        }
                         if (downloaded) {
                             if (LinkRules.supports(g.console)) {
                                 DropdownMenuItem({ Text("Link play (same Wi-Fi)") }, { menu = false; onLink() })

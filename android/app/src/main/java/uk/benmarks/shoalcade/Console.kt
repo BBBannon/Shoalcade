@@ -18,7 +18,8 @@ enum class Console(
     GBC("gbc", "Game Boy Color", "GBC", "gbc", "libmgba_libretro_android.so", setOf("gbc", "gb")),
     GB("gb", "Game Boy", "GB", "gb", "libmgba_libretro_android.so", setOf("gb", "gbc")),
     NDS("nds", "Nintendo DS", "DS", "nds", "libmelondsds_libretro_android.so", setOf("nds")),
-    N3DS("3ds", "Nintendo 3DS", "3DS", "3ds", null, setOf("3ds", "cci", "cia", "3dsx", "cxi")),
+    /** 3DS (plan-3ds): our own Azahar build on its own Vulkan layer, in [Game3dsActivity] (D153, D155). */
+    N3DS("3ds", "Nintendo 3DS", "3DS", "3ds", "libazahar_libretro_android.so", setOf("3ds", "cci", "cia", "3dsx", "cxi", "zcci", "zcxi", "z3dsx")),
     PSP("psp", "PSP", "PSP", "psp", "libppsspp_libretro_android.so", setOf("iso", "cso", "pbp", "chd")),
     /** PS1 (D135): PCSX ReARMed, one .chd or .pbp per game. Save = memory card 1 (131,072 bytes, see PsxCard). */
     PSX("psx", "PlayStation", "PS1", "psx", "libpcsxrearmed_libretro_android.so", setOf("chd", "pbp")),
@@ -43,8 +44,8 @@ enum class Console(
     /** Landscape only, controls drawn over the game: PSP (widescreen) and N64 (stick, D-pad and C-buttons need the room). */
     val isLandscape get() = this == PSP || this == N64
 
-    /** The controller's left stick (and the touch stick) is the game's analogue stick, not the D-pad. */
-    val hasAnalogueStick get() = this == PSP || this == N64
+    /** The controller's left stick (and the touch stick) is the game's analogue stick, not the D-pad. 3DS: the circle pad. */
+    val hasAnalogueStick get() = this == PSP || this == N64 || this == N3DS
 
     /**
      * Players the phone can drive: N64 takes one controller per player, up to 4 (core ports 0-3, [PlayerPorts]).
@@ -54,9 +55,10 @@ enum class Console(
 
     /**
      * PSP saves are a folder of files on a pretend memory stick, not one block of save memory.
-     * Each game gets its own memory stick folder, uploaded to Jellyfin as one zip (D27).
+     * Each game gets its own memory stick folder, uploaded to Jellyfin as one zip (D27). 3DS the same: the core's
+     * pretend SD card, `Nintendo 3DS` folder (D158).
      */
-    val hasFolderSaves get() = this == PSP
+    val hasFolderSaves get() = this == PSP || this == N3DS
 
     /**
      * Consoles whose save is always one exact size: PS1 (memory card, [PsxCard.SIZE]) and N64 (save RAM, [N64Save.SIZE]).

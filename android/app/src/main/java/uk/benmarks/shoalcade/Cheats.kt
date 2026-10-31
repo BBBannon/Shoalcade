@@ -81,11 +81,11 @@ object CheatRules {
     fun hint(console: Console): String = when (console) {
         Console.GB, Console.GBC -> "Game Boy: GameShark codes, 8 characters each, like 01xxxxxx. One code per line."
         Console.GBA -> "Game Boy Advance: CodeBreaker, GameShark or Action Replay codes. One code per line, as written."
-        Console.NDS -> "DS: Action Replay codes, two blocks of 8 per line, like 02xxxxxx yyyyyyyy."
+        Console.NDS -> "DS: Action Replay codes (sites often call them GameShark DS: the same codes), two blocks of 8 per line, like 02xxxxxx yyyyyyyy."
         Console.PSX -> "PlayStation: GameShark codes, like 8xxxxxxx yyyy. One code per line."
         Console.PSP -> "PSP: CWCheat codes, one per line, like _L 0x2xxxxxxx 0xyyyyyyyy."
         Console.N64 -> "Nintendo 64: GameShark codes, like 8XXXXXXX YYYY. One code per line."
-        Console.N3DS -> "3DS games can't be played on the phone yet."
+        Console.N3DS -> "3DS: cheats aren't supported yet."
     }
 }
 

@@ -27,7 +27,7 @@
 - 🎮 **One library, every screen:** play on your **Android phone** or in **any browser** that can reach your Jellyfin, and pick up exactly where you left off on the other
 - ✈️ **Truly offline on the phone:** games download and run **natively** on the phone, not streamed. Plane, car, no signal: it still plays
 - 💾 **Saves you can't lose:** every save is kept on your server with **full history**. **Pin** the ones that matter. If the phone and the server disagree, Shoalcade **asks you**; it never quietly picks a winner
-- 📂 **Drop in, scan, play:** put your games in folders, press **Scan**, and they appear with **official names and box art**. From **Game Boy to PS1, N64, DS and PSP**
+- 📂 **Drop in, scan, play:** put your games in folders, press **Scan**, and they appear with **official names and box art**. From **Game Boy to PS1, N64, DS, PSP and 3DS**
 - 👨‍👩‍👧 **Uses your Jellyfin as it is:** the same logins, users and libraries. Each person has their own saves, and a child only sees the libraries you give them
 - 🤝 **Play together:** link two phones on the same Wi-Fi for **Pokémon trades and battles** (GBA and DS), or up to **four controllers** on N64
 - 🧩 **The extras you'd expect:** snapshots, cheats, a built-in **patcher** for fan translations and hacks, Bluetooth controllers and button remapping
@@ -93,10 +93,11 @@
 | **Nintendo DS** | ✅ melonDS DS | ✅ melonDS | ✅ local wireless |
 | **PlayStation (PS1)** | ✅ PCSX ReARMed | ✅ PCSX ReARMed | ❌ |
 | **PSP** | ✅ PPSSPP (landscape) | ❌ not yet | ❌ |
-| **Nintendo 3DS** | 🗓️ Listed as **"3DS support coming later"** — not downloadable or playable yet | ❌ | ❌ |
+| **Nintendo 3DS** | ✅ Azahar (after a one-minute **3DS check**) | ❌ (games and saves listed only) | ❌ |
 
 - **PS1:** one `.chd` or `.pbp` file per game. **No BIOS needed** (a built-in stand-in is used; some games may need a real BIOS, not supported yet). Save = one **memory card**, shared by the phone and the browser.
 - **N64:** `.z64`, `.n64` or `.v64` files (or a `.zip`/`.7z` holding one). Save = the cartridge save plus **Controller Pak 1**, shared by the phone and the browser.
+- **3DS:** decrypted `.3ds`, `.cci`, `.cxi` or `.3dsx` files (or the compressed `.zcci`, `.zcxi`, `.z3dsx`). **No keys or system files needed**, and none are included. `.cia` installer files are listed but can't be played: convert them to `.cci` first. Before the first download, the app runs a **3DS check** (Settings → 3DS check, about a minute) to make sure your phone is fast enough; if it isn't, 3DS stays locked, with **Unlock anyway** if you want to try. Save = the game's save folder, zipped, shared with Jellyfin.
 - **Other consoles are not shown.** Their files stay on your server, untouched.
 
 ---
@@ -136,7 +137,10 @@
 - **Box art** cached on the phone, so it shows offline
 - **Sort** by **Name**, **Year**, **Platform** or **Last played** — remembered; **Last played** is the default and counts browser play too
 - **Console bar:** **All**, **Nintendo ▾** and **Sony ▾**. Each menu lists that maker's consoles that have games
+- **★ Favourites:** **Star** a game from its ⋮ menu, then the **★ Starred** chip shows just those. The same stars as the browser and Jellyfin's own favourites; kept offline
 - **Background downloads** with a progress notification and **Cancel**
+- **A file that isn't a game** (empty, cut short or the wrong type) is refused with a message instead of crashing the app
+- **Update banner:** "Shoalcade x is ready on your Jellyfin" when your server carries a newer app
 - **Remove from phone (keeps save)**
 
 **Playing**
@@ -150,6 +154,7 @@
 - **D-pad works like a joystick too:** tap an arm, or press and slide your thumb
 - **DS:** screens **stacked**, **side by side** or **one big, one small**, with **swap** — chosen separately for upright and sideways. **Touch on the bottom screen**, even while holding a button
 - **PSP:** landscape, see-through controls with an **analogue stick**; each game gets its own memory stick
+- **3DS:** upright, both screens stacked with the buttons below (circle pad, D-pad, A B X Y, L ZL ZR R). Sideways, **one screen at a time, full size**, with a **⇅ Flip** button to swap to the touch screen; other layouts in the menu. On a controller: left stick = circle pad, right stick = C-stick, triggers = ZL/ZR
 - **N64:** landscape, with an **analogue stick** and the four **C buttons**. On a controller: left stick = N64 stick, right stick = C buttons, trigger = **Z**. **Players 2–4:** each extra controller is the next player, in the order you connect them
 - **PS1:** △ ○ ✕ □ with **L1 L2 R1 R2**; controller triggers work as L2/R2. Buttons match **by position**, so a controller's **A** (bottom on Xbox pads) is **○** — swap it in **Controls** if you prefer ✕
 - **Game Boy cartridge clock** kept with the save and backed up (e.g. Pokémon Gold, Silver, Crystal)
@@ -203,10 +208,11 @@
 - Open it from the **Shoalcade** link in Jellyfin's menu, or at **`/shoalcade/`** on your server
 - Uses your **Jellyfin web login** — no extra sign-in
 - **Game covers**, **search** and a **Played lately** row; works on phones too
+- **★ Starred** chip: star a game from its sheet, and the star shows on the phone too
 - **Console bar:** **All**, **Nintendo ▾** and **Sony ▾** — the menus list each console that has games
 - **Sort** by **Name**, **Year**, **Platform** or **Last played** — remembered per person, on any browser
 - **Play** and **Saves** buttons on each game's own Jellyfin page
-- **⚙ Settings:** **Manage saves**, **Phone app** (QR code or download link for the app), per-console **Browser player** settings with **Reset to defaults**, and **Patch a game**
+- **⚙ Settings:** **Manage saves**, **Download all my saves** (one zip, the save in use for each game), **Phone app** (QR code or download link for the app), per-console **Browser player** settings with **Reset to defaults**, and **Patch a game**
 
 **Playing** (powered by **EmulatorJS**)
 - **Loading bar** while a game starts
@@ -226,7 +232,7 @@
 **Saves manager**
 - Every version of a game's save: **Use this save**, **Pin**, **Name**, **Download**, **Upload a save file**, **Delete**, **Start fresh**
 - **Move to another game** — e.g. after a ROM was renamed (Game Boy ↔ Game Boy Color allowed; otherwise same console only)
-- Saves for games **Not in your library** stay reachable and movable
+- Saves for games **Not in your library** stay reachable and movable, or **Delete all saves for this game** (only for a game no longer in your library; asks twice and you type its name). The server keeps a hidden copy for **7 days** so the admin can undo a mistake
 - Asks first before anything that could lose data
 
 ### 🎯 Cheats
@@ -244,7 +250,7 @@
 | **GB / GBC** | GameShark, Game Genie |
 | **GBA** | CodeBreaker, GameShark, Action Replay |
 | **N64** | GameShark (`8XXXXXXX YYYY`) |
-| **DS** | Action Replay |
+| **DS** | Action Replay (cheat sites often call these "GameShark DS": same codes) |
 | **PS1** | GameShark |
 | **PSP** (app) | CWCheat |
 
@@ -355,6 +361,7 @@
 ├── Game Boy Advance/    .gba
 ├── Nintendo 64/         .z64 .n64 .v64
 ├── Nintendo DS/         .nds
+├── Nintendo 3DS/        .3ds .cci .cxi .3dsx (+ compressed .zcci .zcxi .z3dsx)
 ├── PS1/                 .chd .pbp   (one file per game)
 └── PSP/                 .iso .cso .pbp .chd
 ```
@@ -417,10 +424,10 @@ Yes. Patch your own game file with **⚙ Settings → Patch a game** in the brow
 Yes — it uses **Jellyfin's own users**. Each person has their own saves. Jellyfin's **library access** decides who sees the games library, and Jellyfin's **Allow media downloading** permission is needed to play (on the phone and in the browser). There's no separate kids mode.
 
 **Which consoles? Why not SNES?**
-**GB, GBC, GBA, N64, DS, PS1 and PSP.** Each console is a lot of work to make safe for saves, so the list is small for now. Other consoles may come later; their files stay on your server untouched.
+**GB, GBC, GBA, N64, DS, 3DS, PS1 and PSP.** Each console is a lot of work to make safe for saves, so the list is small for now. Other consoles may come later; their files stay on your server untouched.
 
-**Will 3DS work?**
-**Not yet.** 3DS games appear in the app as **"3DS support coming later"**. 3DS is too heavy for the built-in emulators, so it's planned for later with no date.
+**Will 3DS work on my phone?**
+**Probably, on a recent phone.** 3DS is heavy, so the app runs a one-minute **3DS check** first (Settings → 3DS check) and unlocks 3DS if your phone keeps up. Recent high-end phones pass at full speed. 3DS plays in the phone app only, not in the browser.
 
 **Is there an iPhone version?**
 No. The app is **Android only**. The browser player runs in a modern browser, but iPhone and iPad aren't tested.
@@ -464,7 +471,8 @@ Yes, if you're a Jellyfin admin: browser library → game → **Edit game**. Use
 | **Games missing after removing JellyEMU, or the plugin not showing after an update** | Do a **full restart** — stop and start the Jellyfin service or container, not just the dashboard button. Then scan |
 | **App shows a red banner** | The plugin is missing or too old for the app. Update the plugin |
 | **Can't log in** | Use the **HTTPS** address. Type the username exactly. Try **Log in with Quick Connect** (an admin turns it on in **Dashboard → General**) |
-| **Download button greyed out** | You're offline, the game is 3DS, or your Jellyfin user isn't allowed to download — ask your admin |
+| **Download button greyed out** | You're offline, or your Jellyfin user isn't allowed to download — ask your admin |
+| **3DS game says "Run the 3DS check first"** | Settings → **3DS check** → Start. If it says too slow, **Unlock anyway** is there if you want to try |
 | **No box art** | Wait for the next scan. Some games have no libretro art — an admin can use **Find a cover** or **Upload a picture** |
 | **Browser player won't load** | Refresh with **Ctrl+F5**. Check an admin hasn't turned the browser player off |
 
@@ -535,6 +543,8 @@ server/build.sh                    # → dist/server/Shoalcade_s<version>.zip
 | **gpSP** | GBA link play (app) | GPL-2.0-or-later |
 | **PPSSPP** | PSP (app) | GPL-2.0-or-later |
 | **PCSX ReARMed** | PS1 (app and browser) | GPL-2.0-or-later |
+| **Azahar** (our own build, small patches) | 3DS (app) | GPL-3.0-or-later |
+| **Argosy's Vulkan LibretroDroid** | 3DS front-end (app) | GPL-3.0 |
 | **EmulatorJS** | Browser player | GPL-3.0 |
 | **RomPatcher.js** | Patch a game (browser) | MIT |
 | **JellyEMU** | Code ported into our scanner | MIT |

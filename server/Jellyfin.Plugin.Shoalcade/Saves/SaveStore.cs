@@ -431,7 +431,7 @@ public sealed partial class SaveStore : IDisposable
 
             h.Current = null;
             return Task.FromResult(new SaveWriteResult(SaveWriteStatus.Created, current, null, null, null, []));
-        }, cancellationToken);
+        }, false, cancellationToken); // "Nothing is deleted": the save that was in use must not be cleared out by the keep rule.
     }
 
     /// <summary>
@@ -617,6 +617,70 @@ public sealed partial class SaveStore : IDisposable
             }
 
             return result;
+        }
+        finally
+        {
+            _moveLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Deletes every save version of a game no longer in the library (pinned and in-use ones too). The only path that
+    /// does that: the caller checks the game is gone and the person confirmed. JellyEMU import markers are kept (as after
+    /// a move), so a returning game never re-imports a save already brought in. An old DS browser folder goes too.
+    /// </summary>
+    /// <param name="user">User id.</param>
+    /// <param name="item">Item id.</param>
+    /// <param name="expectedVersions">How many versions the person was shown: a different count means it changed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Conflict if the count changed, Unchanged if there was nothing, else Created with the number deleted.</returns>
+    public async Task<(SaveWriteStatus Status, int Deleted)> DeleteAllAsync(Guid user, Guid item, int expectedVersions, CancellationToken cancellationToken)
+    {
+        var dir = GameDir(user, item);
+        await _moveLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using var gameLock = await _locks.AcquireAsync(dir, cancellationToken).ConfigureAwait(false);
+            var h = await LoadAsync(dir, item, cancellationToken).ConfigureAwait(false);
+            if (h.Versions.Count != expectedVersions)
+            {
+                return (SaveWriteStatus.Conflict, 0);
+            }
+
+            if (h.Versions.Count == 0)
+            {
+                return (SaveWriteStatus.Unchanged, 0);
+            }
+
+            var n = h.Versions.Count;
+
+            // The empty list is written first (history-first, as after a move): if a file can't be deleted (held open by
+            // antivirus, say), it stays a stray that the next load adopts as "recovered", never a list pointing at nothing.
+            await EmptyKeepingImportsAsync(dir, h).ConfigureAwait(false);
+            if (h.Imports.Count == 0)
+            {
+                TryDeleteFile(Path.Combine(dir, HistoryFileName)); // nothing to remember: the folder can go
+            }
+
+            var browserDir = Path.Combine(dir, BrowserFolderName);
+            try
+            {
+                if (Directory.Exists(browserDir))
+                {
+                    Directory.Delete(browserDir, true);
+                }
+
+                if (h.Imports.Count == 0 && Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
+                {
+                    Directory.Delete(dir);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "Deleted a removed game's saves but could not tidy its folder {Dir}", dir);
+            }
+
+            return (SaveWriteStatus.Created, n);
         }
         finally
         {
@@ -832,7 +896,7 @@ public sealed partial class SaveStore : IDisposable
         {
             File.Delete(Path.Combine(dir, v.File));
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _logger.LogWarning(ex, "Could not delete old save version {File}", v.File);
         }
@@ -854,6 +918,18 @@ public sealed partial class SaveStore : IDisposable
         foreach (var v in gone)
         {
             DeleteVersionFile(dir, v);
+        }
+    }
+
+    private void TryDeleteFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Could not delete {Path}", path);
         }
     }
 
