@@ -2,13 +2,14 @@
   <img src="docs/assets/wordmark.svg" alt="Shoalcade for Jellyfin" width="480">
 </p>
 
-<p align="center"><strong>Play the games you own from your own Jellyfin server: on your Android phone (offline) or in the browser, with safe saves.</strong></p>
+<p align="center"><strong>Play the games you own from your own Jellyfin server: on your Android phone or Windows PC (offline) or in the browser, with safe saves.</strong></p>
 
 <div align="center">
 
 [![Licence: GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
 ![Jellyfin 12.3+](https://img.shields.io/badge/Jellyfin-12.3%2B-AA5CC3)
 ![Android 11+](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)
+![Windows 10/11 (new)](https://img.shields.io/badge/Windows-10%2F11%20(new)-0078D4)
 ![Not an official Jellyfin project](https://img.shields.io/badge/not%20an%20official-Jellyfin%20project-lightgrey)
 [![Join us on Discord](https://img.shields.io/badge/Discord-Join%20us%20on%20Discord-5865F2?logo=discord&logoColor=white)][discord]
 
@@ -24,13 +25,13 @@
 
 **Your games already live on your Jellyfin server. Shoalcade makes them playable everywhere, and makes sure your progress is never lost.**
 
-- 🎮 **One library, every screen:** play on your **Android phone** or in **any browser** that can reach your Jellyfin, and pick up exactly where you left off on the other
-- ✈️ **Truly offline on the phone:** games download and run **natively** on the phone, not streamed. Plane, car, no signal: it still plays
+- 🎮 **One library, every screen:** play on your **Android phone**, your **Windows PC** (new) or in **any browser** that can reach your Jellyfin, and pick up exactly where you left off on another
+- ✈️ **Truly offline on the phone and PC:** games download and run **natively**, not streamed. Plane, car, no signal: it still plays
 - 💾 **Saves you can't lose:** every save is kept on your server with **full history**. **Pin** the ones that matter. If the phone and the server disagree, Shoalcade **asks you**; it never quietly picks a winner
 - 📂 **Drop in, scan, play:** put your games in folders, press **Scan**, and they appear with **official names and box art**. From **Game Boy to PS1, N64, DS, PSP and 3DS**
 - 👨‍👩‍👧 **Uses your Jellyfin as it is:** the same logins, users and libraries. Each person has their own saves, and a child only sees the libraries you give them
-- 🤝 **Play together:** link two phones on the same Wi-Fi for **Pokémon trades and battles** (GBA and DS), or up to **four controllers** on N64
-- 🧩 **The extras you'd expect:** snapshots, cheats, a built-in **patcher** for fan translations and hacks, Bluetooth controllers and button remapping
+- 🤝 **Play together:** link phones and PCs on the same Wi-Fi for **Pokémon trades and battles** (GBA and DS), trade over the **internet through your own Jellyfin** (GBA), or use up to **four controllers** on N64
+- 🧩 **The extras you'd expect:** snapshots, cheats, **fast-forward**, **screenshots**, **play time**, a built-in **patcher** for fan translations and hacks, Bluetooth controllers and button remapping
 - 🔒 **Private by design:** no accounts, no adverts, no tracking, no cloud. **Everything stays on your server**
 - 🆓 **Free and open source** (GPL-3.0)
 
@@ -48,6 +49,7 @@
 - [Features](#features)
 - [Requirements](#requirements)
 - [Install](#install)
+  - [Windows app (new)](#5-install-the-windows-app-optional-new)
 - [FAQ](#faq)
 - [Troubleshooting](#troubleshooting)
 - [Building from source](#building-from-source)
@@ -60,15 +62,16 @@
 
 ## What it is
 
-**Two parts that work together:**
+**Parts that work together:**
 
 | Part | What it does |
 |---|---|
 | **Shoalcade plugin** (on your Jellyfin server) | Finds the games in your library, adds names and box art, keeps everyone's saves safe with full history, and adds a **browser player** |
 | **Shoalcade app** (Android) | Downloads games to your phone and plays them **natively and offline**. Saves sync back to Jellyfin |
+| **Shoalcade for Windows** (new, optional) | The same for a **Windows 10/11 PC**: log in, library, download, play offline. Saves sync back to Jellyfin |
 
 - **Jellyfin stays in charge:** your logins, your users, your library.
-- **Shared saves:** the phone and the browser use the same saves, with older versions kept and **pinned** ones never cleared out.
+- **Shared saves:** the phone, the PC and the browser use the same saves, with older versions kept and **pinned** ones never cleared out.
 - **Saves are never lost:** older versions are kept, and nothing is replaced without a copy.
 
 ---
@@ -85,19 +88,22 @@
 
 ## Supported consoles
 
-| Console | Phone app | Browser player | Link play (phone) |
-|---|---|---|---|
-| **Game Boy / Game Boy Color** | ✅ mGBA | ✅ mGBA | ❌ |
-| **Game Boy Advance** | ✅ mGBA | ✅ mGBA | ✅ gpSP (e.g. Pokémon trades and battles) |
-| **Nintendo 64** | ✅ Mupen64Plus-Next (landscape) | ✅ Mupen64Plus-Next | ❌ |
-| **Nintendo DS** | ✅ melonDS DS | ✅ melonDS | ✅ local wireless |
-| **PlayStation (PS1)** | ✅ PCSX ReARMed | ✅ PCSX ReARMed | ❌ |
-| **PSP** | ✅ PPSSPP (landscape) | ❌ not yet | ❌ |
-| **Nintendo 3DS** | ✅ Azahar (after a one-minute **3DS check**) | ❌ (games and saves listed only) | ❌ |
+| Console | Phone app | Windows app (new) | Browser player | Link play (phone and PC) |
+|---|---|---|---|---|
+| **Game Boy / Game Boy Color** | ✅ mGBA | ✅ mGBA | ✅ mGBA | ❌ |
+| **Game Boy Advance** | ✅ mGBA | ✅ mGBA | ✅ mGBA | ✅ gpSP: Wi-Fi, **internet** (through your Jellyfin) and **Celio Link** (e.g. Pokémon trades and battles) |
+| **Nintendo 64** | ✅ Mupen64Plus-Next (landscape) | ✅ Mupen64Plus-Next | ✅ Mupen64Plus-Next | ❌ |
+| **Nintendo DS** | ✅ melonDS DS | ✅ melonDS DS | ✅ melonDS | ✅ local wireless (Wi-Fi) |
+| **PlayStation (PS1)** | ✅ PCSX ReARMed | ✅ PCSX ReARMed | ✅ PCSX ReARMed | ❌ |
+| **PSP** | ✅ PPSSPP (landscape) | ✅ PPSSPP | ❌ not yet | ❌ |
+| **Nintendo 3DS** | ✅ Azahar (after a one-minute **3DS check**) | ✅ Azahar | ❌ (games and saves listed only) | ❌ |
+
+- **Same emulators, same versions** on the phone and the PC, so a save made on one plays on the other.
+- **Link play works phone ↔ phone, PC ↔ PC and phone ↔ PC.**
 
 - **PS1:** one `.chd` or `.pbp` file per game. **No BIOS needed** (a built-in stand-in is used; some games may need a real BIOS, not supported yet). Save = one **memory card**, shared by the phone and the browser.
 - **N64:** `.z64`, `.n64` or `.v64` files (or a `.zip`/`.7z` holding one). Save = the cartridge save plus **Controller Pak 1**, shared by the phone and the browser.
-- **3DS:** decrypted `.3ds`, `.cci`, `.cxi` or `.3dsx` files (or the compressed `.zcci`, `.zcxi`, `.z3dsx`). **No keys or system files needed**, and none are included. `.cia` installer files are listed but can't be played: convert them to `.cci` first. Before the first download, the app runs a **3DS check** (Settings → 3DS check, about a minute) to make sure your phone is fast enough; if it isn't, 3DS stays locked, with **Unlock anyway** if you want to try. Save = the game's save folder, zipped, shared with Jellyfin.
+- **3DS:** decrypted `.3ds`, `.cci`, `.cxi` or `.3dsx` files (or the compressed `.zcci`, `.zcxi`, `.z3dsx`). **No keys or system files needed**, and none are included. `.cia` installer files are listed but can't be played: convert them to `.cci` first. Before the first download, the app runs a **3DS check** (Settings → 3DS check, about a minute) to make sure your phone is fast enough; if it isn't, 3DS stays locked, with **Unlock anyway** if you want to try. On **Windows** the 3DS check is optional advice and **never locks** anything. Save = the game's save folder, zipped, shared with Jellyfin. **No cheats on 3DS.**
 - **Other consoles are not shown.** Their files stay on your server, untouched.
 
 ---
@@ -137,7 +143,10 @@
 - **Box art** cached on the phone, so it shows offline
 - **Sort** by **Name**, **Year**, **Platform** or **Last played** — remembered; **Last played** is the default and counts browser play too
 - **Console bar:** **All**, **Nintendo ▾** and **Sony ▾**. Each menu lists that maker's consoles that have games
-- **★ Favourites:** **Star** a game from its ⋮ menu, then the **★ Starred** chip shows just those. The same stars as the browser and Jellyfin's own favourites; kept offline
+- **Search:** type in **Find a game** (accents and punctuation don't matter)
+- **★ Favourites:** **Star** a game from its ⋮ menu, then tap **★ Favourites only** to show just those. Works with the console bar and is remembered. The same stars as the browser and Jellyfin's own favourites; kept offline
+- **⬇ On phone only:** shows just the games downloaded to this phone
+- **Play time** on each game ("Played 6 min"), added up from the phone, the PC and the browser
 - **Background downloads** with a progress notification and **Cancel**
 - **A file that isn't a game** (empty, cut short or the wrong type) is refused with a message instead of crashing the app
 - **Update banner:** "Shoalcade x is ready on your Jellyfin" when your server carries a newer app
@@ -159,17 +168,21 @@
 - **PS1:** △ ○ ✕ □ with **L1 L2 R1 R2**; controller triggers work as L2/R2. Buttons match **by position**, so a controller's **A** (bottom on Xbox pads) is **○** — swap it in **Controls** if you prefer ✕
 - **Game Boy cartridge clock** kept with the save and backed up (e.g. Pokémon Gold, Silver, Crystal)
 - **Cheats** — side menu → **Cheats**: **Add a cheat…**, switch each one on or off, **Edit cheats…**. Shared with the browser player, and they work offline. See [Cheats](#-cheats)
+- **Fast-forward** — tap **⏩** (2×, 3× or 4×, set in side menu → **Speed**). GBA goes up to 3×. Not on Game Boy / Game Boy Color
+- **Screenshot** — side menu → **Game** → **Screenshot**, saved to a **Shoalcade** album in your gallery
 - **Snapshots** — **Save snapshot** / **Load snapshot**, one per game with a picture, kept on the phone
 - **Launch choice:** games with a snapshot ask **Continue from save** or **Or load a snapshot**
 - Side menu: **Close Game** or **Close Game (and Upload)**
 - Warns (**Keep playing** / **Close anyway**) if your latest save couldn't be kept
 
-**Link play (same Wi-Fi)**
-- Two phones on the **same Wi-Fi or a phone hotspot** link directly — **no server needed**
-- **GBA** and **DS**, e.g. Pokémon trades and battles. One phone taps **Host**, the other **Join**
-- The host shows a **4-digit PIN**; the joining phone types it, so no one else on the Wi-Fi can join
+**Link play** (game's ⋮ menu → **Link play**)
+- **Same Wi-Fi:** two phones (or a phone and a PC running the Windows app) on the **same Wi-Fi or a phone hotspot** link directly — **no server needed**
+- **GBA** and **DS**, e.g. Pokémon trades and battles. One side taps **Host**, the other **Join**
+- The host shows a **4-digit PIN**; the other side types it, so no one else on the Wi-Fi can join
+- **Over the internet (GBA):** **Host over the internet** gives a **Room code** and PIN; the other side taps **Join over the internet**. It goes **through your own Jellyfin**, so both must log in to the same server. Guide: [Internet link play](guides/internet-link-play.md)
+- **Celio Link (GBA, off unless you switch it on):** **Settings → Link play → Celio Link (trade with PC players)**, then **Trade with a PC player (Celio Link)** → **Make a room** or **Join a room**. For trading with people on a PC using Celio Link. ⚠️ It uses an **outside server** not run by Shoalcade or your Jellyfin (see [Privacy](guides/privacy.md))
 - Optional per-phone **DS wireless ID** switch
-- Snapshots and cheats are off during link play
+- Snapshots, cheats and fast-forward are off during link play
 
 **Settings** (⚙ on the games list)
 - Set **each console** without starting a game: **Screen**, **DS screens**, **Touch buttons** and **Controls**
@@ -180,19 +193,60 @@
 **Save sync** (safety rules under [Saves](#-saves))
 - **Upload save to Jellyfin** and **Get save from Jellyfin** per game
 - **Push all** / **Pull all** (in **Settings**) — every downloaded game brought up to date in one go; any game needing a decision is listed at the end. A running one shows on the games list with **Stop**
+- **Upload saves automatically** (**Settings → Saves**, on by default) — saves made offline go up to Jellyfin **by themselves** once the phone is back online. If Jellyfin's save changed meanwhile, nothing is sent: a notification asks you to choose
 - **Saves on Jellyfin…** panel: version list, **Use this save**, **Pin**, **Name**, **Replace with a file…**, **Save a copy to a file…**
 - Tells you **once** if a phone save belongs to a game that's **no longer in your library**
 - Moves old phone saves across from JellyEMU safely (asks if they differ)
 - **About and licences** screen listing every included part and its source
 
+### 💻 Windows app (new)
+
+> **First release.** It passes our automated tests (including on Windows code run under Wine), but it has **not yet been widely tested on real Windows PCs**. Please report problems on [Discord][discord].
+
+**Getting in and your library**
+- **Log in** with your username and password, or **Use Quick Connect instead**. **HTTPS only**
+- Your login token is protected by **Windows** for your Windows account only, and never logged
+- Box art grid, **Find a game**, console bar, **Sort**, **★ Favourites only**, **⬇ On this PC only** and **play time**, as on the phone
+- **Download** with progress and **Cancel**. Downloaded games play **offline**
+
+**Playing**
+- Each game opens **in its own window**. **Keyboard** and **game controllers**
+- **Pause menu** with the phone's sections: **Game**, **Snapshots**, **Speed**, **Cheats**, **Sound**, **Display**, **Controls**
+- **Fast-forward** 2×, 3× or 4× on **every console**, and **Rewind** on GB, GBC, GBA and PS1
+- **Screenshot** — saved as a picture in your **Pictures** folder
+- **Display:** in a window or full screen, **Whole-number scale**, **Smooth picture**
+- **DS:** the phone's screen layouts with swap; the **mouse is the touch screen**
+- **3DS:** four screen layouts plus **Flip**; the mouse is the touch screen. **3DS check** (⚙ → **3DS check**) only gives advice, it never locks
+- **Controls:** the menu lists every key and controller button. **Changing the buttons comes in a later version**
+
+**Saves** (the phone's own rules, the same code)
+- **A backup before every game.** If the PC and Jellyfin both changed, it **asks**
+- Saves go up **a few seconds after you save in the game**, or **once you're back online** (**Upload saves automatically**)
+- **Close Game** / **Close Game (and Upload)**, **Push all** / **Pull all** (⚙ → **Saves**)
+- The full saves list with the browser's tools: **Use this save**, **Pin**, **Name**, **Move to another game**, **Start fresh**, **Download all my saves**
+- **Snapshots:** **Slot 1–3** plus **Automatic**, kept on your Jellyfin so they follow you between PCs (PSP and 3DS snapshots stay on the PC)
+- **Cheats** you added on the phone or in the browser can be switched on and off in the pause menu (not 3DS)
+- ⚠️ **Needs plugin 0.10.0.0 or newer** to upload saves. With an older plugin, the save **stays on the PC** and waits to go up
+
+**Link play**
+- **GBA** and **DS** on the **same Wi-Fi**, with the PIN: **PC ↔ PC** and **PC ↔ phone**
+- **GBA over the internet** through your own Jellyfin, and **Celio Link** (⚙ → **Link play**, off by default)
+- The first time a PC hosts, **Windows Firewall** asks: **allow it on private networks**, or others can't find the host
+
+**Installer**
+- **No admin needed.** Desktop and Start menu shortcuts
+- **Updates install over the top**
+- **Uninstalling never deletes your saves**: games, saves and login stay in `%LOCALAPPDATA%\Shoalcade\`
+- **About Shoalcade** lists every part, its licence and its source
+
 ### 💾 Saves
 
-- **One save list per game, per person** — shared by the phone and the browser (DS included)
+- **One save list per game, per person** — shared by the phone, the Windows app and the browser (DS included)
 - **Version history:** the last **20**, plus **one a day for 30 days** (admins can change both)
 - **Pin** a version (never cleared out), **Name** it, and see the **In use** badge
 - **Use this save** — makes an older version current. **The save you were using stays in the list**
-- Each version shows **where it came from**: the browser player, the phone app, an uploaded file, JellyEMU (imported) and more
-- **Conflicts always ask, never pick silently.** If the phone and Jellyfin both changed: **Keep the phone's**, **Keep Jellyfin's** or **Decide later**. Both are kept either way
+- Each version shows **where it came from**: the browser player, the phone app, **the Windows app**, an uploaded file, JellyEMU (imported) and more
+- **Conflicts always ask, never pick silently.** If the phone (or PC) and Jellyfin both changed: **Keep the phone's**, **Keep Jellyfin's** or **Decide later**. Both are kept either way
 - **Newer-save check:** before a save would replace a newer one, you're asked, with both dates shown
 - **Backups before every overwrite:** the replaced save goes to Jellyfin's history and the phone's backups first. If that fails, nothing is replaced
 - **Snapshots are kept separate:** loading a snapshot **never changes your save** — only saving in the game does. A save made after loading one is marked **Saved after loading a snapshot**
@@ -208,6 +262,7 @@
 - Open it from the **Shoalcade** link in Jellyfin's menu, or at **`/shoalcade/`** on your server
 - Uses your **Jellyfin web login** — no extra sign-in
 - **Game covers**, **search** and a **Played lately** row; works on phones too
+- **Play time** on each game's sheet ("Played 2 min"), added up with the phone and the PC
 - **★ Starred** chip: star a game from its sheet, and the star shows on the phone too
 - **Console bar:** **All**, **Nintendo ▾** and **Sony ▾** — the menus list each console that has games
 - **Sort** by **Name**, **Year**, **Platform** or **Last played** — remembered per person, on any browser
@@ -296,12 +351,15 @@
 - **Picture uploads** checked by their actual bytes and size
 - Browser pages: strict security policy (they can only talk to your server), no HTML built from game names
 - **App:** HTTPS only, token encrypted with the **Android Keystore**, never logged, never in a web address
+- **Windows app:** HTTPS only, token protected by Windows for your account (DPAPI), never logged. The game player never sees the token
+- **Internet link play:** only your Jellyfin users can open or join a room, the PIN never leaves the devices, and link data is never stored or logged
 
 ### 🕶️ Privacy
 
 - **No analytics, no tracking, no ads, no accounts with us**
 - The only outside contact is **your server → libretro**, for game names and box art. No ROMs, hashes, saves or user names are sent
-- The app talks **only to your Jellyfin server** (and to the other phone during link play)
+- The phone and Windows apps talk **only to your Jellyfin server** (and to the other player during link play)
+- **One opt-in exception: Celio Link.** It's **off** until you switch it on. When used, link data and your IP address go to the **Celio Link server**, which is not run by Shoalcade or your Jellyfin
 - The **patcher** never sends your files anywhere: it runs in your browser
 - Full detail: [Privacy](guides/privacy.md)
 
@@ -313,14 +371,16 @@
 |---|---|
 | **Server** | **Jellyfin 12.3 or newer** (tested on 12.3 and 12.4), an admin account, and an **HTTPS** address (the app won't use plain HTTP) |
 | **Phone app** | **Android 11+** on a **64-bit ARM** phone (almost every phone from the last few years) |
+| **Windows app** (new) | **Windows 10 or 11, 64-bit** (x64), about **240 MB** of disk space plus your games. Saves from Windows need plugin **0.10.0.0 or newer** |
 | **Browser player** | A modern browser (Chrome, Edge, Firefox, Safari) on a computer, tablet or phone |
 | **Games** | Your own games, in a folder Jellyfin can read |
+| **Internet link play** | Both players logged in to the **same Jellyfin**, each user allowed **remote connections** |
 
 ---
 
 ## Install
 
-**Four steps:** install the plugin on Jellyfin → make a games library → install the app → log in.
+**Four steps:** install the plugin on Jellyfin → make a games library → install the app → log in. **Step 5** (the Windows app) is optional.
 **Moving from JellyEMU?** Read [Moving from JellyEMU](guides/moving-from-jellyemu.md) **first**. Full detail and pictures: [Install guide](guides/install.md).
 
 ### 1. Install the plugin on your Jellyfin server
@@ -392,6 +452,22 @@
 
 **Browser player:** open the **Shoalcade** link in Jellyfin's menu, or go to `https://<your-server>/shoalcade/`.
 
+### 5. Install the Windows app (optional, new)
+
+> **First Windows release:** not yet widely tested on real PCs. Your saves are kept safe by the same rules as the phone.
+
+1. **Update the plugin to 0.10.0.0 or newer first** (step 1). Older plugins don't accept saves from Windows
+2. Download **`ShoalcadeApp-win-Setup.exe`** from the [latest release](https://github.com/BBBannon/Shoalcade/releases/latest)
+3. Run it. The installer is **not signed yet**, so Windows SmartScreen says **"Windows protected your PC"**:
+   - Click **More info** → **Run anyway**
+4. It installs **for your Windows account only** (no admin needed), with Desktop and Start menu shortcuts
+5. Open **Shoalcade**, type your server's **HTTPS** address, and **Log in** (or **Use Quick Connect instead**)
+6. Click **Download** on a game → **Play**
+
+- **Updating:** run the new `ShoalcadeApp-win-Setup.exe` over the old one. Your login, games and saves stay.
+- **Uninstalling** (Windows **Settings → Apps**) keeps your games, saves and login in `%LOCALAPPDATA%\Shoalcade\`. Saves not yet uploaded are only there.
+- **Link play:** the first time the PC hosts, allow Shoalcade on **private networks** when Windows Firewall asks.
+
 ---
 
 ## FAQ
@@ -403,7 +479,16 @@ Shoalcade is an emulator front-end with **no games inside** and **no help findin
 It's a hobby project that plays your own files from your own server. You install the APK from [GitHub Releases](https://github.com/BBBannon/Shoalcade/releases). Updates install over the top and keep your games and saves.
 
 **Does it work offline?**
-**Yes.** Once a game is on your phone, it plays with no network at all. Upload your save when you're back online. The browser player needs your server.
+**Yes.** Once a game is on your phone or PC, it plays with no network at all. Saves go up by themselves when you're back online (**Upload saves automatically**, on by default). The browser player needs your server.
+
+**Is there a Windows version?**
+**Yes, new in v0.10.0.** It does what the phone app does: log in, library, download, play offline, saves synced with the phone and the browser, and link play with phones. It's the **first release**, so expect rough edges and please report them. See [Windows app](#-windows-app-new) and [Install step 5](#5-install-the-windows-app-optional-new).
+
+**Windows says "Windows protected your PC". Is that safe?**
+The installer isn't **code-signed** yet, so SmartScreen warns about it. Click **More info → Run anyway**. Only do this for `ShoalcadeApp-win-Setup.exe` downloaded from this project's [Releases](https://github.com/BBBannon/Shoalcade/releases).
+
+**Can I trade over the internet?**
+**Yes, GBA only.** **Link play → Host over the internet** gives a room code and PIN. It runs **through your own Jellyfin**, so both players log in to the same server. See [Internet link play](guides/internet-link-play.md). To trade with someone using **Celio Link** on a PC, switch on **Celio Link** in Settings (it uses an outside server).
 
 **Where are my saves, and are they safe?**
 On your Jellyfin server, one list per game per person, with **version history** (last 20, plus one a day for 30 days). Nothing is replaced without a copy first. Back up Jellyfin's data folder (`shoalcade/` inside it) like the rest of Jellyfin.
@@ -412,7 +497,7 @@ On your Jellyfin server, one list per game per person, with **version history** 
 The app **asks**: **Keep the phone's**, **Keep Jellyfin's** or **Decide later**. It never picks silently, and both copies are kept either way.
 
 **Do snapshots sync?**
-No. Only **in-game saves** sync. Snapshots stay where you made them (phone or browser), and loading one never changes your save.
+No. Only **in-game saves** sync. Snapshots stay where you made them (phone, browser or Windows app), and loading one never changes your save. Windows snapshots are kept on your Jellyfin, so they follow you between PCs.
 
 **Can I use cheats?**
 Yes — your own codes, in the browser player's **Cheats** tab or the app's side menu → **Cheats**. Saves made with cheats on are marked, and your save from before cheats is kept. See [Cheats](#-cheats).
@@ -427,10 +512,10 @@ Yes — it uses **Jellyfin's own users**. Each person has their own saves. Jelly
 **GB, GBC, GBA, N64, DS, 3DS, PS1 and PSP.** Each console is a lot of work to make safe for saves, so the list is small for now. Other consoles may come later; their files stay on your server untouched.
 
 **Will 3DS work on my phone?**
-**Probably, on a recent phone.** 3DS is heavy, so the app runs a one-minute **3DS check** first (Settings → 3DS check) and unlocks 3DS if your phone keeps up. Recent high-end phones pass at full speed. 3DS plays in the phone app only, not in the browser.
+**Probably, on a recent phone.** 3DS is heavy, so the app runs a one-minute **3DS check** first (Settings → 3DS check) and unlocks 3DS if your phone keeps up. Recent high-end phones pass at full speed. 3DS plays in the phone app and the Windows app, not in the browser. On Windows the check is advice only and never locks 3DS.
 
 **Is there an iPhone version?**
-No. The app is **Android only**. The browser player runs in a modern browser, but iPhone and iPad aren't tested.
+No. The apps are **Android and Windows only** (no Mac or Linux app either). The browser player runs in a modern browser, but iPhone and iPad aren't tested.
 
 **Do I need JellyEMU? I already use it.**
 **No.** Shoalcade replaces JellyEMU. It can import your JellyEMU saves (read-only) and stays out of the way while JellyEMU is installed. Follow [Moving from JellyEMU](guides/moving-from-jellyemu.md).
@@ -440,6 +525,7 @@ Only requests from **your server to libretro**, for game names and box art. No R
 
 **What happens if I uninstall the app?**
 Everything on the phone goes: games, **phone saves** and snapshots. Saves you uploaded stay on Jellyfin. **Use Push all first** (**Settings → Push all**).
+**Windows app:** uninstalling **keeps** your games, saves and login in `%LOCALAPPDATA%\Shoalcade\`. Delete that folder yourself only after **Push all**.
 
 **I'm getting a new phone. How do I move over?**
 On the old phone: **Settings → Push all**. On the new phone: install the app, log in, download your games. Your saves come from Jellyfin. (The app isn't included in Android's cloud backup or phone-to-phone copy, because your login only works on the phone that made it.)
@@ -475,6 +561,10 @@ Yes, if you're a Jellyfin admin: browser library → game → **Edit game**. Use
 | **3DS game says "Run the 3DS check first"** | Settings → **3DS check** → Start. If it says too slow, **Unlock anyway** is there if you want to try |
 | **No box art** | Wait for the next scan. Some games have no libretro art — an admin can use **Find a cover** or **Upload a picture** |
 | **Browser player won't load** | Refresh with **Ctrl+F5**. Check an admin hasn't turned the browser player off |
+| **Windows: "Windows protected your PC"** | The installer isn't signed yet. Click **More info → Run anyway** |
+| **Windows: saves won't upload** ("doesn't take saves from Windows yet") | Update the plugin to **0.10.0.0 or newer** and do a full restart of Jellyfin. The save waits safely on the PC until then |
+| **Link play: the other player can't find the PC** | Allow Shoalcade on **private networks** in Windows Firewall. Check both are on the same Wi-Fi (not a VPN). Or type the host's address |
+| **Internet link stalls or drops every minute** | Usually a reverse-proxy setting. See [Internet link play](guides/internet-link-play.md) |
 
 ---
 
@@ -508,6 +598,17 @@ server/build.sh                    # → dist/server/Shoalcade_s<version>.zip
 
 - Install the zip by hand: unzip into Jellyfin's `plugins/Shoalcade_<version>/` folder, then restart Jellyfin.
 
+### Windows app
+
+- **Code:** `windows/app/` (Kotlin + Compose Desktop, sharing the phone app's save code), `windows/player/` (the game player, C++ + SDL3), `windows/installer/`.
+- **Builds on Linux, or Windows with MSYS2** (Git Bash with MSYS2's MinGW-w64), cross-compiling with **MinGW-w64**.
+- **Needs:** MinGW-w64, CMake + Ninja, JDK 17, the .NET SDK, python3, curl and zip, plus the SDL3 MinGW kit and the Windows emulator cores. The script's header lists every need; it downloads Java and Velopack itself (SHA-256 pinned).
+- **Cores** are checked against `windows/cores/cores.lock`. To build them yourself: `tools/build_windows_cores.sh` (slow).
+
+```bash
+tools/build_windows_release.sh release   # → dist/windows/release/ (Setup.exe)
+```
+
 ---
 
 ## Community
@@ -538,12 +639,17 @@ server/build.sh                    # → dist/server/Shoalcade_s<version>.zip
 | Part | Used for | Licence |
 |---|---|---|
 | **LibretroDroid** | App emulator front-end | GPL-3.0 |
-| **mGBA** | GB, GBC, GBA (app and browser) | MPL-2.0 |
-| **melonDS DS** / **melonDS** | DS (app / browser) | GPL-3.0 |
-| **gpSP** | GBA link play (app) | GPL-2.0-or-later |
-| **PPSSPP** | PSP (app) | GPL-2.0-or-later |
-| **PCSX ReARMed** | PS1 (app and browser) | GPL-2.0-or-later |
-| **Azahar** (our own build, small patches) | 3DS (app) | GPL-3.0-or-later |
+| **mGBA** | GB, GBC, GBA (apps and browser) | MPL-2.0 |
+| **melonDS DS** / **melonDS** | DS (apps / browser) | GPL-3.0 |
+| **gpSP** | GBA link play (apps) | GPL-2.0-or-later |
+| **PPSSPP** | PSP (apps) | GPL-2.0-or-later |
+| **PCSX ReARMed** | PS1 (apps and browser) | GPL-2.0-or-later |
+| **Azahar** (our own build, small patches) | 3DS (apps) | GPL-3.0-or-later |
+| **SDL 3** | Windows game player: window, sound, controllers | zlib |
+| **Dear ImGui** | Windows pause menu | MIT |
+| **Compose Multiplatform** | Windows app screens | Apache-2.0 |
+| **Eclipse Temurin** | Java runtime inside the Windows app | GPL-2.0 with the Classpath Exception |
+| **Velopack** | Windows installer | MIT |
 | **Argosy's Vulkan LibretroDroid** | 3DS front-end (app) | GPL-3.0 |
 | **EmulatorJS** | Browser player | GPL-3.0 |
 | **RomPatcher.js** | Patch a game (browser) | MIT |
@@ -551,7 +657,7 @@ server/build.sh                    # → dist/server/Shoalcade_s<version>.zip
 | **libretro-database** | Game names (downloaded by your server, not shipped) | CC-BY-SA-4.0 |
 | **libretro-thumbnails** | Box art (downloaded by your server, not shipped) | Art belongs to the games' publishers |
 
-- Every part, version and source: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+- Every part, version and source: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The Windows app lists all of its parts under **About Shoalcade** and in `licences\` and `SOURCE.txt` in its install folder
 - Full licence detail: [docs/licences.md](docs/licences.md)
 - Built with help from [Claude Code](https://claude.com/claude-code).
 
@@ -559,8 +665,8 @@ server/build.sh                    # → dist/server/Shoalcade_s<version>.zip
 
 ## Disclaimer
 
-- Shoalcade is **not affiliated with or endorsed by** Jellyfin, Nintendo or Sony.
-- Jellyfin is a trademark of Jellyfin, Inc. Nintendo, Game Boy, Nintendo 64, Nintendo DS, Nintendo 3DS, Sony, PlayStation and PSP are trademarks of their owners.
+- Shoalcade is **not affiliated with or endorsed by** Jellyfin, Nintendo, Sony or Microsoft.
+- Jellyfin is a trademark of Jellyfin, Inc. Nintendo, Game Boy, Nintendo 64, Nintendo DS, Nintendo 3DS, Sony, PlayStation, PSP, Microsoft and Windows are trademarks of their owners.
 - Shoalcade is provided **as is, with no warranty** (see [LICENSE](LICENSE)). **Back up your saves.**
 
 <!-- Discord invite: change it here only. -->

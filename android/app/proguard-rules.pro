@@ -1,7 +1,7 @@
 # Shoalcade release keep rules (D125). R8 shrinks, optimises and renames everything not listed here.
 # Libraries that ship their own rules (Compose, AndroidX lifecycle/activity, coroutines, Tink via security-crypto)
 # are not repeated. The app's own JSON is hand-parsed with org.json (no reflection), networking is HttpURLConnection
-# (no OkHttp/Retrofit), and there are no Parcelable/Serializable classes, WebView JS bridges or ServiceLoader uses.
+# (OkHttp only for Celio Link's WebSocket; it ships its own rules), and there are no Parcelable/Serializable classes, WebView JS bridges or ServiceLoader uses.
 # Manifest entries (activities, service, application) are kept automatically by AAPT's generated rules.
 
 # --- LibretroDroid (emulator front-end, GPL-3.0) ---

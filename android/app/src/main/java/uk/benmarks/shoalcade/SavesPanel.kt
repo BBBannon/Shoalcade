@@ -37,6 +37,7 @@ internal fun formatTimeExact(ms: Long): String = DateFormat.getDateTimeInstance(
 private fun sourceLabel(s: String) = when (s) {
     "browser" -> "the browser player"
     "app" -> "the phone app"
+    "desktop" -> "the Windows app"
     "upload" -> "an uploaded file"
     "restore" -> "an older version"
     "jellyemu" -> "JellyEMU (imported)"

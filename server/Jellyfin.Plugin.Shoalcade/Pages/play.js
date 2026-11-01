@@ -666,6 +666,73 @@
   const SNAP_SLOTS = ["1", "2", "3", "auto"];
   const AUTO_GAP_MS = 60000;   // least time between automatic snapshots when the tab is hidden
 
+  // ---------------------------------------------------------------------------------------------
+  // Play time: adds to the same total as the phone app. Only time really playing counts: game running, not
+  // paused (the toolbar Pause and the save-clash question pause it), tab visible. Fast-forward counts as wall-clock
+  // time. Sent every few minutes while playing, when the tab is hidden and when the page closes; each send is its
+  // own session id, and a send that failed is sent again with the same id (the server counts an id once only).
+  // ---------------------------------------------------------------------------------------------
+  const PLAY_SEND_MS = 5 * 60 * 1000; // a crashed tab loses at most this much
+  const PLAY_MIN_SECONDS = 10;        // shorter bits are kept until there's more (and dropped on close)
+
+  function sessionId() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+    const b = new Uint8Array(16);
+    window.crypto.getRandomValues(b);
+    return Array.from(b, x => x.toString(16).padStart(2, "0")).join("");
+  }
+
+  class PlayClock {
+    /** send(sessions, keepalive) -> Promise; now() -> ms (both swappable for tests). */
+    constructor(send, now) {
+      this.sendFn = send;
+      this.now = now || (() => Date.now());
+      this.since = 0;     // when the current playing stretch began, 0 = not playing now
+      this.ms = 0;        // played and not yet made into a session
+      this.pending = [];  // sessions made but not yet confirmed by the server
+      this.sending = null;
+    }
+
+    /** Playing or not, right now. Call on every change (start, pause, resume, tab shown/hidden, exit). */
+    update(on) {
+      const t = this.now();
+      if (on && !this.since) this.since = t;
+      else if (!on && this.since) {
+        this.ms += Math.max(0, t - this.since);
+        this.since = 0;
+      }
+    }
+
+    /**
+     * Makes a session of the time so far (if 10 s or more) and sends everything not yet confirmed.
+     * opts.keepalive: the page may be going away (tab hidden or closing). opts.final: the page is closing, so time
+     * under 10 seconds is dropped instead of kept for later.
+     */
+    flush(opts) {
+      opts = opts || {};
+      const playing = !!this.since;
+      this.update(false);
+      if (playing) this.update(true);
+      const seconds = Math.round(this.ms / 1000);
+      if (seconds >= PLAY_MIN_SECONDS) {
+        this.ms = 0;
+        this.pending.push({ id: sessionId(), seconds: Math.min(seconds, 24 * 3600), endedAt: this.now() });
+      } else if (opts.final) {
+        this.ms = 0; // under 10 seconds: not worth counting
+      }
+      // A send already going is left to finish, unless the page may be going away (sending the same ids twice is safe).
+      if (!this.pending.length || (this.sending && !opts.keepalive)) return this.sending || Promise.resolve();
+      const batch = this.pending.slice(0, 100);
+      const run = Promise.resolve()
+        .then(() => this.sendFn(batch, !!opts.keepalive))
+        .then(() => { this.pending = this.pending.filter(x => !batch.includes(x)); },
+          e => { console.warn("Shoalcade: play time not sent yet", e && e.message); })
+        .finally(() => { if (this.sending === run) this.sending = null; });
+      this.sending = run;
+      return run;
+    }
+  }
+
   class Player {
     constructor(container) {
       this.container = container;
@@ -689,6 +756,18 @@
       this.cheatsNote = "";      // why cheats aren't available, if they aren't
       this.cheatsUsed = false;   // a cheat was on since the last save reached the server (that save is marked)
       this.appliedCodes = [];    // codes the core has now (browser DS can't take one back until the game is started again)
+      this.playClock = null;     // play time (made when the game starts)
+      this.playTimer = 0;
+    }
+
+    /** Whether play time counts right now. */
+    isPlaying() {
+      return this.running && !this.paused && document.visibilityState === "visible";
+    }
+
+    /** Tells the play clock whether the game is being played now. */
+    playChanged() {
+      if (this.playClock) this.playClock.update(this.isPlaying());
     }
 
     /** Tries the settings load again later (5 s, 15 s, 30 s, 60 s, then every 2 minutes). */
@@ -832,6 +911,8 @@
       window.addEventListener("beforeunload", e => this.onBeforeUnload(e), true);
       window.addEventListener("pagehide", () => this.onPageHide());
       document.addEventListener("visibilitychange", () => {
+        this.playChanged();
+        if (document.visibilityState === "hidden" && this.playClock) this.playClock.flush({ keepalive: true });
         if (document.visibilityState !== "hidden" || !this.running) return;
         this.sync.flush({});
         if (Date.now() - this.lastAuto > AUTO_GAP_MS) this.autoSnapshot().catch(() => {});
@@ -872,7 +953,7 @@
         if (this.serverSave.bytes) FS.writeFile(this.savePath, this.serverSave.bytes);
       });
       emu.on("start", () => this.onStart());
-      emu.on("exit", () => { this.running = false; });
+      emu.on("exit", () => { this.running = false; this.playChanged(); });
       // EmulatorJS shows its own error text in the game area; report it too.
       const startGameError = emu.startGameError.bind(emu);
       emu.startGameError = msg => { startGameError(msg); this.fail(new Error("The emulator couldn't start: " + msg)); };
@@ -894,6 +975,10 @@
       this.input = new Input(this.game.console, this.prefs.controls, (id, v, pl) => this.emu.gameManager.simulateInput(pl || 0, id, v));
       this.input.attach();
       this.running = true;
+      const itemId = this.itemId;
+      this.playClock = new PlayClock((sessions, keepalive) => api.addPlayTime(itemId, sessions, { keepalive }));
+      this.playChanged();
+      this.playTimer = setInterval(() => this.playClock.flush(), PLAY_SEND_MS);
       this.sync.start();
       this.setState("playing");
       if (this.startSnapshot) {
@@ -949,6 +1034,7 @@
     async pause() {
       if (this.paused || !this.emu) return;
       this.paused = true;
+      this.playChanged();
       if (this.input) this.input.setEnabled(false);
       if (this.ff) this.fastForward(false);
       let picture = null;
@@ -966,6 +1052,7 @@
       const was = this.paused;
       this.paused = false;
       this.emu.play(true);
+      this.playChanged();
       if (this.input) this.input.setEnabled(true);
       if (was) this.emit("paused", { paused: false });
     }
@@ -1342,10 +1429,14 @@
 
     onPageHide() {
       if (this.running && this.sync) this.sync.flush({ closing: true });
+      if (this.playClock) {
+        this.playClock.update(false);
+        this.playClock.flush({ keepalive: true, final: true });
+      }
     }
   }
 
   window.SC.Player = Player;
   window.SC.controls = { RETRO, RETRO_BY_CONSOLE, BUTTONS, DEFAULT_KEYS, DEFAULT_PAD, defaultKeys, defaultPad, MULTIPLAYER, STANDARD, buildMap, isHeld: Input.isHeld };
-  window.SC._test = { meaningfulChange, sameBytes, buildMap, Input, SnapshotGuard, cheatForCore };
+  window.SC._test = { meaningfulChange, sameBytes, buildMap, Input, SnapshotGuard, cheatForCore, PlayClock };
 })();

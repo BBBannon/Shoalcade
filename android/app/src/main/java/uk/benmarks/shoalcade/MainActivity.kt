@@ -7,26 +7,32 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -161,6 +167,7 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     var filter by remember { mutableStateOf<ConsoleFilter>(ConsoleFilter.All) }
+    var search by rememberSaveable { mutableStateOf("") } // not kept between launches, only across rotation
     var lastPlay by remember { mutableStateOf(0L) } // ignore double-taps on Play
     var getSaveGame by remember { mutableStateOf<Game?>(null) }
     var savesPanelGame by remember { mutableStateOf<Game?>(null) }
@@ -248,14 +255,45 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
 
             SyncAllProgress(vm) // a running Push all / Pull all stays in sight and stoppable (buttons in Settings, D132)
 
+            // Games downloaded to this phone (same truth as the "On phone" badge); recomputed when files change.
+            val onPhone = remember(vm.games, vm.diskVersion) { vm.games.filter { Storage.isDownloaded(it) }.mapTo(HashSet()) { it.id } }
+            // The last download removed: the toggle goes off rather than coming back on with the next download (as Favourites).
+            LaunchedEffect(onPhone) { if (vm.onPhoneOnly && vm.games.isNotEmpty() && onPhone.isEmpty()) vm.chooseOnPhoneOnly(false) }
+
+            if (vm.games.isNotEmpty()) {
+                // Starts unfocused, so no keyboard on app start; the keyboard's Search key just hides it.
+                val focus = LocalFocusManager.current
+                OutlinedTextField(
+                    value = search, onValueChange = { search = it }, singleLine = true,
+                    placeholder = { Text("Find a game") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    trailingIcon = if (search.isEmpty()) null else {
+                        { IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, "Clear search") } }
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                        .semantics { contentDescription = "Search games" },
+                )
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 12.dp)) {
                     FilterChip(filter == ConsoleFilter.All, { filter = ConsoleFilter.All }, { Text("All") }, Modifier.padding(end = 6.dp))
+                    // On/off, works with the console chips, remembered per user. Hidden with no starred games.
                     if (vm.games.any { it.favourite }) {
-                        FilterChip(filter == ConsoleFilter.Starred, { filter = ConsoleFilter.Starred }, { Text("★ Starred") }, Modifier.padding(end = 6.dp))
+                        FilterChip(vm.favouritesOnly, { vm.chooseFavouritesOnly(!vm.favouritesOnly) }, { Text(LibraryFilter.FAVOURITES) },
+                            Modifier.padding(end = 6.dp).semantics {
+                                contentDescription = "Show only Favourites, " + if (vm.favouritesOnly) "on" else "off"
+                            })
                     }
-                    // The last star removed: back to All rather than an empty list.
-                    LaunchedEffect(vm.games) { if (filter == ConsoleFilter.Starred && vm.games.none { it.favourite }) filter = ConsoleFilter.All }
+                    // Same, for games playable offline. Hidden unless some games are on the phone and some aren't.
+                    if (onPhone.isNotEmpty() && onPhone.size < vm.games.size) {
+                        FilterChip(vm.onPhoneOnly, { vm.chooseOnPhoneOnly(!vm.onPhoneOnly) }, { Text(LibraryFilter.ON_PHONE) },
+                            Modifier.padding(end = 6.dp).semantics {
+                                contentDescription = "Show only games on this phone, " + if (vm.onPhoneOnly) "on" else "off"
+                            })
+                    }
                     // Nintendo ▾ / Sony ▾ menus and plain chips, only consoles that have games.
                     val bar = remember(vm.games) { ConsoleBar.items(vm.games.mapNotNull { it.console }.toSet()) }
                     bar.forEach { item ->
@@ -272,16 +310,21 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
             }
 
             // diskVersion: bumped on return from a game, so a game just played moves up under "Last played".
-            val shown = remember(vm.games, filter, vm.sort, vm.diskVersion) {
-                vm.sorted(vm.games.filter { if (filter == ConsoleFilter.Starred) it.favourite else filter.matches(it.console) })
-            }
+            val lf = LibraryFilter(filter, vm.favouritesOnly, vm.onPhoneOnly, search)
+            val shown = remember(vm.games, lf, onPhone, vm.sort, vm.diskVersion) { vm.sorted(lf.shown(vm.games, onPhone)) }
             if (shown.isEmpty() && !vm.loading) {
                 Text(
-                    if (vm.offline) "Offline and no saved game list yet." else "No games found on this server.",
+                    if (vm.games.isNotEmpty()) lf.emptyMessage(vm.games, onPhone)
+                    else if (vm.offline) "Offline and no saved game list yet." else "No games found on this server.",
                     Modifier.padding(24.dp),
                 )
             }
-            LazyColumn(Modifier.fillMaxSize()) {
+            // Back to the top when the filter, search, sort or first game changes (LibraryFilter.topKey).
+            val listState = rememberLazyListState()
+            val topKey = lf.topKey(vm.sort, shown)
+            var lastTopKey by rememberSaveable { mutableStateOf(topKey) }
+            LaunchedEffect(topKey) { if (topKey != lastTopKey) { lastTopKey = topKey; listState.scrollToItem(0) } }
+            LazyColumn(Modifier.fillMaxSize(), state = listState) {
                 items(shown, key = { it.id }) { g ->
                     GameRow(g, vm, onDownload = { download(g) },
                         onPlay = {
@@ -315,7 +358,7 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
     getSaveGame?.let { game -> GetSaveDialog(vm, game) { getSaveGame = null } }
     savesPanelGame?.let { game -> SavesPanel(vm, game) { savesPanelGame = null } }
     vm.conflictPrompt?.let { (game, server) -> ConflictDialog(vm, game, server) }
-    linkGame?.let { game -> LinkDialog(game, vm.session!!.userId) { linkGame = null } }
+    linkGame?.let { game -> LinkDialog(game, vm.session!!.userId, relay = vm.linkRelay()) { linkGame = null } }
     launchGame?.let { game ->
         LaunchChoiceDialog(game, vm.session!!.userId, onStart = { snapshot ->
             launchGame = null
@@ -380,6 +423,7 @@ private fun GameRow(
     onUpload: () -> Unit, onGetSave: () -> Unit, onSavesPanel: () -> Unit, onLink: () -> Unit,
 ) {
     val downloaded = remember(g.id, vm.diskVersion) { Storage.isDownloaded(g) }
+    val played = remember(g, vm.diskVersion) { PlayTime.label(vm.playSeconds(g)) }
     val prog = vm.progress[g.id]
     val conflict = g.id in vm.conflicts
     var menu by remember { mutableStateOf(false) }
@@ -400,10 +444,12 @@ private fun GameRow(
                         g.console?.shortName ?: "Unknown console",
                         if (downloaded) "On phone" else null,
                         if (!downloaded) lock3ds else null,
+                        played,
                     ).joinToString(" · ")
                 )
                 if (conflict) {
-                    TextButton(onClick = { vm.askConflict(g) }, contentPadding = PaddingValues(0.dp)) {
+                    // Square, not the usual pill: with no padding the pill's round ends cut into the wrapped second line.
+                    TextButton(onClick = { vm.askConflict(g) }, contentPadding = PaddingValues(0.dp), shape = RectangleShape) {
                         Text("⚠️ Phone and Jellyfin saves differ: choose", color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -432,7 +478,9 @@ private fun GameRow(
                         }
                         if (downloaded) {
                             if (LinkRules.supports(g.console)) {
-                                DropdownMenuItem({ Text("Link play (same Wi-Fi)") }, { menu = false; onLink() })
+                                // GBA's Link play also offers the internet and Celio Link (D176, D177); DS is Wi-Fi only.
+                                val linkLabel = if (g.console == Console.GBA) "Link play" else "Link play (same Wi-Fi)"
+                                DropdownMenuItem({ Text(linkLabel) }, { menu = false; onLink() })
                             }
                             DropdownMenuItem({ Text("Upload save to Jellyfin") }, { menu = false; onUpload() })
                             DropdownMenuItem({ Text("Get save from Jellyfin") }, { menu = false; onGetSave() })

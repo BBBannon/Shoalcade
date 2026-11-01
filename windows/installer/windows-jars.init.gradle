@@ -1,0 +1,72 @@
+// Shoalcade for Windows packaging: a Gradle init script, so the app's own build file stays as it is.
+// Part of Shoalcade, GPL-3.0-or-later. Used by tools/build_windows_release.sh:
+//
+//   ./gradlew -I windows/installer/windows-jars.init.gradle shoalcadeWindowsJars -Pshoalcade.winjars.out=<dir>
+//
+// Adds the task shoalcadeWindowsJars to the Compose app project. It writes to <dir>:
+//   app/                every jar the app runs with: the app's own jar plus its runtime classpath, with the Linux Skiko
+//                       native jar swapped for the Windows x64 one (same Skiko version, found from the resolved graph)
+//   classpath.txt       the jar file names, the app's own jar first
+//   launch.txt          main=<main class> and opt=<JVM option> lines from compose.desktop.application (the same
+//                       settings the Compose packaging uses), for the launcher's launcher.cfg
+//   modules.txt         group:name:version of every jar, for the licence notices
+//   skiko.txt           the Skiko version
+//   jdk-modules.txt     the Java modules for jlink: Compose's default runtime modules (java.base, java.desktop,
+//                       java.logging, jdk.crypto.ec) plus nativeDistributions.modules from the app's build
+allprojects { p ->
+    p.pluginManager.withPlugin('org.jetbrains.compose') {
+        p.afterEvaluate {
+            p.tasks.register('shoalcadeWindowsJars') {
+                dependsOn 'jar'
+                doLast {
+                    def outProp = p.findProperty('shoalcade.winjars.out')
+                    if (!outProp) throw new GradleException('-Pshoalcade.winjars.out=<dir> is required')
+                    def out = new File(outProp.toString())
+                    def appOut = new File(out, 'app')
+                    p.delete(appOut)
+                    appOut.mkdirs()
+
+                    def arts = p.configurations.getByName('runtimeClasspath').resolvedConfiguration.resolvedArtifacts
+                    def linuxSkiko = arts.findAll { it.moduleVersion.id.group == 'org.jetbrains.skiko' && it.name.startsWith('skiko-awt-runtime-') }
+                    // The build host's own Skiko (compose.desktop.currentOs): Linux x64, or Windows x64 on Windows itself.
+                    if (linuxSkiko.size() != 1 || !(linuxSkiko[0].name in ['skiko-awt-runtime-linux-x64', 'skiko-awt-runtime-windows-x64']))
+                        throw new GradleException("expected exactly one Linux or Windows x64 Skiko runtime, found: ${linuxSkiko*.name}")
+                    def skikoVersion = linuxSkiko[0].moduleVersion.id.version
+                    def winConf = p.configurations.detachedConfiguration(
+                        p.dependencies.create("org.jetbrains.skiko:skiko-awt-runtime-windows-x64:${skikoVersion}"))
+                    winConf.transitive = false
+                    def winSkiko = winConf.resolvedConfiguration.resolvedArtifacts
+
+                    def mainJar = p.tasks.getByName('jar').archiveFile.get().asFile
+                    def names = [mainJar.name]
+                    def modules = []
+                    p.copy { from mainJar; into appOut }
+                    def seen = [mainJar.name] as Set
+                    (arts.findAll { !(it in linuxSkiko) } + winSkiko).each { a ->
+                        def id = a.moduleVersion.id
+                        def name = a.file.name
+                        if (!seen.add(name)) throw new GradleException("two jars named ${name}")
+                        p.copy { from a.file; into appOut }
+                        names << name
+                        modules << "${id.group}:${id.name}:${id.version}"
+                    }
+                    // Nothing for another OS may be left (a second platform's native jar would be dead weight).
+                    def stray = modules.findAll { it =~ /(linux|macos|darwin)/ }
+                    if (stray) throw new GradleException("non-Windows native jars on the classpath: ${stray}")
+
+                    def app = p.extensions.getByName('compose').desktop.application
+                    def lines = ["main=${app.mainClass}"]
+                    app.jvmArgs.each { lines << "opt=${it}" }
+                    new File(out, 'classpath.txt').text = names.join('\n') + '\n'
+                    new File(out, 'launch.txt').text = lines.join('\n') + '\n'
+                    new File(out, 'modules.txt').text = modules.sort().join('\n') + '\n'
+                    new File(out, 'skiko.txt').text = skikoVersion + '\n'
+                    def jdkModules = (['java.base', 'java.desktop', 'java.logging', 'jdk.crypto.ec'] +
+                        (app.nativeDistributions.modules as List)).unique()
+                    new File(out, 'jdk-modules.txt').text = jdkModules.join(',') + '\n'
+                    println "shoalcadeWindowsJars: ${names.size()} jars, Skiko ${skikoVersion} (windows-x64), main ${app.mainClass}"
+                }
+            }
+        }
+    }
+}

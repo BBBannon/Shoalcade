@@ -21,13 +21,13 @@ Your ROM files are never touched. JellyEMU's save files are only read.
 
 ## Games that will disappear
 
-Shoalcade shows **GB, GBC, GBA, DS, PS1, PSP and 3DS** only.
+Shoalcade shows **GB, GBC, GBA, N64, DS, PS1, PSP and 3DS** only.
 **PS1:** only one `.chd` or `.pbp` file per game stays. PS1 games as `.bin/.cue`, `.iso`, archives or disc folders leave the list (files untouched).
 Games for **every other console JellyEMU listed** leave the library. **Their files stay on your server.**
 
 | Group | Consoles that disappear |
 |---|---|
-| Nintendo | NES, SNES, N64, Virtual Boy, GameCube, Wii, Wii U, Switch |
+| Nintendo | NES, SNES, Virtual Boy, GameCube, Wii, Wii U, Switch |
 | Sega | Master System, Game Gear, Genesis / Mega Drive, Sega CD, 32X, Saturn, Dreamcast |
 | Sony | PlayStation 2, PlayStation 3, PS Vita (and PS1 games that aren't `.chd`/`.pbp`) |
 | Atari | 2600, 5200, 7800, Jaguar, Lynx |

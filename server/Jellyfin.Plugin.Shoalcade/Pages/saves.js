@@ -19,6 +19,7 @@
   const SOURCE = {
     browser: "the browser player",
     app: "the phone app",
+    desktop: "the Windows app",
     upload: "an uploaded file",
     restore: "an older version",
     jellyemu: "JellyEMU (imported)",

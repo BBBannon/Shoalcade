@@ -191,7 +191,7 @@ class GameActivity : ComponentActivity() {
         // F5 App Mute: the core only exists once it runs, and a setting made before then is lost, so the sound is set
         // again on the first frame (below) and each time the game comes back to the front.
         lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
-            override fun onResume(owner: androidx.lifecycle.LifecycleOwner) { if (ready) applySound() }
+            override fun onResume(owner: androidx.lifecycle.LifecycleOwner) { if (ready) applySound(); onScreen = true; updatePlayClock() }
         })
 
         // Orientation (D128/D129): PSP is always landscape; the rest follow the menu's Screen choice (Turn with the phone at first).
@@ -225,6 +225,17 @@ class GameActivity : ComponentActivity() {
             setOnClickListener { openDrawer() }
             setOnTouchListener(MenuDrag(16f * dm.density) { openDrawer() })
         }
+        // Fast-forward touch button beside the Menu handle (placed by placeMenu; none in a link session or with no room).
+        ffButton = TextView(this).apply {
+            gravity = Gravity.CENTER
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            includeFontPadding = false
+            maxLines = 1
+            isClickable = true
+            isFocusable = false // as the Menu handle: controllers use the menu
+            visibility = android.view.View.GONE
+            setOnClickListener { toggleFastForward() }
+        }
 
         // One root for every layout (D128): only sizes and places change when the phone turns, so the game never restarts.
         root = FrameLayout(this).apply {
@@ -232,6 +243,7 @@ class GameActivity : ComponentActivity() {
             addView(retroView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(menuHandle, FrameLayout.LayoutParams(0, 0))
+            addView(ffButton, FrameLayout.LayoutParams(0, 0))
             addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyLayout() }
         }
         if (link != null) {
@@ -254,6 +266,11 @@ class GameActivity : ComponentActivity() {
 
     private lateinit var root: FrameLayout
     private lateinit var menuHandle: TextView
+    private lateinit var ffButton: TextView
+    /** Where the ⏩ button sits now (pad pixels), or null if there is no room for it in this layout. */
+    private var ffSpot: Area? = null
+    /** Whether the Menu handle sits over the game picture (the ⏩ button beside it then matches its see-through look). */
+    private var menuOverGame = false
     /** The loading screen while the game starts (GameLoading.kt); null once the game shows. */
     private var loadingView: ComposeView? = null
     private var loading: LoadingState? = null
@@ -333,6 +350,37 @@ class GameActivity : ComponentActivity() {
             setColor(android.graphics.Color.argb(if (overGame) 40 else 70, 255, 255, 255))
         }
         menuHandle.alpha = if (overGame) 0.6f else 1f
+        menuOverGame = overGame
+        val spot = if (link == null && FastForward.allowed(console)) FastForward.spot(spec, l.pad.width.toFloat(), l.pad.height.toFloat(), resources.displayMetrics.density) else null
+        ffSpot = spot
+        if (spot != null) place(ffButton, Box(l.pad.left + spot.left.toInt(), l.pad.top + spot.top.toInt(),
+            l.pad.left + ceil(spot.right).toInt(), l.pad.top + ceil(spot.bottom).toInt()))
+        showFastForward()
+    }
+
+    /**
+     * The ⏩ button's look and whether it shows: only where there is room ([ffSpot]), never in a link session, and
+     * hidden with the touch buttons (Auto hides them while a controller is used; the menu's Speed section still works).
+     */
+    private fun showFastForward() {
+        if (!::ffButton.isInitialized) return
+        val show = link == null && ffSpot != null && autoHide.visible
+        ffButton.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+        if (!show) return
+        val h = ffButton.layoutParams.height.coerceAtLeast(1)
+        ffButton.text = FastForward.buttonText(fastOn, ffSpeed)
+        ffButton.contentDescription = FastForward.description(fastOn)
+        ffButton.setTextColor(if (fastOn) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+        androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(ffButton,
+            1, (h * 0.42f).toInt().coerceAtLeast(2), 1, TypedValue.COMPLEX_UNIT_PX)
+        ffButton.setPadding(h / 10, 0, h / 10, 0)
+        ffButton.background = GradientDrawable().apply {
+            cornerRadius = h * 0.25f
+            // On: a bright button, so it is clear the game is running fast.
+            setColor(if (fastOn) android.graphics.Color.argb(230, 255, 255, 255)
+                else android.graphics.Color.argb(if (menuOverGame) 40 else 70, 255, 255, 255))
+        }
+        ffButton.alpha = if (menuOverGame && !fastOn) 0.6f else 1f
     }
 
     /** DS screen layout: straight into the running core, or held until the game is ready. */
@@ -416,6 +464,7 @@ class GameActivity : ComponentActivity() {
                 toast(SAVE_NOT_LOADED)
             }
             ready = true
+            updatePlayClock()
             dsPending?.let { (l, swap) -> setDsLayout(l, swap) }
             applyCheats() // D143: the in-game save's cheats (a snapshot start then puts in the snapshot's)
             if (startFromState) {
@@ -443,13 +492,18 @@ class GameActivity : ComponentActivity() {
             var warned = false
             while (true) {
                 val st = LinkNative.state()
-                status.text = when (st) {
-                    LinkNative.ACTIVE -> "🔗 Linked to $peer · ${LinkNative.received()}↓ ${LinkNative.sent()}↑"
-                    LinkNative.WAITING -> "🔗 Starting link…"
-                    LinkNative.LOST -> "⚠️ Link lost"
-                    LinkNative.REFUSED -> "⚠️ Link refused by the game"
-                    LinkNative.NO_SUPPORT -> "⚠️ This emulator can't link"
-                    else -> "🔗 Link off"
+                val celio = link?.celio
+                status.text = when {
+                    // Celio Link: the shim's link is to the bridge on this phone, so show the Celio room's own state.
+                    celio != null && st == LinkNative.ACTIVE -> celio.line()
+                    else -> when (st) {
+                        LinkNative.ACTIVE -> "🔗 Linked to $peer · ${LinkNative.received()}↓ ${LinkNative.sent()}↑"
+                        LinkNative.WAITING -> "🔗 Starting link…"
+                        LinkNative.LOST -> "⚠️ Link lost"
+                        LinkNative.REFUSED -> "⚠️ Link refused by the game"
+                        LinkNative.NO_SUPPORT -> "⚠️ This emulator can't link"
+                        else -> "🔗 Link off"
+                    }
                 }
                 if (!warned && st >= LinkNative.LOST) {
                     warned = true
@@ -523,7 +577,19 @@ class GameActivity : ComponentActivity() {
         if (owner === this && ::retroView.isInitialized && ready && !saveDisabled) {
             persist(runCatching { retroView.serializeSRAM(false) }.getOrNull())
         }
+        onScreen = false
+        updatePlayClock()
+        // Play time (D172): queued on the phone, sent to Jellyfin by the library when online. Close Game, Home and
+        // screen off all come through here.
+        playClock.take()?.let { secs -> runCatching { PlayTimeQueue(this).record(userId, game.id, secs) } }
         super.onPause()
+    }
+
+    /** Play time: counts while the game is ready, on screen and not stood still for the menu or Cheats. */
+    private val playClock = PlayClock()
+    private var onScreen = false
+    private fun updatePlayClock() {
+        playClock.set(ready && onScreen && !(link == null && (drawer.open || cheatsOpen)))
     }
 
     override fun onDestroy() {
@@ -600,6 +666,7 @@ class GameActivity : ComponentActivity() {
             else -> TOUCH_HIDDEN_HINT
         })
         if (::root.isInitialized) applyLayout() // DS in landscape grows to the full width while the buttons are hidden
+        showFastForward()
     }
 
     private fun infoOf(d: InputDevice?): ControllerInfo = controllerInfo(d)
@@ -773,6 +840,7 @@ class GameActivity : ComponentActivity() {
             else android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         pad.importantForAccessibility = mode
         menuHandle.importantForAccessibility = mode
+        ffButton.importantForAccessibility = mode
         retroView.importantForAccessibility = mode
     }
 
@@ -811,6 +879,8 @@ class GameActivity : ComponentActivity() {
             ds = display.ds(land), dsSwap = display.swap(land), muted = muted,
             canUpload = !intent.getBooleanExtra(EXTRA_OFF_LIST, false),
             cheatsAllowed = link == null,
+            speedAllowed = link == null, // two linked phones would drift apart
+            fastForward = fastOn, ffSpeed = ffSpeed,
             cheats = cheatBook.cheats.map { MenuCheat(it.id, it.name, cheatBook.isOn(it.id)) },
         )
     }
@@ -840,7 +910,7 @@ class GameActivity : ComponentActivity() {
         drawer.show()
         view.visibility = android.view.View.VISIBLE
         setGameAccessible(false)
-        pauseForMenu(true)
+        pauseForMenu()
     }
 
     private fun closeDrawer() {
@@ -848,7 +918,7 @@ class GameActivity : ComponentActivity() {
         drawer.hide()
         drawerView?.visibility = android.view.View.GONE
         setGameAccessible(true)
-        pauseForMenu(false)
+        pauseForMenu()
     }
 
     /**
@@ -856,10 +926,45 @@ class GameActivity : ComponentActivity() {
      * work: they run on the emulator's thread, which keeps going. A link session is never paused (the other phone
      * would lose the link).
      */
-    private fun pauseForMenu(on: Boolean) {
+    private fun pauseForMenu() {
         if (link != null) return
-        retroView.frameSpeed = if (on) 0 else 1
+        applySpeed() // drawer.open is already set: still while it is open, back to the game's speed after
+    }
+
+    /** Fast-forward is on (never in a link session). Always off when a game starts. */
+    private var fastOn = false
+    /** The fast-forward speed, the same for every game (kept with App Mute), held to what this console offers. */
+    private val ffSpeed get() = FastForward.speedFor(console, FastForward.speed(soundStore))
+
+    /**
+     * The game's speed for now (the one place frameSpeed is set): still while the menu or the Cheats screen is open,
+     * else fast-forward or normal. A link session is never touched (the other phone would lose the link).
+     */
+    private fun applySpeed() {
+        if (link != null) return
+        retroView.frameSpeed = FastForward.frameSpeed(paused = drawer.open || cheatsOpen, on = fastOn, speed = ffSpeed)
         applySound()
+        updatePlayClock()
+    }
+
+    /** ⏩ button or the menu's Fast-forward switch. */
+    private fun toggleFastForward() {
+        if (link != null || quitting || !FastForward.allowed(console)) return
+        fastOn = !fastOn
+        applySpeed()
+        showFastForward()
+        if (drawer.open) refreshDrawer()
+    }
+
+    /** Menu → Game → Screenshot: the drawer is closed first, then one frame later the picture is taken. */
+    private fun takeScreenshot() {
+        val name = game.name
+        root.postOnAnimation {
+            root.postOnAnimation {
+                if (isFinishing || isDestroyed) return@postOnAnimation
+                Screenshot.take(this, retroView, name) { err -> toast(if (err == null) Screenshot.SAVED else Screenshot.FAILED + err) }
+            }
+        }
     }
 
     private val soundStore by lazy { GameSound.store(this) }
@@ -870,7 +975,8 @@ class GameActivity : ComponentActivity() {
 
     /** Sound on or off for now: off while the menu stands the game still (not in a link session), or with App Mute. */
     private fun applySound() {
-        retroView.audioEnabled = GameSound.enabled(menuOpen = link == null && (drawer.open || cheatsOpen), muted = muted)
+        retroView.audioEnabled = GameSound.enabled(menuOpen = link == null && (drawer.open || cheatsOpen), muted = muted,
+            fast = link == null && fastOn)
     }
 
     /** Lets go of any finger on the touch buttons or the game (the menu is taking over). */
@@ -905,10 +1011,17 @@ class GameActivity : ComponentActivity() {
                 applyLayout()
             }
             GameMenu.ID_MUTE -> { muted = !muted; applySound() }
+            GameMenu.ID_SCREENSHOT -> { closeDrawer(); takeScreenshot() }
+            GameMenu.ID_FAST_FORWARD -> toggleFastForward()
             GameMenu.ID_ADD_CHEAT -> { closeDrawer(); openCheats(list = false) }
             GameMenu.ID_EDIT_CHEATS -> { closeDrawer(); openCheats(list = true) }
             else -> {
                 GameMenu.cheatOf(id)?.let { toggleCheat(it) }
+                GameMenu.speedOf(id)?.let { n ->
+                    FastForward.setSpeed(soundStore, n)
+                    applySpeed()
+                    showFastForward()
+                }
                 GameMenu.touchOf(id)?.let { m ->
                     autoHide.mode = m
                     controlPrefs.setTouchMode(console, m) // per console (D132), the same value Settings shows
@@ -1216,8 +1329,7 @@ class GameActivity : ComponentActivity() {
         view.visibility = android.view.View.VISIBLE
         cheatsBack.isEnabled = true
         setGameAccessible(false)
-        retroView.frameSpeed = 0 // the game stands still while the screen is open, as with the menu
-        applySound()
+        applySpeed() // the game stands still while the screen is open, as with the menu
     }
 
     private fun closeCheats() {
@@ -1226,8 +1338,7 @@ class GameActivity : ComponentActivity() {
         v.visibility = android.view.View.GONE
         cheatsBack.isEnabled = false
         setGameAccessible(true)
-        retroView.frameSpeed = 1
-        applySound()
+        applySpeed() // back to the game's speed (fast-forward stays on if it was)
     }
 
     private fun cheatsBackPressed() {

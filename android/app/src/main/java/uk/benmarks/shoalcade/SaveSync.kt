@@ -2,8 +2,14 @@ package uk.benmarks.shoalcade
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.coroutineContext
 
 /** Small key/value store for sync state (which server save version this phone last saw). Not secret. */
 interface SyncStore {
@@ -33,7 +39,7 @@ sealed class SyncResult(val message: String) {
      * [tryLater] = the server couldn't be reached or isn't taking saves just now (network, Wi-Fi sign-in page, login,
      * busy, server error). False when the server refused this one game's save (too big, blank, unknown console).
      */
-    class Failed(message: String, val tryLater: Boolean = false) : SyncResult(message)
+    class Failed(message: String, val tryLater: Boolean = false, val code: Int? = null) : SyncResult(message)
     /**
      * Item 5 rule ([SavePlan]): sending this save would replace a newer one. Nothing was sent; ask with both dates,
      * then [SaveSyncCore.keepPhone] (upload) if the user says yes.
@@ -54,10 +60,19 @@ sealed class SyncResult(val message: String) {
  */
 class SaveSyncCore(
     private val client: JellyfinClient,
-    private val userId: String,
+    val userId: String,
     private val state: SyncStore,
+    /** Auto upload ([AutoUpload]): told about a save that couldn't go up just now. Null = nothing waits (tests, old callers). */
+    private val later: UploadLater? = null,
     private val ensureCompatible: suspend () -> Unit = {},
 ) {
+    /** Where a save that couldn't be uploaded now waits to go up by itself ([AutoUpload]). */
+    interface UploadLater {
+        /** True if waiting saves go up by themselves (the Settings switch); only changes the words. */
+        val on: Boolean
+        fun waiting(userId: String, game: Game)
+    }
+
     // "|main" kept from the days of a separate DS browser channel (D52), so saved state still matches (D91).
     private fun baseKey(game: Game) = "b|$userId|${game.id}|main"
     private fun conflictKey(game: Game) = "c|$userId|${game.id}"
@@ -171,6 +186,28 @@ class SaveSyncCore(
 
     private fun markConflict(game: Game) = state.set(conflictKey(game), "1")
 
+    /**
+     * Auto upload: a save that needs a person (would replace a newer Jellyfin save) gets the same ⚠️ as a conflict, so
+     * the library's existing "which to keep" question settles it. Nothing is sent or changed.
+     */
+    fun flagForChoice(game: Game) = markConflict(game)
+
+    /**
+     * One save move per game at a time, across every [SaveSyncCore] in the app (auto upload, the library, a closing
+     * game, Push all). Re-entrant: [uploadLatest] calling [upload] doesn't wait for itself. The second one in then
+     * sees what the first did (e.g. "already has this save"), so a save is never sent twice.
+     */
+    private suspend fun <T> locked(game: Game, block: suspend () -> T): T {
+        val key = "$userId|${game.id}"
+        val held = coroutineContext[Held]?.keys.orEmpty()
+        if (key in held) return block()
+        return gameLocks.getOrPut(key) { Mutex() }.withLock { withContext(Held(held + key)) { block() } }
+    }
+
+    private class Held(val keys: Set<String>) : AbstractCoroutineContextElement(Held) {
+        companion object : CoroutineContext.Key<Held>
+    }
+
     private suspend fun phoneSave(game: Game): ByteArray? = withContext(Dispatchers.IO) { Storage.readSave(userId, game) }
 
     /** True if the phone save has bytes the server hasn't seen from this phone. */
@@ -190,20 +227,28 @@ class SaveSyncCore(
 
     private fun withWarnings(msg: String, w: List<String>) = if (w.isEmpty()) msg else "$msg Check this: ${w.joinToString(" ")}"
 
-    private fun failed(e: IOException, what: String) = SyncResult.Failed("$what: ${e.message}", tryLater = tryLater(e))
+    private fun failed(e: IOException, what: String) = SyncResult.Failed("$what: ${e.message}", tryLater = tryLater(e), code = (e as? HttpException)?.code)
 
     /**
      * F3: says plainly whether anything was sent, and that nothing uploads by itself, so the person knows to try again
      * later. After a timeout the server may have stored it (G5 DL1); uploading again is safe (same bytes = unchanged,
      * otherwise the usual conflict question).
      */
-    private fun uploadFailed(e: IOException) = SyncResult.Failed("Upload failed: ${e.message} Your save is still safe on the phone." +
-        when {
-            e !is ServerUnreachableException -> ""
-            e.nothingSent -> " Nothing was uploaded: upload it once you're connected (⋮ → Upload save to Jellyfin, or Push all)."
-            else -> " The upload may not have finished: upload it again once you're connected (⋮ → Upload save to Jellyfin, or Push all)."
-        },
-        tryLater = tryLater(e))
+    private fun uploadFailed(e: IOException, game: Game): SyncResult.Failed {
+        // Auto upload: a save that couldn't go up just now waits to go up by itself (refusals of this one save don't).
+        val waits = later != null && tryLater(e)
+        if (waits) later!!.waiting(userId, game)
+        val auto = waits && later!!.on && (e as? HttpException)?.code != 401 // an expired login waits for a new login
+        return SyncResult.Failed("Upload failed: ${e.message} Your save is still safe on the phone." +
+            when {
+                e !is ServerUnreachableException -> if (auto) " $AUTO_LATER" else ""
+                e.nothingSent -> if (auto) " Nothing was uploaded yet. $AUTO_LATER"
+                    else " Nothing was uploaded: upload it once you're connected (⋮ → Upload save to Jellyfin, or Push all)."
+                else -> if (auto) " The upload may not have finished. $AUTO_LATER"
+                    else " The upload may not have finished: upload it again once you're connected (⋮ → Upload save to Jellyfin, or Push all)."
+            },
+            tryLater = tryLater(e), code = (e as? HttpException)?.code)
+    }
 
     private fun tryLater(e: IOException) = !(e is HttpException && e.code in REFUSED_THIS_GAME)
 
@@ -214,10 +259,10 @@ class SaveSyncCore(
     fun hasPhoneSave(game: Game): Boolean = !Storage.isBlank(Storage.readSave(userId, game))
 
     /** Uploads the phone save with the version check. A conflict is remembered and returned for the user to settle. */
-    suspend fun upload(game: Game): SyncResult {
+    suspend fun upload(game: Game): SyncResult = locked(game) {
         val bytes = phoneSave(game)
-        if (Storage.isBlank(bytes)) return SyncResult.Failed("No save to upload yet. Save in the game first.")
-        return try {
+        if (Storage.isBlank(bytes)) return@locked SyncResult.Failed("No save to upload yet. Save in the game first.")
+        try {
             ensureCompatible()
             when (val r = client.putSave(game.id, bytes!!, base = synced(game)?.version ?: 0, afterSnapshot = savedAfterSnapshot(game), cheats = savedWithCheats(game))) {
                 is PutResult.Stored -> {
@@ -235,7 +280,7 @@ class SaveSyncCore(
                 }
             }
         } catch (e: IOException) {
-            uploadFailed(e)
+            uploadFailed(e, game)
         }
     }
 
@@ -247,14 +292,14 @@ class SaveSyncCore(
      * [snapshotNoSave] (D90/D95): a snapshot was loaded and the game hasn't saved since, so the snapshot's own save is
      * never on the phone and the words say so.
      */
-    suspend fun uploadLatest(game: Game, snapshotNoSave: Boolean = false): SyncResult {
+    suspend fun uploadLatest(game: Game, snapshotNoSave: Boolean = false): SyncResult = locked(game) {
         val bytes = phoneSave(game)
         val sha = if (Storage.isBlank(bytes)) null else JellyfinClient.sha256(bytes!!)
         // Toasts show two lines: "Nothing new to upload" always comes first.
         val snapNote = "Nothing new to upload: you haven't saved in the game since loading the snapshot (a snapshot's save is never uploaded)."
-        return try {
+        try {
             ensureCompatible()
-            val server = (client.game(game.id) ?: return SyncResult.Failed("This game isn't on the server any more. Your save is kept on the phone.")).save
+            val server = (client.game(game.id) ?: return@locked SyncResult.Failed("This game isn't on the server any more. Your save is kept on the phone.")).save
             val phoneTime = withContext(Dispatchers.IO) { Storage.saveTime(userId, game) }
             when (val p = SavePlan.plan(SavePlan.Way.UPLOAD, sha, phoneTime, server, synced(game))) {
                 is SavePlan.Plan.Skip -> when (p.why) {
@@ -278,7 +323,7 @@ class SaveSyncCore(
                 SavePlan.Plan.Go -> upload(game)
             }
         } catch (e: IOException) {
-            uploadFailed(e)
+            uploadFailed(e, game)
         }
     }
 
@@ -288,12 +333,12 @@ class SaveSyncCore(
      * on yes call [keepServer]); both changed → [SyncResult.Conflict] (marked ⚠️). The phone copy is always kept first
      * ([download]).
      */
-    suspend fun downloadLatest(game: Game): SyncResult {
+    suspend fun downloadLatest(game: Game): SyncResult = locked(game) {
         val bytes = phoneSave(game)
         val sha = if (Storage.isBlank(bytes)) null else JellyfinClient.sha256(bytes!!)
-        return try {
+        try {
             ensureCompatible()
-            val server = (client.game(game.id) ?: return SyncResult.Failed("This game isn't on the server any more. Your save is kept on the phone.")).save
+            val server = (client.game(game.id) ?: return@locked SyncResult.Failed("This game isn't on the server any more. Your save is kept on the phone.")).save
             val phoneTime = withContext(Dispatchers.IO) { Storage.saveTime(userId, game) }
             when (val p = SavePlan.plan(SavePlan.Way.DOWNLOAD, sha, phoneTime, server, synced(game))) {
                 is SavePlan.Plan.Skip -> when (p.why) {
@@ -322,10 +367,10 @@ class SaveSyncCore(
      * only that exact save is replaced, and if another arrived since, nothing changes and [SyncResult.Conflict] says to
      * choose again. Without [shown] (in-game and library questions) the save in use now is replaced, as before.
      */
-    suspend fun keepPhone(game: Game, shown: Shown? = null): SyncResult {
+    suspend fun keepPhone(game: Game, shown: Shown? = null): SyncResult = locked(game) {
         val bytes = phoneSave(game)
-        if (Storage.isBlank(bytes)) return SyncResult.Failed("There's no phone save to keep.")
-        return try {
+        if (Storage.isBlank(bytes)) return@locked SyncResult.Failed("There's no phone save to keep.")
+        try {
             ensureCompatible()
             client.getSave(game.id)?.let { old -> withContext(Dispatchers.IO) { Storage.backupServerSave(userId, game, old.bytes) } }
             when (val r = client.putSave(game.id, bytes!!, base = null, mode = "force", afterSnapshot = savedAfterSnapshot(game), cheats = savedWithCheats(game),
@@ -373,7 +418,7 @@ class SaveSyncCore(
      * server's history if the server hasn't seen it); if that fails nothing is replaced.
      */
     suspend fun download(game: Game, doneMessage: String = "Save downloaded from Jellyfin. Your old phone save was backed up.",
-                         shown: Shown? = null): SyncResult = try {
+                         shown: Shown? = null): SyncResult = locked(game) { try {
         ensureCompatible()
         val dl = client.getSave(game.id)
         when {
@@ -391,7 +436,7 @@ class SaveSyncCore(
         }
     } catch (e: IOException) {
         failed(e, "Couldn't get the save")
-    }
+    } }
 
     /** Phone backup always; server history too if the phone has changes the server hasn't seen. Throws if either fails. */
     private suspend fun keepPhoneCopy(game: Game) {
@@ -473,6 +518,11 @@ class SaveSyncCore(
         /** Refusals about this one save, which won't change if migration tries again straight away. */
         private val REFUSED_THIS_GAME = setOf(400, 404, 413, 422)
 
+        /** [locked]: one lock per user and game, shared by every instance (each screen makes its own core). */
+        private val gameLocks = ConcurrentHashMap<String, Mutex>()
+
+        const val AUTO_LATER = "It goes up to Jellyfin by itself once the phone is back online."
+
         fun afterSnapshotKey(userId: String, gameId: String) = "s|$userId|$gameId"
         fun cheatsKey(userId: String, gameId: String) = "x|$userId|$gameId"
     }
@@ -504,7 +554,7 @@ class SaveSync(context: Context) {
     fun core(): SaveSyncCore? {
         val s = store.load() ?: return null
         val client = JellyfinClient(store.deviceId, s)
-        return SaveSyncCore(client, s.userId, syncStore) { Compat.ensure(client, s.serverUrl) }
+        return SaveSyncCore(client, s.userId, syncStore, AutoUpload.later(app)) { Compat.ensure(client, s.serverUrl) }
     }
 
     suspend fun upload(game: Game): SyncResult = core()?.upload(game) ?: SyncResult.Failed("Not logged in.")

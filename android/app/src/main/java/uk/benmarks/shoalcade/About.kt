@@ -34,7 +34,7 @@ object Licences {
 
     val parts = listOf(
         Part("LibretroDroid 0.14.0", "Emulator front-end", "GPL-3.0", "https://github.com/Swordfish90/LibretroDroid/tree/0.14.0"),
-        Part("mGBA (0.11-212-7a12d6d)", "GB, GBC and GBA", "MPL-2.0", "https://github.com/mgba-emu/mgba/tree/7a12d6d"),
+        Part("mGBA (0.11-212-7a12d6d)", "GB, GBC and GBA", "MPL-2.0", "https://github.com/libretro/mgba/tree/7a12d6d"),
         Part("melonDS DS 1.4.0", "Nintendo DS", "GPL-3.0", "https://github.com/JesseTG/melonds-ds/tree/v1.4.0"),
         Part("PPSSPP (commit 902e5cc)", "PSP, plus its support files (fonts, compatibility list)", "GPL-2.0-or-later (PSPSDK parts: BSD)", "https://github.com/hrydgard/ppsspp/tree/902e5ccd8c1400b4387b73942491cded655e5f9c"),
         Part("PCSX ReARMed (r26l-119-gc881679)", "PlayStation (PS1)", "GPL-2.0-or-later (parts: libchdr and zstd BSD, libretro-common MIT)", "https://github.com/libretro/pcsx_rearmed/tree/c8816799b50388e61cfe237fe2cdbb7d8175f20a"),
@@ -51,6 +51,7 @@ object Licences {
             "https://github.com/devkitPro/3ds-examples (scene: tools/n3ds-check in Shoalcade's source)"),
         Part("gpSP (v1.1.0-5819380)", "GBA link play", "GPL-2.0-or-later", "https://github.com/libretro/gpsp/tree/5819380"),
         Part("AndroidX, Jetpack Compose, Kotlin", "App framework", "Apache-2.0", "https://android.googlesource.com/platform/frameworks/support"),
+        Part("OkHttp 4.12.0 and Okio", "Celio Link connection (WebSocket)", "Apache-2.0", "https://github.com/square/okhttp/tree/parent-4.12.0"),
     )
 }
 

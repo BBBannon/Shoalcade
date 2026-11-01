@@ -20,6 +20,13 @@ object SettingsModel {
     const val SAVES_HELP = "For every downloaded game at once. If a save is newer, or changed in both places, you're asked first."
     /** I6: nothing is copied by Android's own backup or phone transfer, so the saves must reach Jellyfin first. */
     const val CHANGING_PHONES = "Changing phones? Push all first, then log in on the new phone."
+    /** Auto upload ([AutoUpload]): on by default, remembered on this phone. */
+    const val AUTO_UPLOAD = "Upload saves automatically"
+    const val AUTO_UPLOAD_HELP = "When the phone is back online, saves made offline go up to your Jellyfin by themselves."
+    const val ID_AUTO_UPLOAD = "saves.autoupload"
+
+    /** The auto upload switch as a row, with its current value. */
+    fun autoUploadRow(store: SyncStore) = MenuItem.Toggle(ID_AUTO_UPLOAD, AUTO_UPLOAD, AutoUpload.on(store))
     /** B9 (D135, F9): phone saves, downloads and snapshots for games Jellyfin no longer lists (the browser saves manager's words). */
     const val NOT_IN_LIBRARY = "Not in your library"
     const val NOT_IN_LIBRARY_HELP = "Games no longer in your library that still have a save, download or snapshot on this phone. Play them, save a copy, or upload a save to another game."

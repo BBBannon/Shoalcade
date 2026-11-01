@@ -233,6 +233,30 @@
     setActiveCheats: (id, ids) => json("/shoalcade/cheats/" + encodeURIComponent(id) + "/active", {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
     }),
+
+    /**
+     * Adds finished play sessions ([{ id, seconds, endedAt }]) to this user's play time on a game; answers
+     * { playSeconds, added }. A session id already counted is skipped, so resending is safe. keepalive lets the
+     * last one go out while the page closes (sendBeacon can't send the Authorization header).
+     */
+    addPlayTime: (id, sessions, opts) => json("/shoalcade/games/" + encodeURIComponent(id) + "/playtime", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessions }),
+      keepalive: !!(opts && opts.keepalive),
+    }),
+
+    /**
+     * Play time in words, the same rule as the phone app (PlayTime.format): under a minute "" (show nothing),
+     * "45 min", "3 h 05 min", and from 100 hours just "120 h".
+     */
+    formatPlayTime(seconds) {
+      const mins = Math.floor((Number(seconds) || 0) / 60);
+      if (mins < 1) return "";
+      if (mins < 60) return mins + " min";
+      const h = Math.floor(mins / 60);
+      if (h >= 100) return h + " h";
+      const m = mins % 60;
+      return h + " h " + (m < 10 ? "0" : "") + m + " min";
+    },
   };
 
   window.SC = window.SC || {};

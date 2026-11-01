@@ -20,9 +20,9 @@ android {
         applicationId = "uk.benmarks.shoalcade"
         minSdk = 30 // Android 11+
         targetSdk = 35
-        versionCode = 18 // +1 for every build Ben installs
+        versionCode = 19 // +1 for every build Ben installs
         // a0.6 dev 1 (D41, D88): sent to the server in every request. Dev builds are "0.6.0-devN"; launch is "1.0.0".
-        versionName = "0.12.0"
+        versionName = "0.13.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
@@ -131,11 +131,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.0") // auto upload: waiting saves go up once the phone is online
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     // Emulator front-end (GPL-3.0). Cores are bundled in src/main/jniLibs.
     implementation("com.github.Swordfish90:LibretroDroid:0.14.0")
     // D153: 3DS only. Renamed copy of Argosy's Vulkan LibretroDroid (GPL-3.0); other consoles never touch it.
     implementation(project(":lr3ds")) // 3DS only (D153, D155)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0") // Celio Link only: its WebSocket (Android has no JDK one)
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")

@@ -4,6 +4,7 @@ using Jellyfin.Plugin.Shoalcade.Cheats;
 using Jellyfin.Plugin.Shoalcade.Configuration;
 using Jellyfin.Plugin.Shoalcade.Import;
 using Jellyfin.Plugin.Shoalcade.Migration;
+using Jellyfin.Plugin.Shoalcade.PlayTime;
 using Jellyfin.Plugin.Shoalcade.Prefs;
 using Jellyfin.Plugin.Shoalcade.Saves;
 using Jellyfin.Plugin.Shoalcade.States;
@@ -33,7 +34,8 @@ public sealed class ShoalcadeServices
         Deleted = new DeletedSaves(Path.Combine(DataRoot, "deleted"), TimeProvider.System, loggerFactory.CreateLogger<DeletedSaves>());
         Prefs = new PrefsStore(Path.Combine(DataRoot, "prefs"), TimeProvider.System, loggerFactory.CreateLogger<PrefsStore>());
         Cheats = new CheatStore(Path.Combine(DataRoot, "cheats"), TimeProvider.System, loggerFactory.CreateLogger<CheatStore>());
-        Storage = new StorageReport(Path.Combine(DataRoot, "saves"), Path.Combine(DataRoot, "states"), Path.Combine(DataRoot, "prefs"), Path.Combine(DataRoot, "cheats"));
+        PlayTime = new PlayTimeStore(Path.Combine(DataRoot, "playtime"), TimeProvider.System, loggerFactory.CreateLogger<PlayTimeStore>());
+        Storage = new StorageReport(Path.Combine(DataRoot, "saves"), Path.Combine(DataRoot, "states"), Path.Combine(DataRoot, "prefs"), Path.Combine(DataRoot, "cheats"), Path.Combine(DataRoot, "playtime"));
         JellyEmu = new JellyEmuImporter(Path.Combine(paths.DataPath, "jellyemu-saves"), Saves, () => Config.ImportJellyEmuSaves, loggerFactory.CreateLogger<JellyEmuImporter>());
     }
 
@@ -60,6 +62,9 @@ public sealed class ShoalcadeServices
 
     /// <summary>Gets the cheats store (D143).</summary>
     public CheatStore Cheats { get; }
+
+    /// <summary>Gets the play time store (total per person per game, from every device).</summary>
+    public PlayTimeStore PlayTime { get; }
 
     /// <summary>Gets the admin storage report (view only).</summary>
     public StorageReport Storage { get; }

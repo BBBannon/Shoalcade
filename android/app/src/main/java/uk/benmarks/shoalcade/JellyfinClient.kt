@@ -38,13 +38,15 @@ data class Game(
     val serverPlayed: Long? = null,
     /** Starred by this user (Jellyfin favourites, shared with the browser library). */
     val favourite: Boolean = false,
+    /** This user's total play time on the game from every device (seconds, from the server; 0 = none or older server). */
+    val playSeconds: Long = 0,
 )
 
 /** Game ↔ JSON, for the offline game list and for passing a game to the download service. */
 object GameJson {
     fun toJson(g: Game): JSONObject = JSONObject().put("id", g.id).put("name", g.name).put("console", g.console?.name)
         .put("file", g.fileName).put("dl", g.canDownload).put("img", g.imageTag)
-        .put("year", g.year).put("played", g.serverPlayed).put("fav", g.favourite)
+        .put("year", g.year).put("played", g.serverPlayed).put("fav", g.favourite).put("play", g.playSeconds)
 
     fun fromJson(s: String) = fromJson(JSONObject(s))
 
@@ -59,6 +61,7 @@ object GameJson {
         year = if (o.has("year") && !o.isNull("year")) o.optInt("year") else null,
         serverPlayed = if (o.has("played") && !o.isNull("played")) o.optLong("played") else null,
         favourite = o.optBoolean("fav", false),
+        playSeconds = o.optLong("play", 0L).coerceAtLeast(0L),
     )
 }
 
@@ -414,6 +417,20 @@ class JellyfinClient(
         conn.checkOk().disconnect()
     }
 
+    /**
+     * Adds finished play sessions to this user's play time on a game (the browser player adds to the same total).
+     * Needs the server feature "playtime". 1 to 100 sessions per call; each session id counts once only on the server,
+     * so sending again after a lost answer is safe. Returns the game's new total (seconds).
+     */
+    suspend fun addPlayTime(itemId: String, sessions: List<PlaySession>): Long = plugin {
+        require(sessions.size in 1..PlayTime.MAX_BATCH) { "1 to ${PlayTime.MAX_BATCH} sessions per call." }
+        val arr = JSONArray()
+        sessions.forEach { arr.put(JSONObject().put("id", it.id).put("seconds", it.seconds).put("endedAt", it.endedAt)) }
+        val o = JSONObject(sendJson("/shoalcade/games/${id(itemId)}/playtime", "POST", JSONObject().put("sessions", arr)))
+        if (!o.has("playSeconds")) throw BadReplyException()
+        o.getLong("playSeconds")
+    }
+
     suspend fun deleteCheat(itemId: String, cheatId: String): Unit = plugin {
         open(url("/shoalcade/cheats/${id(itemId)}/${cheatId(cheatId)}"), "DELETE").checkOk().disconnect()
     }
@@ -423,6 +440,12 @@ class JellyfinClient(
         ids.forEach { cheatId(it) }
         CheatDoc.parse(JSONObject(sendJson("/shoalcade/cheats/${id(itemId)}/active", "PUT", JSONObject().put("ids", JSONArray(ids)))))
     }
+
+    /**
+     * Internet link play routes (plugin feature "link-relay"). The token goes only in the Authorization header, as for
+     * every other call; [RelayHttp] never logs it.
+     */
+    fun linkRelay(): RelayHttp = RelayHttp(s.serverUrl, authHeader(s.token), timeouts.connect)
 
     /** Sends a JSON body; the answer's text. Refusals become [ApiException] with the server's message. */
     private fun sendJson(path: String, method: String, body: JSONObject): String {
@@ -645,6 +668,7 @@ data class RemoteGame(val game: Game, val save: SaveVersion?) {
                     year = year,
                     serverPlayed = GameSort.lastPlayed(lastPlayed, save?.createdMillis),
                     favourite = o.optBoolean("favourite", false),
+                    playSeconds = o.optLong("playSeconds", 0L).coerceAtLeast(0L),
                 ),
                 save,
             )

@@ -1,7 +1,7 @@
 # Privacy
 
-**In short:** your games, saves and login stay between **your phone** and **your Jellyfin server**.
-The only third party contacted is **libretro**, by your **server**, for game names and box art.
+**In short:** your games, saves and login stay between **your phone or PC** and **your Jellyfin server**.
+The only third party contacted is **libretro**, by your **server**, for game names and box art. The one opt-in exception is **Celio Link** (off unless you switch it on, see below).
 **No analytics. No tracking. No ads. No accounts with us.**
 
 ---
@@ -25,14 +25,17 @@ The only third party contacted is **libretro**, by your **server**, for game nam
 
 ---
 
-## What leaves your phone
+## What leaves your phone or PC
 
 | Where to | What | When |
 |---|---|---|
 | **Your Jellyfin server only** (HTTPS) | Login, game list, game downloads, save uploads and downloads, your cheat codes, the app's version number | When you use the app online |
-| **Other phones on the same Wi-Fi** | The name **"Shoalcade" + your phone model**, a check that you typed the host's **4-digit PIN** (the PIN itself is never sent), then game link data, phone to phone | Only during **Link play (same Wi-Fi)** |
+| **Other phones or PCs on the same Wi-Fi** | The name **"Shoalcade" + your phone model** (on Windows: your **computer name**), a check that you typed the host's **4-digit PIN** (the PIN itself is never sent), then game link data, device to device | Only during **Link play** on the same Wi-Fi |
+| **Your Jellyfin server**, passed on to the other player | Game link data. It passes through the server's **memory only**: never written to disk, never logged. The PIN never leaves the devices | Only during **Link play over the internet** (GBA) |
+| **The Celio Link server** (default `celio-server.up.railway.app`, changeable) | Game link data and your **IP address**. This server is **not run by Shoalcade or your Jellyfin** | Only if you switch on **Celio Link** (**Settings → Link play**, off by default) and use it |
 
-- The app contacts **no other server**. Not us, not libretro, not Google.
+- **The Windows app** sends the same things as the phone app, to the same places.
+- Apart from Celio Link (if you switch it on), the apps contact **no other server**. Not us, not libretro, not Google, not Microsoft.
 - Box art comes from **your** server.
 - The browser player and library pages can only talk to **your** server (their security policy blocks anything else). EmulatorJS's update check is switched off.
 - **Patch a game** runs entirely in your browser: the game file and patch you pick are **never uploaded**, not even to your own server.
@@ -44,8 +47,9 @@ The only third party contacted is **libretro**, by your **server**, for game nam
 | Place | How |
 |---|---|
 | **Phone app** | Your Jellyfin token is stored in **encrypted preferences** (key held in the **Android Keystore**). No password is stored. Android backup is off for the app |
+| **Windows app** | Your Jellyfin token is protected by **Windows (DPAPI)** for your Windows account only. No password is stored. The game player never sees the token |
 | **Browser player** | Uses the login **Jellyfin web already saved** in that browser. Shoalcade stores no login of its own |
-| **Both** | The token only travels in the request header, **never in a web address**, and is **never logged** |
+| **All** | The token only travels in the request header, **never in a web address**, and is **never logged** |
 
 **Log out** removes the token from the phone, and also ends the login on your Jellyfin server when the phone can reach it.
 If the phone was offline when you logged out, remove it in **Dashboard → Devices** to cut it off.
@@ -72,6 +76,14 @@ If the phone was offline when you logged out, remove it in **Dashboard → Devic
 **Kept on the server:** every save you uploaded, with all its versions.
 
 ⚠️ **Upload first** (**Push all**). A save that never reached Jellyfin is lost.
+
+### Uninstalling the Windows app
+
+**Removed:** the program, its shortcuts and its "Installed apps" entry.
+
+**Kept on the PC:** your downloaded games, saves, backups, snapshots and login, in `%LOCALAPPDATA%\Shoalcade\`. A message says where.
+
+- To remove everything, delete that folder yourself. ⚠️ **Push all first**: saves not yet uploaded are only there.
 
 ### Uninstalling the server plugin
 

@@ -122,6 +122,13 @@ tools/*
 !tools/build_azahar_core.sh
 !tools/build_n3ds_check.sh
 !tools/vendor_lr3ds.py
+# ...and the Windows/Linux core build (we ship our own core builds, plus a PPSSPP build-fix patch)
+!tools/build_windows_cores.sh
+!tools/windows-cores/
+!tools/ppsspp-patches/
+# ...and the Windows installer build: it controls how the shipped files are built and installed (GPLv3 Corresponding Source)
+!tools/build_windows_release.sh
+!tools/fetch_core_licences.sh
 android/coretest/
 android/linktest/
 android/app/src/test/
@@ -137,3 +144,14 @@ server/Shoalcade.slnx
 
 # --- The 3DS check scene shipped in the app (built by tools/build_n3ds_check.sh) ---
 !android/app/src/main/assets/n3ds/check.3dsx
+
+# Windows app: tests stay local like the Android ones (copied back to the main folder)
+windows/player/tests/
+windows/app/src/test/
+windows/player/build*/
+windows/app/build/
+windows/app/.gradle/
+windows/app/.kotlin/
+
+# Release signing files (never commit)
+.android-keys/

@@ -7,5 +7,6 @@ class ShoalcadeApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Storage.init(this)
+        AutoUpload.onAppStart(this) // saves still waiting from before (e.g. after logging in again) go up once online
     }
 }

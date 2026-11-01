@@ -56,6 +56,7 @@ object GameMenu {
     const val ID_CONTROLS = "controls"
     const val ID_DS_SWAP = "ds.swap"
     const val ID_MUTE = "sound.mute"
+    const val ID_SCREENSHOT = "screenshot"
     fun touchId(m: TouchMode) = "touch.${m.key}"
     fun screenId(m: ScreenMode) = "screen.${m.key}"
     fun dsId(l: DsLayout) = "ds.${l.key}"
@@ -65,10 +66,36 @@ object GameMenu {
     fun screenOf(id: String): ScreenMode? = ScreenMode.entries.firstOrNull { screenId(it) == id }
     fun dsOf(id: String): DsLayout? = DsLayout.entries.firstOrNull { dsId(it) == id }
 
-    /** F9: a game no longer in the library has nowhere on Jellyfin to upload to, so it has no "and Upload". */
+    /**
+     * F9: a game no longer in the library has nowhere on Jellyfin to upload to, so it has no "and Upload".
+     * Screenshot (as the browser's toolbar) puts the game picture in the phone's gallery ([Screenshot]).
+     */
     val GAME_SECTION = MenuSection("game", GAME) { c ->
-        listOfNotNull(MenuItem.Action(ID_RESUME, RESUME), MenuItem.Action(ID_CLOSE, CLOSE),
-            if (c.canUpload) MenuItem.Action(ID_CLOSE_UPLOAD, CLOSE_UPLOAD) else null)
+        listOfNotNull(MenuItem.Action(ID_RESUME, RESUME), MenuItem.Action(ID_SCREENSHOT, Screenshot.ACTION),
+            MenuItem.Action(ID_CLOSE, CLOSE), if (c.canUpload) MenuItem.Action(ID_CLOSE_UPLOAD, CLOSE_UPLOAD) else null)
+    }
+
+    // Speed: fast-forward, words as the browser player ("Fast-forward", "Fast-forward speed", "2×").
+    const val SPEED = "Speed"
+    const val FAST_FORWARD = "Fast-forward"
+    const val FF_SPEED = "Fast-forward speed"
+    const val ID_FAST_FORWARD = "speed.ff"
+    private const val SPEED_PREFIX = "speed.x"
+    fun speedId(n: Int) = "$SPEED_PREFIX$n"
+    /** The speed a choice id is for (null = not a speed choice). */
+    fun speedOf(id: String): Int? = id.takeIf { it.startsWith(SPEED_PREFIX) }?.removePrefix(SPEED_PREFIX)?.toIntOrNull()
+        ?.takeIf { it in FastForward.SPEEDS }
+
+    /**
+     * Fast-forward on / off and how fast (see [FastForward]). Hidden in a link session (the two phones would drift
+     * apart) and on consoles with no safe speed ([FastForward.speeds]: GB/GBC).
+     */
+    val SPEED_SECTION = MenuSection("speed", SPEED, visible = { it.speedAllowed && FastForward.allowed(it.console) }) { c ->
+        buildList {
+            add(MenuItem.Toggle(ID_FAST_FORWARD, FAST_FORWARD, c.fastForward))
+            add(MenuItem.Heading("speed.choice", FF_SPEED))
+            FastForward.speeds(c.console).forEach { add(MenuItem.Choice(speedId(it), FastForward.speedLabel(it), "speed", c.ffSpeed == it)) }
+        }
     }
 
     /** Snapshots would break a link session; on/off per console comes from the server settings (D38). */
@@ -131,11 +158,11 @@ object GameMenu {
     }
 
     /**
-     * Every section, in drawer order. Speed goes here later. Step 10: things done mid-game first (Game, Snapshots,
-     * Cheats (D143), then Sound for App Mute), then Display before Controls, so in landscape the Screen choices are the first thing below the fold.
+     * Every section, in drawer order. Step 10: things done mid-game first (Game, Snapshots, Speed, Cheats (D143), then
+     * Sound for App Mute), then Display before Controls, so in landscape the Screen choices are the first thing below the fold.
      * The Settings screen lists the same settings in the same order.
      */
-    val SECTIONS = listOf(GAME_SECTION, SNAPSHOT_SECTION, CHEATS_SECTION, SOUND_SECTION, DISPLAY_SECTION, CONTROLS_SECTION)
+    val SECTIONS = listOf(GAME_SECTION, SNAPSHOT_SECTION, SPEED_SECTION, CHEATS_SECTION, SOUND_SECTION, DISPLAY_SECTION, CONTROLS_SECTION)
 
     /** The sections shown for [ctx]: visible ones with at least one item. */
     fun sections(ctx: MenuContext, registry: List<MenuSection> = SECTIONS): List<ShownSection> =
@@ -164,6 +191,12 @@ data class MenuContext(
     val cheatsAllowed: Boolean = true,
     /** D143: the game's cheats, in list order, and which are on. */
     val cheats: List<MenuCheat> = emptyList(),
+    /** Fast-forward can be used here (not a link session). */
+    val speedAllowed: Boolean = true,
+    /** Fast-forward is on now. */
+    val fastForward: Boolean = false,
+    /** The fast-forward speed chosen (2-4). */
+    val ffSpeed: Int = FastForward.DEFAULT_SPEED,
 )
 
 /** One cheat as the menu shows it. */

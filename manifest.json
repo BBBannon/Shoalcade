@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/BBBannon/Shoalcade/main/server/assets/thumb.png",
     "versions": [
       {
+        "version": "0.10.0.0",
+        "changelog": "Shoalcade v0.10.0: the first Windows app, internet link play, Celio Link (opt-in), fast-forward, screenshots, play time, search and filters, automatic save upload; the plugin now accepts saves from the Windows app",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/BBBannon/Shoalcade/releases/download/v0.10.0/Shoalcade_s0.10.zip",
+        "checksum": "8664456da5092f84a4736f157d482b68",
+        "timestamp": "2026-11-01T13:27:51Z"
+      },
+      {
         "version": "0.9.0.0",
         "changelog": "s0.9 - Nintendo 3DS in the phone app (app 0.12.0), favourites, download all your saves, delete all saves of a removed game (kept hidden 7 days), update banner in the app. Release notes: https://github.com/BBBannon/Shoalcade/releases/tag/v0.9.0",
         "targetAbi": "12.3.0.0",

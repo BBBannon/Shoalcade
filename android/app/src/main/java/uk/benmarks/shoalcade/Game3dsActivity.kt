@@ -163,6 +163,12 @@ class Game3dsActivity : ComponentActivity() {
     private var muted
         get() = GameSound.muted(soundStore)
         set(v) = GameSound.setMuted(soundStore, v)
+    /** Fast-forward (as the other consoles, see [FastForward]): always off when a game starts. */
+    private var fastOn = false
+    private val ffSpeed get() = FastForward.speed(soundStore)
+    private lateinit var ffButton: TextView
+    /** Where the ⏩ button sits (pad pixels), or null if there is no room for it in this layout. */
+    private var ffSpot: Area? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -240,6 +246,11 @@ class Game3dsActivity : ComponentActivity() {
             isClickable = true; isFocusable = false
             setOnClickListener { openDrawer() }
         }
+        ffButton = TextView(this).apply {
+            gravity = Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD; includeFontPadding = false
+            maxLines = 1; isClickable = true; isFocusable = false; visibility = View.GONE
+            setOnClickListener { toggleFastForward() }
+        }
         speed = TextView(this).apply {
             setTextColor(Color.WHITE); setBackgroundColor(Color.argb(150, 0, 0, 0)); textSize = 11f; setPadding(10, 3, 10, 3)
             visibility = if (on(SHOW_SPEED) || check) View.VISIBLE else View.GONE
@@ -250,6 +261,7 @@ class Game3dsActivity : ComponentActivity() {
         root.addView(retroView)
         root.addView(pad)
         root.addView(menuHandle)
+        root.addView(ffButton)
         root.addView(speed, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         root.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
             if (r - l != or - ol || b - t != ob - ot) place(r - l, b - t)
@@ -289,8 +301,9 @@ class Game3dsActivity : ComponentActivity() {
         lifecycleScope.launch {
             retroView.getGLRetroEvents().first { it is GLRetroView.GLRetroEvents.FrameRendered }
             applySound()
+            playing = true; onScreen = true; updatePlayClock()
             lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
-                override fun onResume(owner: androidx.lifecycle.LifecycleOwner) { applySound() }
+                override fun onResume(owner: androidx.lifecycle.LifecycleOwner) { applySound(); onScreen = true; updatePlayClock() }
             })
         }
         if (!check) startLoading()
@@ -376,6 +389,32 @@ class Game3dsActivity : ComponentActivity() {
         setBox(menuHandle, (pad.left + m.left).toInt(), (pad.top + m.top).toInt(), (m.right - m.left).toInt(), (m.bottom - m.top).toInt())
         menuHandle.textSize = (s.textSize * 0.6f) / resources.displayMetrics.scaledDensity
         menuHandle.bringToFront()
+        val spot = FastForward.spot(s, pad.width.toFloat(), pad.height.toFloat(), resources.displayMetrics.density)
+        ffSpot = spot
+        if (spot != null) setBox(ffButton, (pad.left + spot.left).toInt(), (pad.top + spot.top).toInt(),
+            (spot.right - spot.left).toInt(), (spot.bottom - spot.top).toInt())
+        ffButton.bringToFront()
+        showFastForward()
+    }
+
+    /** The ⏩ button's look, and whether it shows: where there is room, with the touch buttons (Auto hides both). */
+    private fun showFastForward() {
+        if (!::ffButton.isInitialized) return
+        val show = !check && ffSpot != null && autoHide.visible
+        ffButton.visibility = if (show) View.VISIBLE else View.GONE
+        if (!show) return
+        val h = ffButton.layoutParams.height.coerceAtLeast(1)
+        ffButton.text = FastForward.buttonText(fastOn, ffSpeed)
+        ffButton.contentDescription = FastForward.description(fastOn)
+        ffButton.setTextColor(if (fastOn) Color.BLACK else Color.WHITE)
+        androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(ffButton,
+            1, (h * 0.42f).toInt().coerceAtLeast(2), 1, android.util.TypedValue.COMPLEX_UNIT_PX)
+        ffButton.setPadding(h / 10, 0, h / 10, 0)
+        ffButton.background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 999f
+            // On: a bright button, so it is clear the game is running fast. Off: as the Menu handle.
+            setColor(if (fastOn) Color.argb(230, 255, 255, 255) else Color.argb(170, 40, 40, 52))
+        }
     }
 
     /** By the way the phone faces, not the pad's shape: the portrait pad is wider than tall too. */
@@ -473,7 +512,8 @@ class Game3dsActivity : ComponentActivity() {
         }
     }
     private val sections by lazy {
-        listOf(GameMenu.GAME_SECTION, GameMenu.SNAPSHOT_SECTION, GameMenu.SOUND_SECTION, displaySection, GameMenu.CONTROLS_SECTION)
+        listOf(GameMenu.GAME_SECTION, GameMenu.SNAPSHOT_SECTION, GameMenu.SPEED_SECTION, GameMenu.SOUND_SECTION, displaySection,
+            GameMenu.CONTROLS_SECTION)
     }
 
     /** The library game's snapshot (per user, like the other consoles); a bare dev file keeps its own. */
@@ -484,6 +524,7 @@ class Game3dsActivity : ComponentActivity() {
         touch = autoHide.mode, screen = screen, ds = DsLayout.entries.first(), dsSwap = false, muted = muted,
         canUpload = game != null && !intent.getBooleanExtra(EXTRA_OFF_LIST, false), // F9 + bare dev files: nowhere to upload
         cheatsAllowed = false,
+        fastForward = fastOn, ffSpeed = ffSpeed,
     )
 
     private fun refreshDrawer(resetFocus: Boolean = false) {
@@ -510,7 +551,7 @@ class Game3dsActivity : ComponentActivity() {
         drawer.show()
         view.visibility = View.VISIBLE
         setGameAccessible(false)
-        pauseForMenu(true)
+        applySpeed()
     }
 
     private fun closeDrawer() {
@@ -518,17 +559,50 @@ class Game3dsActivity : ComponentActivity() {
         drawer.hide()
         drawerView?.visibility = View.GONE
         setGameAccessible(true)
-        pauseForMenu(false)
+        applySpeed()
     }
 
-    /** The game stands still while the menu is open (no frames, no sound). */
-    private fun pauseForMenu(on: Boolean) {
-        retroView.frameSpeed = if (on) 0 else 1
+    /**
+     * The game's speed for now (the one place frameSpeed is set, but Close Game): still while the menu or the
+     * Controls screen is open (no frames, no sound), else fast-forward or normal.
+     */
+    private fun applySpeed() {
+        if (quitting) return // Close Game has stopped the game for good
+        retroView.frameSpeed = FastForward.frameSpeed(paused = drawer.open || controlsOpen, on = fastOn, speed = ffSpeed)
         applySound()
+        updatePlayClock()
+    }
+
+    /** Play time (D172): counts while the game runs on screen, not stood still for the menu or Controls. */
+    private val playClock = PlayClock()
+    private var playing = false
+    private var onScreen = false
+    private fun updatePlayClock() {
+        playClock.set(playing && onScreen && !quitting && !drawer.open && !controlsOpen)
+    }
+
+    /** ⏩ button or the menu's Fast-forward switch. */
+    private fun toggleFastForward() {
+        if (check || quitting) return
+        fastOn = !fastOn
+        applySpeed()
+        showFastForward()
+        if (drawer.open) refreshDrawer()
+    }
+
+    /** Menu → Game → Screenshot: the drawer is closed first, then one frame later the picture is taken. */
+    private fun takeScreenshot() {
+        val name = game?.name?.ifBlank { null } ?: rom.nameWithoutExtension
+        root.postOnAnimation {
+            root.postOnAnimation {
+                if (isFinishing || isDestroyed) return@postOnAnimation
+                Screenshot.take(this, retroView, name) { err -> toast(if (err == null) Screenshot.SAVED else Screenshot.FAILED + err) }
+            }
+        }
     }
 
     private fun applySound() {
-        retroView.audioEnabled = GameSound.enabled(menuOpen = drawer.open || controlsOpen, muted = muted)
+        retroView.audioEnabled = GameSound.enabled(menuOpen = drawer.open || controlsOpen, muted = muted, fast = fastOn)
     }
 
     private fun cancelTouches() {
@@ -556,11 +630,14 @@ class Game3dsActivity : ComponentActivity() {
             GameMenu.ID_LOAD_SNAPSHOT -> { closeDrawer(); loadState() }
             GameMenu.ID_CONTROLS -> { closeDrawer(); openControls() }
             GameMenu.ID_MUTE -> { muted = !muted; applySound(); refreshDrawer() }
+            GameMenu.ID_SCREENSHOT -> { closeDrawer(); takeScreenshot() }
+            GameMenu.ID_FAST_FORWARD -> toggleFastForward()
             ID_SWAP -> { setSwap(land, !swap(land)); applyCoreLayout(); refreshDrawer() }
             else -> {
                 GameMenu.touchOf(id)?.let { m ->
                     autoHide.mode = m; controlPrefs.setTouchMode(console, m); applyTouchVisibility(); refreshDrawer()
                 }
+                GameMenu.speedOf(id)?.let { n -> FastForward.setSpeed(soundStore, n); applySpeed(); showFastForward(); refreshDrawer() }
                 GameMenu.screenOf(id)?.let { m -> screen = m; requestedOrientation = screenOrientation(console, m); refreshDrawer() }
                 N3dsLayout.entries.firstOrNull { layoutId(it) == id }?.let { l -> setLayout(land, l); applyCoreLayout(); refreshDrawer() }
             }
@@ -599,6 +676,7 @@ class Game3dsActivity : ComponentActivity() {
         if (quitting) return
         quitting = true
         retroView.frameSpeed = 0
+        updatePlayClock()
         val g = game
         if (!upload || g == null) { toast(CloseSave.closedText(false, false)); finish(); return }
         lifecycleScope.launch {
@@ -663,16 +741,14 @@ class Game3dsActivity : ComponentActivity() {
         view.bringToFront()
         view.visibility = View.VISIBLE
         setGameAccessible(false)
-        retroView.frameSpeed = 0
-        applySound()
+        applySpeed() // stands still while the screen is open
     }
 
     private fun closeControls() {
         flow?.stopListening()
         controlsView?.visibility = View.GONE
         setGameAccessible(true)
-        retroView.frameSpeed = 1
-        applySound()
+        applySpeed() // back to the game's speed (fast-forward stays on if it was)
     }
 
     private fun controlsBackPressed() { if (flow?.back() != true) closeControls() }
@@ -693,6 +769,7 @@ class Game3dsActivity : ComponentActivity() {
             autoHide.mode == TouchMode.HIDE -> TOUCH_OFF_HINT
             else -> TOUCH_HIDDEN_HINT
         })
+        showFastForward()
     }
 
     private fun translatorFor(c: ControllerInfo) = translators.getOrPut(c.key) { PadTranslator(controlPrefs.map(console, c.key)) }
@@ -813,6 +890,7 @@ class Game3dsActivity : ComponentActivity() {
         val mode = if (on) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         pad.importantForAccessibility = mode
         menuHandle.importantForAccessibility = mode
+        ffButton.importantForAccessibility = mode
         retroView.importantForAccessibility = mode
     }
 
@@ -824,14 +902,22 @@ class Game3dsActivity : ComponentActivity() {
     // --- Speed readout (dev) --------------------------------------------------------------------
 
     override fun onResume() { super.onResume(); ticker.post(tick) }
-    override fun onPause() { ticker.removeCallbacks(tick); super.onPause() }
+    override fun onPause() {
+        ticker.removeCallbacks(tick)
+        onScreen = false
+        updatePlayClock()
+        // Play time: queued on the phone, sent by the library when online. The dev "3DS test" file has no game.
+        val g = game; val uid = userId
+        if (g != null && uid != null) playClock.take()?.let { secs -> runCatching { PlayTimeQueue(this).record(uid, g.id, secs) } }
+        super.onPause()
+    }
 
     private val tick = object : Runnable {
         override fun run() {
             val f = frames
             frames = 0
             if (check) { checkTick(f); ticker.postDelayed(this, 1000); return }
-            if (!speed.text.startsWith("Error")) speed.text = "$f fps · ${f * 100 / 60}% · ${if (on(VULKAN)) "Vulkan" else "OpenGL"} 1×"
+            if (!speed.text.startsWith("Error")) speed.text = "$f fps · ${f * 100 / 60}% · ${if (on(VULKAN)) "Vulkan" else "OpenGL"} ${if (fastOn) ffSpeed else 1}×"
             ticker.postDelayed(this, 1000)
         }
     }

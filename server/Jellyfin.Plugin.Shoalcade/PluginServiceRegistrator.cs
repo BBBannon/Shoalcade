@@ -34,6 +34,9 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton(_ => new AppTickets(TimeProvider.System));
         serviceCollection.AddSingleton<GamesLibrarySetup>();
 
+        // Internet link play rooms (feature "link-relay"): in memory only, a dumb byte pipe between two logged-in phones.
+        serviceCollection.AddSingleton(_ => new Link.LinkRooms(TimeProvider.System));
+
         // Jellyfin's download/file routes never serve a ROM item whose file is outside its library (G5 s0.2 M1).
         serviceCollection.Configure<MvcOptions>(o => o.Filters.Add<RomFileGuard>());
 

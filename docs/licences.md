@@ -30,7 +30,7 @@ A short public summary is in **`THIRD_PARTY_NOTICES.md`** (repo root). This file
 
 | Core | Where | Licence | Exact source |
 |---|---|---|---|
-| mGBA `0.11-212-7a12d6d` | App (GB, GBC, GBA) | MPL-2.0 | https://github.com/mgba-emu/mgba/tree/7a12d6d |
+| mGBA `0.11-212-7a12d6d` | App (GB, GBC, GBA) | MPL-2.0 | https://github.com/libretro/mgba/tree/7a12d6d |
 | melonDS DS `1.4.0` | App (DS) | GPL-3.0 | https://github.com/JesseTG/melonds-ds/tree/v1.4.0 |
 | gpSP `v1.1.0-5819380` | App (GBA link play) | GPL-2.0-or-later | https://github.com/libretro/gpsp/tree/5819380 |
 | PPSSPP (libretro nightly) | App (PSP) | GPL-2.0-or-later | https://github.com/hrydgard/ppsspp/tree/902e5ccd8c1400b4387b73942491cded655e5f9c |
@@ -68,7 +68,7 @@ A short public summary is in **`THIRD_PARTY_NOTICES.md`** (repo root). This file
 | Component | Use | Licence |
 |---|---|---|
 | **LibretroDroid** 0.14.0 | Emulator front-end library | GPL-3.0 |
-| **mGBA** libretro core `0.11-212-7a12d6d` | GB, GBC and GBA | MPL-2.0 — source https://github.com/mgba-emu/mgba/tree/7a12d6d |
+| **mGBA** libretro core `0.11-212-7a12d6d` | GB, GBC and GBA | MPL-2.0 — source https://github.com/libretro/mgba/tree/7a12d6d |
 | **melonDS DS** libretro core `1.4.0` | DS | GPL-3.0 — source https://github.com/JesseTG/melonds-ds/tree/v1.4.0 |
 | **gpSP** libretro core `v1.1.0-5819380` | GBA link play only (Pokémon link cable / wireless adapter) | GPL-2.0-or-later — source https://github.com/libretro/gpsp/tree/5819380 |
 | **PPSSPP** libretro core (nightly built 22/10/2026; commit `902e5cc` embedded in the arm64 `.so` and reported by the PC test build) | PSP | GPL-2.0-or-later (headers: *"version 2.0 or later versions"*) — source https://github.com/hrydgard/ppsspp/tree/902e5ccd8c1400b4387b73942491cded655e5f9c |
@@ -165,3 +165,46 @@ The plugin is GPL-3.0 too (`LICENSE.txt` in the zip). It bundles EmulatorJS and 
 
 All of these combine cleanly under GPL-3.0. No BIOS is bundled: the core runs with its built-in HLE BIOS stand-in (`pcsx_rearmed_bios=HLE`).
 
+
+## Celio Link interop (app) — added 31/10/2026
+
+- **Our own code** (`android/app/src/main/java/uk/benmarks/shoalcade/Celio.kt`, GPL-3.0 like the rest of the app), written from the protocol. No Celio or gen1recomp code is copied in.
+- **Projects that informed it** (read for the protocol only):
+
+| Project | Licence | What we took from it |
+|---|---|---|
+| Celio-Link/Celio-Server (`src/session.ts`, `client.ts`, `index.ts`, `messages/gameboy.ts`, `messages/validation.ts`) | GPL-3.0 | Event names and payloads, LinkStatus/CommandType values, status → command rules, ack/retry and 5 s reconnect behaviour, ping timings |
+| Celio-Link/Celio-mGBA-Link (`celio_device.lua`) | GPL-3.0 | The device side: handshake words, 4 frames per packet, the "no key held" filter, 0x5FFF / 0xCAFE 0x0017 session ends |
+| Celio-Link/Celio-Client (`linkExchangeSession.ts`, `commandEmitter.socketIO.ts`) | GPL-3.0 | One packet per `deviceData` emit, reordering by sequence, uuid dedup |
+| koutaitatu mGBA Celio Edition (`src/platform/qt/CelioNet.cpp`) | MPL-2.0 | Cross-check of the PC side we link with |
+| mleo2003/gen1recomp-celio (`lib/sio.lua`, `lib/celio.lua`, `lib/gbalink.lua`, `tests/celio_test.lua`) | MIT | Socket.IO v5 framing as a client, the emulator-leads role (AwaitModeEmulator), linger before leaving, test shape |
+| libretro/gpsp (`serial_proto.c`) | GPL-2.0-or-later | MPK1 packet format and the mul_poke master behaviour (ported into a JUnit fake only, not into the app) |
+
+- **New library in the APK:** **OkHttp 4.12.0** (+ Okio, Kotlin stdlib already present), **Apache-2.0**, for the WebSocket only. Listed in About and THIRD_PARTY_NOTICES.md. Android has no JDK WebSocket client (`java.net.http` is missing), and a hand-made TLS WebSocket would mean doing hostname checks ourselves.
+
+## Shoalcade for Windows (installer) — added 31/10/2026
+
+- **What ships:** `ShoalcadeApp-win-Setup.exe` (Dev: `ShoalcadeDevApp-…`), built on Linux by `tools/build_windows_release.sh` (plan-windows §8, D199–D202). Report: `docs/windows/phase8-installer.md`.
+- **Licence texts in the install folder:** `LICENSE.txt` (GPL-3.0) and `licences\` (every part's own text plus a `README.txt` index), written by `windows/installer/licences.sh`. Java's notices stay in `runtime\legal\`.
+- **Corresponding Source (GPLv3 §6(d)):** `SOURCE.txt` in the install folder names the exact Shoalcade commit, each core's repo + commit + DLL SHA-256 (from `windows/cores/cores.lock`), each core's submodule commits, the patch SHA-256s, and every other part's pinned source. The player is built from the committed source only (`git archive HEAD`). A build with uncommitted changes says **TEST BUILD — do not publish** in `SOURCE.txt`.
+- **About screen:** `windows/app/.../desktop/WinLicences.kt` lists every part, its licence and exact source link; `WinLicencesTest` fails if a Windows core commit in `cores.lock`, the Java runtime, SDL or Velopack version stops matching.
+- **Publishing:** `tools/build_windows_release.sh` is un-ignored in `.gitignore`: it controls how the shipped files are built and installed, so it is part of the Corresponding Source.
+
+| Part (Windows only) | Licence | Exact source |
+|---|---|---|
+| Cores: same commits as the phone, built by us with MinGW-w64 (D190) | as the phone's (table above); PCSX ReARMed x64 also includes lightrec (LGPL-2.1+) and GNU lightning (LGPL-3.0+); PPSSPP bundles FFmpeg (LGPL-2.1+) | `windows/cores/cores.lock`; mGBA https://github.com/libretro/mgba/tree/7a12d6d; melonDS DS https://github.com/JesseTG/melonds-ds/tree/f394adbacb5722ee97c1b37c8064da9a25818310 + melonDS https://github.com/JesseTG/melonDS/tree/16f127dbb587a73371827ce79689c5d237c4b59b; patches `tools/ppsspp-patches`, `tools/azahar-patches` |
+| SDL 3.2.24 (`SDL3.dll`) | zlib | https://github.com/libsdl-org/SDL/tree/release-3.2.24 (MinGW kit SHA-256 `07fba995…aeebd376f0`) |
+| Dear ImGui 1.92.4, nlohmann/json 3.11.3, stb, libretro.h, Atkinson Hyperlegible 1.006 | MIT / MIT / MIT or public domain / MIT / OFL-1.1 | Vendored in `windows/player/third_party/` (README there lists each pin) |
+| MinGW-w64 runtime (GCC 14.2, mingw-w64 12.0), linked statically | GPL-3.0 + GCC Runtime Library Exception; mingw-w64 ZPL/MIT-style | https://sources.debian.org/src/gcc-mingw-w64/, https://sources.debian.org/src/mingw-w64/ |
+| Eclipse Temurin 17.0.20.1+1 (jlinked `runtime\`) | GPL-2.0 with Classpath Exception | https://github.com/adoptium/jdk17u/tree/jdk-17.0.20.1+1 |
+| Compose Multiplatform 1.7.3, Skiko 0.8.18 (Skia BSD-3), Kotlin 2.0.21, kotlinx, AndroidX, OkHttp 4.12.0/Okio, JNA 5.15.0 (Apache-2.0 chosen), JmDNS 3.5.9 (link play), JetBrains annotations; SLF4J API 2.0.7 (MIT, used by JmDNS) | Apache-2.0 (SLF4J: MIT, text in `licences\java\`) | Maven Central (`-sources.jar` beside each); exact list in `licences\README.txt` |
+| JSON-java 20240303 | Public domain | https://github.com/stleary/JSON-java/tree/20240303 |
+| Velopack 1.2.161 (`Setup.exe`, `Update.exe`) | MIT | https://github.com/velopack/velopack/tree/1.2.161 |
+
+- **No BIOS, firmware, keys or games** are in the installer (filename sweep of the built image 31/10/2026: only hits were Java's `legal/java.base/aes.md` notice and PPSSPP's `shaders/smiley_16x16_rgba.bin` test texture; `flash0/font` holds PPSSPP's community fonts, see "PPSSPP support files").
+- ⚠️ This branch's `THIRD_PARTY_NOTICES.md` (copied into `licences\`) and the mGBA row above still say `mgba-emu/mgba`; the fix (`libretro/mgba`, commit abb8071 on the main line) must be merged before a public Windows build.
+
+## Windows app: link play (D193–D198)
+
+- **New library in the Windows app (not the APK):** **JmDNS 3.5.9** (`org.jmdns:jmdns`, Apache-2.0) + **SLF4J API 2.0.7** (MIT), to find and show link hosts on the home network with the phone's DNS-SD service. Listed in the About screen (`WinLicences.kt`) and the installer's `licences\README.txt`.
+- The Windows player's `link.cpp` is our own port of our `linkshim.c` (GPL-3.0-or-later); no outside code.

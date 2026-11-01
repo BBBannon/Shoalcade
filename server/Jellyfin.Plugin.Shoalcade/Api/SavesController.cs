@@ -289,7 +289,7 @@ public class SavesController : ShoalcadeControllerBase
     /// <param name="channel">Channel.</param>
     /// <param name="baseVersion">Version the client last saw.</param>
     /// <param name="mode">normal (default), force (the person chose this copy) or history (keep as an old version only).</param>
-    /// <param name="source">browser, app or upload (by hand).</param>
+    /// <param name="source">browser, app (phone), desktop (Windows app) or upload (by hand).</param>
     /// <param name="allowBlank">Accept a blank save (all one byte).</param>
     /// <param name="afterSnapshot">The game saved this after a snapshot was loaded (D90); shown on the version.</param>
     /// <param name="cheats">The game saved this while cheats were on (D143); shown on the version.</param>
@@ -347,11 +347,11 @@ public class SavesController : ShoalcadeControllerBase
             case null or "":
                 src = "upload";
                 break;
-            case "browser" or "app" or "upload":
+            case "browser" or "app" or "desktop" or "upload":
                 src = source;
                 break;
             default:
-                return Fail(StatusCodes.Status400BadRequest, "bad_source", "source must be browser, app or upload.");
+                return Fail(StatusCodes.Status400BadRequest, "bad_source", "source must be browser, app, desktop or upload.");
         }
 
         var (uploadSlot, busy) = await BeginUploadAsync(ctx.User.Id, ctx.Console!.MaxSaveBytes, cancellationToken).ConfigureAwait(false);
@@ -558,6 +558,7 @@ public class SavesController : ShoalcadeControllerBase
             // B9: the game's browser snapshots follow it (copied, checked, then removed; a used slot is never overwritten).
             var s = await Services.States.MoveAsync(src.User.Id, id, to, cancellationToken, dst.Console!.Key, dst.Rom?.Name).ConfigureAwait(false);
             r = r with { Warnings = [.. r.Warnings, .. SnapshotMoveNotes(s), .. CheatMoveNotes(await Services.Cheats.MoveAsync(src.User.Id, id, to, cancellationToken).ConfigureAwait(false))] };
+            await Services.PlayTime.MoveAsync(src.User.Id, id, to, cancellationToken).ConfigureAwait(false);
         }
 
         return ToResult(r);
@@ -616,6 +617,7 @@ public class SavesController : ShoalcadeControllerBase
 
         var s = await Services.States.MoveAsync(src.User.Id, id, to, cancellationToken, dst.Console!.Key, dst.Rom?.Name).ConfigureAwait(false);
         var notes = SnapshotMoveNotes(s).Concat(CheatMoveNotes(await Services.Cheats.MoveAsync(src.User.Id, id, to, cancellationToken).ConfigureAwait(false))).ToList();
+        await Services.PlayTime.MoveAsync(src.User.Id, id, to, cancellationToken).ConfigureAwait(false);
         var current = (await Services.Saves.GetHistoryAsync(src.User.Id, to, cancellationToken).ConfigureAwait(false)).CurrentVersion();
         return ToResult(s.Moved.Count > 0
             ? new SaveWriteResult(SaveWriteStatus.Created, null, current, null, null, notes)

@@ -11,6 +11,7 @@
 - **Jellyfin 12.3 or newer** (tested on 12.3 and 12.4), and an admin account
 - An **HTTPS** address for your server (the app won't use plain HTTP)
 - An **Android 11+** phone
+- **Optional (new):** a **Windows 10 or 11** PC (64-bit) for the Windows app
 - Your own games in a folder Jellyfin can read
 
 ---
@@ -115,11 +116,29 @@
 
 ---
 
+## Windows app (optional, new)
+
+**First Windows release.** It isn't yet widely tested on real PCs: please report problems.
+
+1. **Update the plugin to 0.10.0.0 or newer first.** Older plugins don't accept saves from Windows (the save then waits on the PC).
+2. Download **`ShoalcadeApp-win-Setup.exe`** from the [latest release](https://github.com/BBBannon/Shoalcade/releases/latest).
+3. Run it. It isn't **signed** yet, so Windows says **"Windows protected your PC"**:
+   - Click **More info** → **Run anyway**.
+4. It installs for **your Windows account only** (no admin needed) and adds Desktop and Start menu shortcuts.
+5. Open **Shoalcade**, type your server's **HTTPS** address, then **Log in** (or **Use Quick Connect instead**).
+6. Click **Download** on a game → **Play**.
+
+- **Updating:** run the new Setup file over the old one. Login, games and saves stay.
+- **Uninstalling** (Windows **Settings → Apps**) never deletes your saves: they stay in `%LOCALAPPDATA%\Shoalcade\`.
+- **Link play:** the first time the PC hosts, allow Shoalcade on **private networks** when Windows Firewall asks.
+
+---
+
 ## Browser player
 
 - Open the **Shoalcade** link in Jellyfin's menu, or go to **`https://<your-server>/shoalcade/`**.
 - It uses your Jellyfin web login. No extra sign-in.
-- Plays **GB, GBC, GBA, N64, DS and PS1**. PSP and 3DS are phone only.
+- Plays **GB, GBC, GBA, N64, DS and PS1**. PSP and 3DS are in the phone and Windows apps only.
 - Each game page has **Play** and **Saves** buttons.
 - Saves are sent to Jellyfin by themselves, a few seconds after the game saves.
   - Leaving too soon? It asks: **Your save hasn't reached the server yet** → **Stay** or **Leave anyway**.
@@ -134,7 +153,7 @@
 
 **The rules**
 - **Only in-game saves sync.** Snapshots stay where you made them (phone or browser).
-- **Shared saves**: the phone and the browser use the same saves, with older versions kept.
+- **Shared saves**: the phone, the Windows app and the browser use the same saves, with older versions kept.
 - **Nothing is overwritten without a copy.** Every older version stays in the **list**.
 
 **On the phone**
@@ -164,7 +183,7 @@ Both copies are kept either way.
 - **Upload a save file** / **Download** — move saves to and from your computer.
 - **Move to another game** — e.g. after a game was renamed.
 
-**Offline?** The app says **You're offline**. Keep playing. Upload when you're back.
+**Offline?** The app says **You're offline**. Keep playing. Saves go up by themselves when you're back online (**Settings → Saves → Upload saves automatically**, on by default).
 
 **Before uninstalling the app:** upload every save (**Push all**). Uninstalling deletes everything on the phone.
 
@@ -178,5 +197,7 @@ Both copies are kept either way.
 | App shows a red banner | The plugin is too old for the app. Update the plugin |
 | Login fails | Use the **HTTPS** address. Try **Log in with Quick Connect** |
 | No box art | Wait for the next scan. Some games have no libretro art |
+| Windows: "Windows protected your PC" | The installer isn't signed yet. **More info → Run anyway** |
+| Windows: saves won't upload | Update the plugin to **0.10.0.0 or newer**, then fully restart Jellyfin |
 
-**Please report bugs on GitHub** — not to the Jellyfin team.
+**Please report bugs on [Discord](https://discord.gg/SRDBXwhre)** — not to the Jellyfin team.

@@ -1,0 +1,18 @@
+Shoalcade build fix for the Windows (MinGW, CMake) libretro core. No effect on any other build.
+draw_text_uwp.h only declares TextDrawerUWP when !__LIBRETRO__, but draw_text_uwp.cpp defined it
+for every _WIN32 build, so the CMake libretro build on Windows could not compile. Upstream's own
+Windows libretro build uses libretro/Makefile (MSVC), which never compiles this file.
+
+diff --git a/Common/Render/Text/draw_text_uwp.cpp b/Common/Render/Text/draw_text_uwp.cpp
+index 877cfef..41e386d 100644
+--- a/Common/Render/Text/draw_text_uwp.cpp
++++ b/Common/Render/Text/draw_text_uwp.cpp
+@@ -11,7 +11,7 @@
+ #include "Common/StringUtils.h"
+ #include "Common/File/Path.h"
+ 
+-#if defined(_WIN32)
++#if defined(_WIN32) && !defined(__LIBRETRO__)  // Shoalcade: match draw_text_uwp.h (MinGW libretro build)
+ 
+ #include <string>
+ 

@@ -1,6 +1,8 @@
 package uk.benmarks.shoalcade
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -88,6 +90,17 @@ internal fun SettingsScreen(vm: AppViewModel, onClose: () -> Unit) {
             Text(SettingsModel.SAVES_HELP, style = MaterialTheme.typography.bodySmall)
             SyncAllBar(vm)
             Text(SettingsModel.CHANGING_PHONES, style = MaterialTheme.typography.bodyMedium)
+            // Auto upload: on by default. Turning it on asks (Android 13+) to show "a save needs your choice" notices.
+            val autoStore = remember { AutoUpload.store(ctx) }
+            var autoUpload by remember { mutableStateOf(AutoUpload.on(autoStore)) }
+            val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+            DrawerRow(SettingsModel.autoUploadRow(autoStore).copy(on = autoUpload), focused = false) {
+                autoUpload = !autoUpload
+                runCatching { AutoUpload.setOn(ctx, autoUpload) } // on: waiting saves go up once online; off: the run is cancelled
+                if (autoUpload && android.os.Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+            Text(SettingsModel.AUTO_UPLOAD_HELP, style = MaterialTheme.typography.bodySmall)
             SubHeading(SettingsModel.NOT_IN_LIBRARY)
             Text(SettingsModel.NOT_IN_LIBRARY_HELP, style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { orphans = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
@@ -99,6 +112,28 @@ internal fun SettingsScreen(vm: AppViewModel, onClose: () -> Unit) {
             Text(N3dsCheck.status(ctx), style = MaterialTheme.typography.bodyLarge)
             OutlinedButton(onClick = { ctx.startActivity(android.content.Intent(ctx, N3dsCheckActivity::class.java)) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(N3dsCheck.OPEN) }
+
+            // Celio Link (trade with PC players): off by default, per phone. A third-party server, so it says so.
+            Heading(CelioText.HEADING)
+            var celioOn by remember { mutableStateOf(LinkPrefs.celioOn(ctx)) }
+            DrawerRow(MenuItem.Toggle(ID_CELIO, CelioText.SWITCH, celioOn), focused = false) {
+                celioOn = !celioOn; LinkPrefs.setCelioOn(ctx, celioOn)
+            }
+            Text(CelioText.SWITCH_HINT, style = MaterialTheme.typography.bodySmall)
+            if (celioOn) {
+                var server by remember { mutableStateOf(LinkPrefs.celioServer(ctx)) }
+                val problem = CelioWire.serverProblem(server)
+                OutlinedTextField(server, { server = it.trim(); LinkPrefs.setCelioServer(ctx, server) },
+                    label = { Text(CelioText.SERVER) }, singleLine = true, isError = problem != null,
+                    supportingText = problem?.let { { Text(it) } },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri, autoCorrectEnabled = false),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
+                if (server != CelioWire.DEFAULT_SERVER) {
+                    TextButton(onClick = { server = CelioWire.DEFAULT_SERVER; LinkPrefs.setCelioServer(ctx, server) },
+                        modifier = Modifier.heightIn(min = 48.dp)) { Text(CelioText.USE_PUBLIC) }
+                }
+            }
 
             Heading(SettingsModel.APP)
             var haptics by remember { mutableStateOf(Haptics.on(ctx)) }
@@ -140,3 +175,5 @@ private fun Labelled(label: String, value: String, help: String? = null) {
         help?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
 }
+
+private const val ID_CELIO = "link.celio"

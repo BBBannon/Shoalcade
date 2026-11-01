@@ -140,18 +140,21 @@ public sealed class StorageReport
     private readonly string _states;
     private readonly string _prefs;
     private readonly string? _cheats;
+    private readonly string? _playTime;
 
     /// <summary>Initializes a new instance of the <see cref="StorageReport"/> class.</summary>
     /// <param name="savesRoot">Saves root folder.</param>
     /// <param name="statesRoot">Snapshots root folder.</param>
     /// <param name="prefsRoot">Settings root folder.</param>
     /// <param name="cheatsRoot">Cheats root folder (D143): shown as one "cheats" settings group per user.</param>
-    public StorageReport(string savesRoot, string statesRoot, string prefsRoot, string? cheatsRoot = null)
+    /// <param name="playTimeRoot">Play time root folder: shown as one "play time" settings group per user.</param>
+    public StorageReport(string savesRoot, string statesRoot, string prefsRoot, string? cheatsRoot = null, string? playTimeRoot = null)
     {
         _saves = Path.GetFullPath(savesRoot);
         _states = Path.GetFullPath(statesRoot);
         _prefs = Path.GetFullPath(prefsRoot);
         _cheats = cheatsRoot is null ? null : Path.GetFullPath(cheatsRoot);
+        _playTime = playTimeRoot is null ? null : Path.GetFullPath(playTimeRoot);
     }
 
     /// <summary>Builds the report.</summary>
@@ -174,7 +177,7 @@ public sealed class StorageReport
             names[id] = name;
         }
 
-        foreach (var root in new[] { _saves, _states, _prefs, _cheats ?? _prefs })
+        foreach (var root in new[] { _saves, _states, _prefs, _cheats ?? _prefs, _playTime ?? _prefs })
         {
             foreach (var d in Dirs(root))
             {
@@ -292,6 +295,15 @@ public sealed class StorageReport
             if (cheatBytes > 0)
             {
                 settings.Add(new SettingsStorageDto("cheats", cheatBytes));
+            }
+        }
+
+        if (_playTime is not null)
+        {
+            var playBytes = Walk(Path.Combine(_playTime, key), ref unreadable).Sum(f => f.Length);
+            if (playBytes > 0)
+            {
+                settings.Add(new SettingsStorageDto("play time", playBytes));
             }
         }
 

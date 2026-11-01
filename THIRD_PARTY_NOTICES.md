@@ -13,13 +13,14 @@ It is built on the work of the projects below. Thank you to all of them.
 | Component | Used for | Licence | Source |
 |---|---|---|---|
 | **LibretroDroid** 0.14.0 | Emulator front-end | GPL-3.0 | https://github.com/Swordfish90/LibretroDroid/tree/0.14.0 |
-| **mGBA** `0.11-212-7a12d6d` | Game Boy, Game Boy Color, Game Boy Advance | MPL-2.0 | https://github.com/mgba-emu/mgba/tree/7a12d6d |
+| **mGBA** `0.11-212-7a12d6d` | Game Boy, Game Boy Color, Game Boy Advance | MPL-2.0 | https://github.com/libretro/mgba/tree/7a12d6d |
 | **melonDS DS** 1.4.0 | Nintendo DS | GPL-3.0 | https://github.com/JesseTG/melonds-ds/tree/v1.4.0 |
 | **gpSP** `v1.1.0-5819380` | Game Boy Advance link play | GPL-2.0-or-later | https://github.com/libretro/gpsp/tree/5819380 |
 | **PPSSPP** (commit `902e5cc`) | PSP | GPL-2.0-or-later | https://github.com/hrydgard/ppsspp/tree/902e5ccd8c1400b4387b73942491cded655e5f9c |
 | **PCSX ReARMed** `r26l-119-gc881679` (commit `c8816799`) | PlayStation (PS1) | GPL-2.0-or-later | https://github.com/libretro/pcsx_rearmed/tree/c8816799b50388e61cfe237fe2cdbb7d8175f20a |
 | **PPSSPP support files** | PSP system fonts, UI fonts, compatibility list | See below | Same as PPSSPP |
 | **AndroidX**, **Jetpack Compose**, **Kotlin**, **kotlinx.coroutines** | App framework | Apache-2.0 | https://android.googlesource.com/platform/frameworks/support · https://github.com/JetBrains/kotlin · https://github.com/Kotlin/kotlinx.coroutines |
+| **OkHttp** 4.12.0 + **Okio** | Celio Link connection (WebSocket) | Apache-2.0 | https://github.com/square/okhttp/tree/parent-4.12.0 · https://github.com/square/okio |
 
 ### PPSSPP support files
 

@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -252,6 +253,33 @@ object LinkHandshake {
         return JoinResult.Linked(theirs.optString("device"), cable)
     }
 
+    /**
+     * Internet link host (relay): waits for each phone that takes the seat and runs [host] with it, end to end. A wrong
+     * PIN ([onWrongPin]) or a phone that isn't usable is sent away (after our answer has reached it) and hosting goes
+     * on; the next joiner gets a fresh nonce and a new generation, so nothing from the last one can reach it.
+     * Returns the linked phone's name; throws if the relay link is lost or closed.
+     */
+    fun hostOverRelay(
+        pipe: RelayPipe, guard: PinGuard, console: Console, gameName: String, deviceName: String, cableMode: Boolean,
+        handshakeMs: Long = LinkLobby.HANDSHAKE_MS, onWrongPin: () -> Unit,
+    ): String {
+        while (true) {
+            val gen = pipe.awaitJoin() ?: continue
+            pipe.readTimeoutMs = handshakeMs
+            val r = try {
+                host(pipe.input, pipe.output, guard, console, gameName, deviceName, cableMode)
+            } catch (e: Exception) {
+                pipe.lost?.let { throw IOException(it) }
+                HostResult.Dropped(e.message ?: "error")
+            }
+            when (r) {
+                is HostResult.Linked -> { pipe.readTimeoutMs = 0; return r.peerName }
+                is HostResult.WrongPin -> { pipe.kick(gen); onWrongPin() }
+                is HostResult.Dropped -> pipe.kick(gen, flushMs = 0)
+            }
+        }
+    }
+
     fun send(output: OutputStream, line: String) {
         output.write((line + "\n").toByteArray(Charsets.UTF_8))
         output.flush()
@@ -271,15 +299,98 @@ object LinkHandshake {
     }
 }
 
-/** A connected link, handed from the lobby to [GameActivity]. */
-class LinkConnection(
-    val socket: Socket,
+/**
+ * A connected link, handed from the lobby to [GameActivity]: over Wi-Fi a socket, over the internet a [RelayPipe].
+ * Either way the native shim just gets a stream socket fd ([detachFdForNative]), so linkshim.c is the same for both.
+ */
+class LinkConnection private constructor(
     val isHost: Boolean,
     val cableMode: Boolean,
     val peerName: String,
+    private val end: LinkEnd,
 ) {
-    /** A duplicate of the socket's fd for the native shim; the shim owns and closes it. */
-    fun detachFdForNative(): Int = ParcelFileDescriptor.fromSocket(socket).detachFd()
+    /** Wi-Fi (D16): the shim gets a duplicate of the socket's own fd, as before. */
+    constructor(socket: Socket, isHost: Boolean, cableMode: Boolean, peerName: String) :
+        this(isHost, cableMode, peerName, SocketEnd(socket))
+
+    /** True for a link through Jellyfin (internet link play). */
+    val overInternet: Boolean get() = end is RelayEnd
+
+    /** Set for a Celio Link session (a trade with a PC player). */
+    val celio: CelioSession? get() = (end as? CelioEnd)?.session
+
+    /** An fd for the native shim; the shim owns and closes it. */
+    fun detachFdForNative(): Int = end.detachFd()
+
+    /** Ends this side of the link (the shim's own fd is the shim's to close). */
+    fun close() = end.close()
+
+    companion object {
+        fun relay(pipe: RelayPipe, isHost: Boolean, cableMode: Boolean, peerName: String) =
+            LinkConnection(isHost, cableMode, peerName, RelayEnd(pipe))
+
+        /** Celio Link: always cable mode, and the phone always leads the link (gpSP client 0, AwaitModeEmulator). */
+        fun celio(session: CelioSession) = LinkConnection(isHost = true, cableMode = true, peerName = CelioText.PEER, CelioEnd(session))
+    }
+}
+
+/** Where a link's bytes really go. */
+interface LinkEnd {
+    fun detachFd(): Int
+    fun close()
+}
+
+private class SocketEnd(private val socket: Socket) : LinkEnd {
+    override fun detachFd(): Int = ParcelFileDescriptor.fromSocket(socket).detachFd()
+    override fun close() { runCatching { socket.close() } }
+}
+
+/**
+ * Internet link: a socketpair, one end for the shim (through the same SC_LINK_FD path as Wi-Fi), the other copied
+ * to and from the relay by [RelayLinkPump]. The pump starts when the game takes the fd.
+ */
+private class RelayEnd(private val pipe: RelayPipe) : LinkEnd {
+    private var pump: RelayLinkPump? = null
+
+    override fun detachFd(): Int {
+        val ours = java.io.FileDescriptor()
+        val theirs = java.io.FileDescriptor()
+        android.system.Os.socketpair(android.system.OsConstants.AF_UNIX, android.system.OsConstants.SOCK_STREAM, 0, ours, theirs)
+        val p = RelayLinkPump(pipe, java.io.FileInputStream(ours), java.io.FileOutputStream(ours)) {
+            runCatching { android.system.Os.shutdown(ours, android.system.OsConstants.SHUT_RDWR) }
+            runCatching { android.system.Os.close(ours) }
+        }
+        pump = p
+        p.start()
+        val fd = ParcelFileDescriptor.dup(theirs).detachFd()
+        runCatching { android.system.Os.close(theirs) }
+        return fd
+    }
+
+    override fun close() {
+        pump?.close() ?: pipe.close()
+    }
+}
+
+/**
+ * Celio Link: a socketpair, one end for the shim (the same SC_LINK_FD path), the other spoken to by [CelioSession]'s
+ * bridge (MPK1 to the shim, Celio to the server).
+ */
+private class CelioEnd(val session: CelioSession) : LinkEnd {
+    override fun detachFd(): Int {
+        val ours = java.io.FileDescriptor()
+        val theirs = java.io.FileDescriptor()
+        android.system.Os.socketpair(android.system.OsConstants.AF_UNIX, android.system.OsConstants.SOCK_STREAM, 0, ours, theirs)
+        session.attachLocal(java.io.FileInputStream(ours), java.io.FileOutputStream(ours)) {
+            runCatching { android.system.Os.shutdown(ours, android.system.OsConstants.SHUT_RDWR) }
+            runCatching { android.system.Os.close(ours) }
+        }
+        val fd = ParcelFileDescriptor.dup(theirs).detachFd()
+        runCatching { android.system.Os.close(theirs) }
+        return fd
+    }
+
+    override fun close() = session.close()
 }
 
 /** Holds the one pending/active link session and the Wi-Fi locks that keep it fast. */
@@ -300,7 +411,7 @@ object LinkHolder {
     }
 
     fun end() {
-        pending?.let { runCatching { it.socket.close() } }
+        pending?.let { runCatching { it.close() } }
         pending = null
         runCatching { multicast?.release() }
         runCatching { lowLatency?.release() }
@@ -323,6 +434,22 @@ object LinkPrefs {
     }
 
     fun deviceName(): String = Build.MODEL ?: "Android phone"
+
+    /** Celio Link (trade with PC players): off unless switched on, per phone. */
+    fun celioOn(ctx: Context): Boolean = prefs(ctx).getBoolean("celio_on", false)
+
+    fun setCelioOn(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("celio_on", on).apply()
+
+    /** The Celio Link server typed in Settings (always one that passes [CelioWire.serverProblem]). */
+    fun celioServer(ctx: Context): String =
+        prefs(ctx).getString("celio_server", null)?.takeIf { CelioWire.serverProblem(it) == null } ?: CelioWire.DEFAULT_SERVER
+
+    /** False (nothing stored) if [server] isn't a usable address. */
+    fun setCelioServer(ctx: Context, server: String): Boolean {
+        if (CelioWire.serverProblem(server) != null) return false
+        prefs(ctx).edit().putString("celio_server", server.trim().trimEnd('/')).apply()
+        return true
+    }
 }
 
 /** One phone found on the network. */
@@ -336,18 +463,31 @@ sealed interface LobbyState {
      */
     data class Hosting(val addresses: List<String>, val port: Int, val pin: String, val notice: String? = null,
                        val paused: Boolean = false) : LobbyState
+    /** Internet link (relay): the room code from Jellyfin plus this phone's PIN, for the joiner to type. */
+    data class HostingOnline(val room: String, val pin: String, val notice: String? = null, val paused: Boolean = false) : LobbyState
+    /** Internet link: the joiner types the room code and PIN. */
+    data object JoiningOnline : LobbyState
     data class Searching(val peers: List<LinkPeer>) : LobbyState
     data class Connecting(val to: String) : LobbyState
     data class Connected(val connection: LinkConnection) : LobbyState
-    /** [retryJoin]: the joiner can fix it and try again (e.g. a mistyped PIN). */
-    data class Failed(val reason: String, val retryJoin: Boolean = false) : LobbyState
+    /** Celio Link: connecting to the server, and making or joining the room. */
+    data object CelioConnecting : LobbyState
+    /** Celio Link: our room [room] is made; waiting for the PC player to join it. */
+    data class CelioRoom(val room: String) : LobbyState
+    /** Celio Link: typing the PC player's room number. */
+    data object CelioJoining : LobbyState
+    /**
+     * [retryJoin]: the joiner can fix it and try again (e.g. a mistyped PIN); [online]: back to the internet form;
+     * [celio]: back to the Celio Link room number form.
+     */
+    data class Failed(val reason: String, val retryJoin: Boolean = false, val online: Boolean = false, val celio: Boolean = false) : LobbyState
 }
 
 /**
  * Finds the other phone and connects to it. Host: listen + advertise over mDNS (NsdManager).
  * Join: discover, or type the host's address, plus the PIN the host shows. [LinkHandshake] runs before the game starts.
  */
-class LinkLobby(ctx: Context, private val console: Console, private val gameName: String) {
+class LinkLobby(ctx: Context, private val console: Console, private val gameName: String, private val relay: RelayHttp? = null) {
     private val app = ctx.applicationContext
     private val nsd = app.getSystemService(Context.NSD_SERVICE) as NsdManager
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -363,6 +503,8 @@ class LinkLobby(ctx: Context, private val console: Console, private val gameName
     private var resolving = false
     @Volatile private var handedOver = false
     @Volatile private var guard: PinGuard? = null
+    @Volatile private var pipe: RelayPipe? = null
+    @Volatile private var celio: CelioSession? = null
 
     fun host(cableMode: Boolean) {
         stopAll()
@@ -424,9 +566,121 @@ class LinkLobby(ctx: Context, private val console: Console, private val gameName
     /** After 5 wrong PINs: the host player chose to carry on, so make a new PIN and take joins again (M1). */
     fun keepHosting() {
         val g = guard ?: return
-        val st = _state.value as? LobbyState.Hosting ?: return
-        g.resume()
-        _state.value = st.copy(pin = g.pin, notice = HOST_NEW_PIN, paused = false)
+        when (val st = _state.value) {
+            is LobbyState.Hosting -> { g.resume(); _state.value = st.copy(pin = g.pin, notice = HOST_NEW_PIN, paused = false) }
+            is LobbyState.HostingOnline -> { g.resume(); _state.value = st.copy(pin = g.pin, notice = HOST_NEW_PIN, paused = false) }
+            else -> {}
+        }
+    }
+
+    /**
+     * Internet link: open a room on Jellyfin and wait for a phone to take the seat, then run the same PIN handshake
+     * (D133) end to end over the relay. A wrong PIN or a junk joiner is sent away and hosting carries on.
+     */
+    fun hostOnline(cableMode: Boolean) {
+        val http = relay ?: return
+        stopAll()
+        LinkHolder.acquireLocks(app)
+        job = scope.launch {
+            var p: RelayPipe? = null
+            try {
+                val seat = http.create(console)
+                p = RelayPipe(http.transport(seat), seat.gen).also { pipe = it; it.start() }
+                val g = PinGuard()
+                guard = g
+                val room = RelayWire.showCode(seat.code)
+                _state.value = LobbyState.HostingOnline(room, g.pin)
+                val peer = LinkHandshake.hostOverRelay(p, g, console, gameName, LinkPrefs.deviceName(), cableMode) {
+                    val paused = g.paused // read the guard: Keep hosting may have been tapped meanwhile
+                    _state.value = LobbyState.HostingOnline(room, g.pin, if (paused) HOST_PAUSED else HOST_WRONG_PIN, paused)
+                }
+                pipe = null
+                connected(LinkConnection.relay(p, isHost = true, cableMode = cableMode, peerName = peer))
+            } catch (e: Exception) {
+                if (pipe === p) { p?.close(); pipe = null }
+                if (!isActive) return@launch // cancelled: the dialog closed or another choice was made
+                if (!handedOver && _state.value !is LobbyState.Idle && _state.value !is LobbyState.Connected) fail(e.message ?: RelayWire.ENDED)
+            }
+        }
+    }
+
+    /** Internet link: show the room code + PIN form. */
+    fun joinOnlineForm() {
+        stopAll()
+        _state.value = LobbyState.JoiningOnline
+    }
+
+    /** Internet link: take the seat in room [code], then the PIN handshake end to end. */
+    fun joinOnline(code: String, pin: String) {
+        val http = relay ?: return
+        stopAll()
+        _state.value = LobbyState.Connecting(RelayWire.showCode(code))
+        job = scope.launch {
+            var p: RelayPipe? = null
+            try {
+                val seat = http.join(code, console)
+                p = RelayPipe(http.transport(seat), seat.gen).also { pipe = it; it.start() }
+                p.readTimeoutMs = HANDSHAKE_MS
+                when (val r = LinkHandshake.join(p.input, p.output, pin, console, gameName, LinkPrefs.deviceName())) {
+                    is LinkHandshake.JoinResult.Linked -> {
+                        p.readTimeoutMs = 0
+                        pipe = null
+                        connected(LinkConnection.relay(p, isHost = false, cableMode = r.cableMode, peerName = r.peerName))
+                    }
+                    is LinkHandshake.JoinResult.Refused -> {
+                        p.close(); pipe = null
+                        _state.value = LobbyState.Failed(r.reason, retryJoin = true, online = true)
+                    }
+                }
+            } catch (e: Exception) {
+                if (pipe === p) { p?.close(); pipe = null }
+                if (!isActive) return@launch // cancelled: the dialog closed or another choice was made
+                val why = p?.lost ?: e.message ?: RelayWire.ENDED
+                if (_state.value !is LobbyState.Idle) _state.value = LobbyState.Failed(
+                    if (e is RelayRefusedException || p?.lost != null) why else "$JOIN_ONLINE_FAILED $why", retryJoin = true, online = true)
+            }
+        }
+    }
+
+    /** Celio Link: show the room number form. */
+    fun celioJoinForm() {
+        stopAll()
+        _state.value = LobbyState.CelioJoining
+    }
+
+    /**
+     * Celio Link (GBA, cable mode, no Jellyfin): make a room on [server] ([room] null) or join the PC player's [room].
+     * The game starts once the PC player is in the room; the same [CelioSession] then carries the link.
+     */
+    fun celio(server: String, room: String?) {
+        stopAll()
+        LinkHolder.acquireLocks(app)
+        _state.value = LobbyState.CelioConnecting
+        val s = CelioSession(CelioWire.socketUrl(server), OkHttpWsConnector())
+        celio = s
+        job = scope.launch {
+            s.start(room)
+            s.status.collect { st ->
+                when (st) {
+                    CelioSession.Status.Connecting -> {}
+                    is CelioSession.Status.InRoom -> if (st.partner) {
+                        celio = null
+                        connected(LinkConnection.celio(s))
+                        cancel() // stop watching: the game has the session now
+                    } else _state.value = LobbyState.CelioRoom(st.room)
+                    is CelioSession.Status.Lost -> {
+                        if (celio === s) { s.close(); celio = null }
+                        _state.value = LobbyState.Failed(st.why, retryJoin = room != null, celio = true)
+                        cancel()
+                    }
+                    CelioSession.Status.Finished -> {
+                        if (celio === s) { s.close(); celio = null }
+                        _state.value = LobbyState.Failed(CelioText.PARTNER_LEFT, celio = true)
+                        cancel()
+                    }
+                }
+            }
+        }
     }
 
     fun search() {
@@ -495,6 +749,10 @@ class LinkLobby(ctx: Context, private val console: Console, private val gameName
         job?.cancel()
         job = null
         guard = null
+        pipe?.close() // a room not handed to a game: leave it
+        pipe = null
+        celio?.close()
+        celio = null
         closeServers()
         unadvertise()
         stopDiscovery()
@@ -589,6 +847,9 @@ class LinkLobby(ctx: Context, private val console: Console, private val gameName
         const val HOST_WRONG_PIN = "Someone typed a wrong PIN. Still waiting…"
         const val HOST_PAUSED = "Someone typed the wrong PIN 5 times, so nobody can join for now. Tap Keep hosting for a new PIN, or Cancel to stop."
         const val HOST_NEW_PIN = "Here's a new PIN. Use this one instead."
+        const val JOIN_ONLINE_FAILED = "Couldn't link over the internet:"
+        /** Longest wait for each handshake line over the relay (mobile data can be slow to wake up). */
+        const val HANDSHAKE_MS = 20_000L
 
         /** This phone's Wi-Fi/hotspot IPv4 addresses (never mobile data or a VPN): where the host listens. */
         fun linkAddresses(): List<Inet4Address> = runCatching {

@@ -192,6 +192,7 @@ public sealed record SaveWriteDto(
 /// <param name="BrowserPlayable">Whether it plays in the browser.</param>
 /// <param name="Save">Current save, if any.</param>
 /// <param name="Favourite">Starred by this user (Jellyfin favourites).</param>
+/// <param name="PlaySeconds">This user's total play time on the game, from every device (seconds; 0 = none).</param>
 public sealed record GameDto(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("name")] string Name,
@@ -204,7 +205,20 @@ public sealed record GameDto(
     [property: JsonPropertyName("lastPlayed")] DateTime? LastPlayed,
     [property: JsonPropertyName("browserPlayable")] bool BrowserPlayable,
     [property: JsonPropertyName("save")] SaveVersionDto? Save,
-    [property: JsonPropertyName("favourite")] bool Favourite = false);
+    [property: JsonPropertyName("favourite")] bool Favourite = false,
+    [property: JsonPropertyName("playSeconds")] long PlaySeconds = 0);
+
+/// <summary>Body of "add play time": finished sessions, several at once (a phone that was offline).</summary>
+/// <param name="Sessions">Sessions.</param>
+public sealed record PlayTimeAddDto(
+    [property: JsonPropertyName("sessions")] List<Jellyfin.Plugin.Shoalcade.PlayTime.PlaySession?>? Sessions);
+
+/// <summary>Result of "add play time".</summary>
+/// <param name="PlaySeconds">The game's new total for this user.</param>
+/// <param name="Added">Sessions counted by this call (a session already counted is skipped).</param>
+public sealed record PlayTimeResultDto(
+    [property: JsonPropertyName("playSeconds")] long PlaySeconds,
+    [property: JsonPropertyName("added")] int Added);
 
 /// <summary>One entry in the save manager list.</summary>
 /// <param name="ItemId">Item id.</param>

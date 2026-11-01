@@ -45,10 +45,18 @@ enum class GameSort(val key: String, val label: String) {
     }
 }
 
-/** Per-user library settings kept on the phone: the chosen sort and when each game was last started here. */
+/** Per-user library settings kept on the phone: the chosen sort, the Favourites and On phone toggles and when each game was last started here. */
 class LibraryPrefs(private val store: SyncStore) {
     fun sort(userId: String): GameSort = GameSort.fromKey(store.get("sort.$userId"))
     fun setSort(userId: String, sort: GameSort) = store.set("sort.$userId", sort.key)
+
+    /** "Show only Favourites" toggle: off until turned on. */
+    fun favouritesOnly(userId: String): Boolean = store.get("favsOnly.$userId") == "1"
+    fun setFavouritesOnly(userId: String, on: Boolean) = store.set("favsOnly.$userId", if (on) "1" else null)
+
+    /** "Show only games on this phone" (downloaded) toggle: off until turned on. */
+    fun onPhoneOnly(userId: String): Boolean = store.get("dlOnly.$userId") == "1"
+    fun setOnPhoneOnly(userId: String, on: Boolean) = store.set("dlOnly.$userId", if (on) "1" else null)
 
     fun lastLaunch(userId: String, gameId: String): Long? = store.get("played.$userId.$gameId")?.toLongOrNull()
     fun recordLaunch(userId: String, gameId: String, at: Long = System.currentTimeMillis()) =

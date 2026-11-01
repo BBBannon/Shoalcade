@@ -20,8 +20,12 @@ internal object GameSound {
     /** Low-latency audio stays off: it can't recover after an interruption (see above). */
     const val LOW_LATENCY = false
 
-    /** Whether the game should make sound right now. The menu stands the game still, so it is quiet too; App Mute always is. */
-    fun enabled(menuOpen: Boolean, muted: Boolean = false): Boolean = !menuOpen && !muted
+    /**
+     * Whether the game should make sound right now. The menu stands the game still, so it is quiet too; App Mute always
+     * is. Fast-forward ([fast]) is quiet as well: LibretroDroid plays the sped-up sound higher and faster (chipmunk
+     * music at 2-4×), so silence is kinder (see [FastForward]).
+     */
+    fun enabled(menuOpen: Boolean, muted: Boolean = false, fast: Boolean = false): Boolean = !menuOpen && !muted && !fast
 
     private const val MUTE_KEY = "mute"
 

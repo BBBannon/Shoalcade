@@ -70,8 +70,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var sort by mutableStateOf(GameSort.DEFAULT)
         private set
 
+    /** "Show only Favourites", remembered per user. */
+    var favouritesOnly by mutableStateOf(false)
+        private set
+
+    fun chooseFavouritesOnly(on: Boolean) {
+        favouritesOnly = on
+        session?.let { library.setFavouritesOnly(it.userId, on) }
+    }
+
+    /** "Show only games on this phone" (downloaded), remembered per user. */
+    var onPhoneOnly by mutableStateOf(false)
+        private set
+
+    fun chooseOnPhoneOnly(on: Boolean) {
+        onPhoneOnly = on
+        session?.let { library.setOnPhoneOnly(it.userId, on) }
+    }
+
     init {
-        session?.let { sort = library.sort(it.userId) }
+        session?.let {
+            sort = library.sort(it.userId); favouritesOnly = library.favouritesOnly(it.userId); onPhoneOnly = library.onPhoneOnly(it.userId)
+        }
         readCache().let { games = it ?: emptyList(); gamesKnown = it != null }
         refreshConflicts()
         if (session != null) refresh()
@@ -132,6 +152,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         store.save(s)
         session = s
         sort = library.sort(s.userId)
+        favouritesOnly = library.favouritesOnly(s.userId)
+        onPhoneOnly = library.onPhoneOnly(s.userId)
         readCache().let { games = it ?: emptyList(); gamesKnown = it != null }
         refresh()
     }
@@ -212,6 +234,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (info == null || problem != null) return@launch
                 saveRules = info.keepRecent to info.keepDailyDays
                 hasFavourites = "favourites" in info.features
+                hasLinkRelay = RelayWire.FEATURE in info.features
                 launch {
                     // Never in the way: a server without it, or any error, just shows nothing.
                     appUpdate = runCatching { withContext(Dispatchers.IO) { c.serverAppVersion() } }.getOrNull()
@@ -222,6 +245,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 games = c.listGames(info.canDownload).map { it.game }
                 gamesKnown = true
                 writeCache(games)
+                serverFeatures = info.features
+                flushPlayTime()
                 val list = games
                 launch { if (BoxArt.fetchMissing(getApplication(), c, list)) artVersion++ } // don't hold the spinner
                 launch {
@@ -260,13 +285,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelDownload(game: Game) = Downloads.cancel(getApplication(), game.id)
 
     /** On return to the library (e.g. from a game whose upload hit a conflict): recheck badges and ⚠️ marks. */
-    fun diskVersionBump() { localDiskVersion++; refreshConflicts() }
+    fun diskVersionBump() { localDiskVersion++; refreshConflicts(); flushPlayTime() }
+
+    // ---- Play time (D172): sessions queued by the players, sent here; the total counts phone and browser ----
+    private val playQueue by lazy { PlayTimeQueue(getApplication<Application>()) }
+    /** The server's features from the last /shoalcade/info (null until it answered). */
+    private var serverFeatures: List<String>? = null
+
+    /** Total play time to show: the server's, plus sessions on this phone not sent yet (offline play counts at once). */
+    fun playSeconds(g: Game): Long = g.playSeconds + (session?.let { runCatching { playQueue.pendingSeconds(it.userId, g.id) }.getOrDefault(0L) } ?: 0L)
+
+    /** Sends queued sessions (nothing on an older server or offline: they wait), then shows the new totals. */
+    fun flushPlayTime() {
+        val s = session ?: return
+        val features = serverFeatures ?: return
+        val c = client()
+        viewModelScope.launch {
+            val totals = runCatching { withContext(Dispatchers.IO) { playQueue.flush(c, s.userId, features) } }.getOrDefault(emptyMap())
+            if (totals.isEmpty()) return@launch
+            games = games.map { g -> totals[g.id]?.let { g.copy(playSeconds = it) } ?: g }
+            val list = games
+            withContext(Dispatchers.IO) { writeCache(list) }
+        }
+    }
 
     /** A newer phone app is inside the user's plugin (its version), offered at the top of the library. */
     var appUpdate by mutableStateOf<String?>(null)
 
     /** Server has favourites (plugin 0.9+): the Star menu item shows. */
     var hasFavourites by mutableStateOf(false)
+
+    /** The plugin can relay link play over the internet (feature "link-relay"); from the last /shoalcade/info. */
+    var hasLinkRelay by mutableStateOf(false)
+        private set
+
+    /** Internet link play through this Jellyfin, or null (older plugin, offline or logged out): the dialog hides it. */
+    fun linkRelay(): RelayHttp? = if (hasLinkRelay && !offline && session != null) client().linkRelay() else null
 
     /** Stars or unstars a game on Jellyfin, then in the list here (and the offline copy). */
     fun setFavourite(game: Game, on: Boolean) {
@@ -275,6 +329,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 withContext(Dispatchers.IO) { c.setFavourite(game.id, on) }
                 games = games.map { if (it.id == game.id) it.copy(favourite = on) else it }
+                // The last star removed: the toggle goes off rather than coming back on with the next star.
+                if (games.none { it.favourite }) chooseFavouritesOnly(false)
                 val list = games
                 withContext(Dispatchers.IO) { writeCache(list) }
             } catch (e: Exception) {

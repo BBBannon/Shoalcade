@@ -408,6 +408,8 @@
       ["Year", g.year],
       ["Series", g.series],
       ["Last played", g.lastPlayed ? ago(g.lastPlayed) : null],
+      // Play time from every device (phone app and browser player); nothing under a minute.
+      ["Played", api.formatPlayTime(g.playSeconds)],
       ["Save", saveText(g.save) || "None on the server yet"],
     ].filter(([, v]) => v !== null && v !== undefined && v !== "");
     $("sheet-facts").replaceChildren(...facts.flatMap(([k, v]) => [h("dt", { text: k }), h("dd", { text: String(v) })]));
