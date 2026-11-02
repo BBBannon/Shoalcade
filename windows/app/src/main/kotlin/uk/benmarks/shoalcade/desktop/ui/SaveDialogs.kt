@@ -55,6 +55,8 @@ import uk.benmarks.shoalcade.SyncAll
 import uk.benmarks.shoalcade.SyncResult
 import uk.benmarks.shoalcade.describeVersion
 import uk.benmarks.shoalcade.desktop.AppModel
+import uk.benmarks.shoalcade.desktop.AutoSnapshot
+import uk.benmarks.shoalcade.desktop.DesktopStorage
 import uk.benmarks.shoalcade.desktop.DesktopApi
 import uk.benmarks.shoalcade.desktop.PcWords
 import uk.benmarks.shoalcade.desktop.SnapshotStore
@@ -188,6 +190,20 @@ fun PlayAskDialog(vm: AppModel, ask: AppModel.PlayAsk) {
  */
 @Composable
 fun LaunchChoiceDialog(vm: AppModel, l: AppModel.Launch) {
+    var deleting by remember(l) { mutableStateOf<SnapshotStore.Entry?>(null) }
+    deleting?.let { e ->
+        PocketDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete the snapshot?") },
+            text = {
+                Text("${e.label}${e.time?.let { " from " + formatTime(it) } ?: ""} of ${l.game.name} is deleted from this PC and your " +
+                    "Jellyfin. This can't be undone. The save is kept.")
+            },
+            confirmButton = { PocketButton(onClick = { deleting = null; vm.deleteSnapshot(l, e) }, danger = true) { Text("Delete snapshot") } },
+            dismissButton = { PocketButton(onClick = { deleting = null }) { Text("Cancel") } },
+        )
+        return
+    }
     PocketDialog(
         onDismissRequest = { vm.launch = null },
         modifier = Modifier.widthIn(min = 460.dp),
@@ -198,7 +214,14 @@ fun LaunchChoiceDialog(vm: AppModel, l: AppModel.Launch) {
                 Spacer(Modifier.height(16.dp))
                 Text("Or load a snapshot", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(8.dp))
-                l.snapshots.forEach { e -> SnapshotButton(e) { vm.start(l.game, e, l.enabled, l.snapshots) }; Spacer(Modifier.height(6.dp)) }
+                l.snapshots.forEach { e ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { SnapshotButton(e) { vm.start(l.game, e, l.enabled, l.snapshots) } }
+                        Spacer(Modifier.width(8.dp))
+                        PocketMini({ deleting = e }, danger = true) { Text("Delete…") }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
                 Spacer(Modifier.height(4.dp))
                 Text("Loading a snapshot never changes your save. Only saving in the game does.", style = MaterialTheme.typography.bodySmall)
             }
@@ -317,7 +340,17 @@ fun SavesSettingsContent(vm: AppModel, onOpenSaves: (Game, Boolean) -> Unit, onD
                     " While Shoalcade is open, a save made in a game also goes up a few seconds later. Anything that needs a choice is never settled by itself.",
                     style = MaterialTheme.typography.bodySmall)
             }
+            Spacer(Modifier.width(12.dp))
             PocketSwitch(vm.autoUploadOn, { vm.setAutoUpload(it) })
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            var autoSnap by remember { mutableStateOf(AutoSnapshot.on(DesktopStorage.context())) }
+            Column(Modifier.weight(1f)) {
+                Text(AutoSnapshot.TITLE)
+                Text(AutoSnapshot.HELP, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.width(12.dp))
+            PocketSwitch(autoSnap, { autoSnap = it; AutoSnapshot.set(DesktopStorage.context(), it) })
         }
         HorizontalDivider()
         PocketButton(onClick = { orphans = true }, modifier = Modifier.fillMaxWidth()) { Text("Not in your library") }

@@ -1,0 +1,24 @@
+Shoalcade: context_destroy after the game is unloaded returns at once (LRPS2, PS2).
+retro_unload_game joins the CPU thread and closes the GS. A frontend that then calls context_destroy (RetroArch's
+order, and Shoalcade's: the core may flush GPU work while unloading) reached cpu_thread_pause(), which waits for
+the CPU thread to report Paused: it never does, and closing hung for good (seen 02/11/2026, Shoalcade for Windows).
+With no CPU thread there is nothing left to freeze or close, so it returns. A context_destroy while a game runs
+(a video reinit) is unchanged.
+
+--- a/libretro/main.cpp
++++ b/libretro/main.cpp
+@@ -2042,6 +2042,14 @@
+ 
+ static void libretro_context_destroy(void)
+ {
++	/* Shoalcade: the game is already unloaded (retro_unload_game joined the
++	 * CPU thread and closed the GS), so there is nothing to tear down.
++	 * Without this, cpu_thread_pause() below waits for a thread that is
++	 * gone and the frontend hangs on close (unload, then context_destroy,
++	 * as RetroArch and Shoalcade close a game). */
++	if (!cpu_thread)
++		return;
++
+ 	/* Pausing drains the GS ring, and the frame the EE had ready is kept
+ 	 * for the next retro_run (MTGSOwner.h): nothing is presented from
+ 	 * inside the frontend's own context teardown. */

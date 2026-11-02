@@ -197,7 +197,7 @@ Without `--test-hooks` every `debug.*` message is refused with `error {fatal:fal
 | `cheatToggled` | `id`, `index` (in the shell's list), `on`, `count` (cheats on now), `by` | A switch in the menu. **The shell owns the cheat list**: it saves the change; `cheatsApplied` follows |
 | `layoutChanged` | `ds`, `swap`, `by` (3DS: `n3ds`, `flip`, `by`) | Also from the 3DS Flip key (Tab, controller left stick click): `by: "user"`. The shell keeps the choice for the next game |
 | `checkTick` | `second`, `phase` (`warmUp` \| `measure`), `left` (seconds), `fps` (frames shown that second) | 3DS check, once a second from the first picture |
-| `checkResult` | `done` (true = ran to the end), `reason` (`done` \| `cancelled` \| the closing reason), `fps` (the measured seconds), `warmUp`, `measure`, `targetFps` | 3DS / GameCube / Wii check, just before `closing {reason:"check"}`. The shell works out the result (N3dsCheck.verdict) |
+| `checkResult` | `done` (true = ran to the end), `reason` (`done` \| `cancelled` \| the closing reason), `fps` (the measured seconds), `picture` (false = the scene's picture was all black at the end: nothing was measured), `warmUp`, `measure`, `targetFps` | 3DS / GameCube / Wii check, just before `closing {reason:"check"}`. The shell works out the result (N3dsCheck.verdict) |
 | `optionsChanged` | `applied`, `refused` | |
 | `saveFlushed` | `enabled` | |
 | `playSeconds` | `n` (seconds since the last report), `total` (this session) | Unpaused, focused play. Every 60 s, on pause and on close. The shell adds `n` up |

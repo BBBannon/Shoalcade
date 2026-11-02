@@ -157,6 +157,7 @@ class N3dsCheckRun(private val setup: PlayerSetup, private val dir: File, privat
         }
         val r = result ?: return Outcome.Failed(fatal?.let { "${N3dsCheckPc.NO_ENGINE} ($it)" } ?: N3dsCheckPc.NO_ENGINE)
         if (r.bool("done") != true) return Outcome.Cancelled
+        if (r.bool("picture") == false) return Outcome.Failed(NO_PICTURE) // nothing was shown, so nothing was measured
         val fps = r.ints("fps")
         return Outcome.Measured(fps, N3dsCheck.verdict(fps))
     }
@@ -168,5 +169,8 @@ class N3dsCheckRun(private val setup: PlayerSetup, private val dir: File, privat
         else "3DS check: measuring… $left s · ${e.long("fps") ?: 0} fps"
     }
 
-    private companion object { const val NO = "The 3DS check couldn't start." }
+    private companion object {
+        const val NO = "The 3DS check couldn't start."
+        const val NO_PICTURE = "The 3DS check's test scene didn't appear on this PC, so it couldn't measure anything. Nothing changed."
+    }
 }

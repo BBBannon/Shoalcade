@@ -62,6 +62,7 @@ add_executable(ShoalcadePlayer
   src/files.cpp
   src/sha256.cpp
   src/image.cpp
+  src/icon.cpp
   src/log.cpp
   src/menu.cpp
   src/menu_ui.cpp
@@ -109,7 +110,7 @@ endif()
 # Unit tests (no core, no window): ShoalcadePlayerUnitTests <scratch dir>. Builds for Linux and Windows.
 add_executable(ShoalcadePlayerUnitTests
   tests/unit_tests.cpp src/rewind.cpp src/sha256.cpp src/files.cpp src/log.cpp src/core_options.cpp
-  src/console.cpp src/forced_options.cpp src/menu.cpp src/link.cpp src/statefile.cpp src/remap.cpp)
+  src/console.cpp src/forced_options.cpp src/menu.cpp src/link.cpp src/statefile.cpp src/remap.cpp src/icon.cpp)
 target_include_directories(ShoalcadePlayerUnitTests PRIVATE src third_party ${ZSTD_INCLUDE_DIR})
 target_link_libraries(ShoalcadePlayerUnitTests PRIVATE ${ZSTD_LIBRARY})
 if(WIN32)

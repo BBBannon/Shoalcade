@@ -51,6 +51,12 @@ struct ConsoleInfo {
      * other button-from-an-axis (review #14).
      */
     float trigger_click = 0.5f;
+    /**
+     * The core gets a GL context of its own even though it doesn't ask (SET_HW_SHARED_CONTEXT is honoured for any
+     * core). Dolphin's OpenGL core profile doesn't ask, yet keeps GL state between frames: in ours, our drawing
+     * undid it and still menus and 30 fps games showed black (02/11/2026).
+     */
+    bool own_gl_context = false;
 };
 
 const ConsoleInfo *find_console(const std::string &key);

@@ -11,7 +11,10 @@ DOTNET="$ROOT/.testbed/dotnet/dotnet.exe"; [ -x "$DOTNET" ] || DOTNET=dotnet
 VER=$(sed -n 's:.*<ShoalcadeServerVersion>\(.*\)</ShoalcadeServerVersion>.*:\1:p' Directory.Build.props)
 DEV=$(sed -n 's:.*<ShoalcadeDevBuild>\(.*\)</ShoalcadeDevBuild>.*:\1:p' Directory.Build.props)
 DEV="${DEV:-0}"
-FULL="$VER.0.$DEV"   # what Jellyfin sees, e.g. 0.2.0.1 (D88: 4th part = dev build, 0 = release)
+PATCH=$(sed -n 's:.*<ShoalcadeServerPatch>\(.*\)</ShoalcadeServerPatch>.*:\1:p' Directory.Build.props)
+PATCH="${PATCH:-0}"
+FULL="$VER.$PATCH.$DEV"   # what Jellyfin sees, e.g. 0.2.0.1 (D88: 4th part = dev build, 0 = release; 3rd = patch release)
+if [ "$PATCH" -gt 0 ]; then VER="$VER.$PATCH"; fi   # names: s0.11.1, Shoalcade_s0.11.1.zip
 if [ "$DEV" -gt 0 ]; then LABEL="s$VER dev $DEV"; TAG="s$VER-dev$DEV"; else LABEL="s$VER"; TAG="s$VER"; fi
 # What Jellyfin's Catalogue shows for this build (plain text, no double quotes): CHANGELOG="..." server/build.sh
 CHANGELOG="${CHANGELOG:-$LABEL. See ChangeLog.txt in the Shoalcade repo.}"

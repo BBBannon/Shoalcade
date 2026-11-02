@@ -225,7 +225,9 @@ bool Player::environment(unsigned cmd, void *data) {
     case RETRO_ENVIRONMENT_SET_PROC_ADDRESS_CALLBACK:
     case RETRO_ENVIRONMENT_SET_CONTENT_INFO_OVERRIDE:
     case RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY:
+        return true;
     case RETRO_ENVIRONMENT_SET_HW_SHARED_CONTEXT:
+        hw_shared_ = true; // honoured: a context of its own (Dolphin's picture went black when it shared ours)
         return true;
     case RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE:
         // P12: kept for "Change disc" (the basic interface: no disc names).
@@ -578,8 +580,9 @@ bool Player::start(const json &msg, std::string &err) {
         video_.set_display(d);
     }
     if (!video_.create("Shoalcade - " + title_, av_.geometry, hw_requested_ ? &hw_ : nullptr, cfg_.headless, err,
-                       console_->newest_gl))
+                       console_->newest_gl, hw_requested_ && (hw_shared_ || console_->own_gl_context)))
         return false;
+    video_.set_icon(console_->key);
     if (msg.contains("display") && msg["display"].is_object() && boolean(msg["display"], "fullscreen", false))
         video_.set_fullscreen(true);
     if (!cfg_.headless) {
@@ -1474,6 +1477,9 @@ std::string Player::check_name() const {
 void Player::stop_check(const char *reason) {
     if (!check_ || !check_reason_.empty()) return;
     check_reason_ = reason;
+    // A scene that never draws still "runs" at full speed (the player shows a frame every time): an all-black picture
+    // at the end means nothing was measured (GameCube / Wii check, 02/11/2026).
+    if (std::strcmp(reason, "done") == 0) check_picture_ = non_black_pixels(video_.capture()) > 0;
     running_ = false;
     close_reason_ = "check";
 }
@@ -1529,6 +1535,7 @@ void Player::shutdown(const char *reason) {
     audio_.close();
     input_.close();
     video_.overlay = nullptr;
+    video_.use_player(); // the pause menu's GL objects live in our context
     ui_.shutdown();
     video_.destroy();
     LOGI("closing: done");
@@ -1555,7 +1562,7 @@ int Player::run(const json &start_msg, Inbox &inbox) {
     if (check_) {
         bool done = check_reason_ == "done";
         send("checkResult", {{"done", done}, {"reason", check_reason_.empty() ? close_reason_ : check_reason_},
-                             {"fps", check_fps_}, {"warmUp", check_warm_}, {"measure", check_measure_},
+                             {"fps", check_fps_}, {"picture", check_picture_}, {"warmUp", check_warm_}, {"measure", check_measure_},
                              {"targetFps", check_target_fps_ > 0 ? check_target_fps_ : av_.timing.fps}});
     }
     json closing = {{"reason", close_reason_}};

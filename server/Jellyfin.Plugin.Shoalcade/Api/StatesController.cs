@@ -298,7 +298,9 @@ public class StatesController : ShoalcadeControllerBase
         if (Library.GetRom(id, user, out var cantReadNow) is RomItem r)
         {
             rom = r;
-            return r.Console.BrowserCore is null ? GameNotFound() : null;
+            // Snapshots for consoles something of ours can play: the browser player, or the Windows app for
+            // GameCube, Wii and PS2 (D-2: they go up packed when small enough; refused here, they never left the PC).
+            return r.Console.BrowserCore is null && !r.Console.WindowsOnly ? GameNotFound() : null;
         }
 
         if (cantReadNow)

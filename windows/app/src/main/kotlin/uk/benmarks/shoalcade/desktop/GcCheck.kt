@@ -32,6 +32,10 @@ object GcCheckPc {
     fun name(c: Console) = if (c == Console.GC) "GameCube" else "Wii"
     fun start(c: Console) = "Run the ${name(c)} check"
 
+    /** The test scene never showed (the player saw only black): nothing measured, nothing saved. */
+    fun noPicture(c: Console) = "The ${name(c)} check's test scene didn't appear on this PC, so it couldn't measure anything. " +
+        "Nothing changed: ${name(c)} games still play."
+
     /** Each measured second as a share of 60 (the phone's rule counts against 60 frames a second). */
     private fun scaled(fps: List<Int>, target: Int) = fps.map { it * 60 / target }
 
@@ -115,6 +119,8 @@ class GcCheckRun(private val setup: PlayerSetup, private val dir: File, private 
         val r = result ?: return N3dsCheckRun.Outcome.Failed("The $name engine couldn't start on this PC. Nothing changed." +
             (fatal?.let { " ($it)" } ?: ""))
         if (r.bool("done") != true) return N3dsCheckRun.Outcome.Cancelled
+        // The test scene never appeared (an all-black picture): nothing was measured, so no result is kept.
+        if (r.bool("picture") == false) return N3dsCheckRun.Outcome.Failed(GcCheckPc.noPicture(console))
         val fps = r.ints("fps")
         return N3dsCheckRun.Outcome.Measured(fps, GcCheckPc.verdict(fps, target))
     }

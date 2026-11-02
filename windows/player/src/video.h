@@ -31,14 +31,22 @@ public:
      * Headless: the window is never shown (a GL context still exists, for GL cores and frame capture).
      * newest_gl (GameCube, Wii, PS2: plan P2): a core-profile context of the newest version the driver gives (4.6
      * down to the core's own), not exactly the version the core asked for (Intel then gives exactly 3.3).
+     * core_context (the core sent SET_HW_SHARED_CONTEXT: Dolphin, LRPS2, PCEE2): the core gets a GL context of its
+     * own, sharing textures with ours, as RetroArch does. Those cores keep GL state between frames and skip setting
+     * it again, so our drawing must never touch their context (Dolphin showed black frames when we did, 02/11/2026).
+     * The core's context is the current one except while we draw (present, capture, framebuffer set-up).
      */
     bool create(const std::string &title, const retro_game_geometry &geom, const retro_hw_render_callback *hw,
-                bool headless, std::string &err, bool newest_gl = false);
+                bool headless, std::string &err, bool newest_gl = false, bool core_context = false);
     void destroy();
 
     /** Framebuffer for GL cores (sized to the core's max geometry). Called again if the geometry grows. */
     bool ensure_hw_fbo(unsigned max_w, unsigned max_h, std::string &err);
-    GLuint hw_fbo() const { return fbo_; }
+    /** The framebuffer the core draws into (in the core's own context when it has one). */
+    GLuint hw_fbo() const { return core_ctx_ ? core_fbo_ : fbo_; }
+    /** Makes our context current (before the pause menu shuts down); the core's comes back with use_core(). */
+    void use_player();
+    void use_core();
 
     void set_pixel_format(retro_pixel_format f) { format_ = f; }
     retro_pixel_format pixel_format() const { return format_; }
@@ -67,6 +75,8 @@ public:
     SDL_Window *window() const { return window_; }
     SDL_GLContext context() const { return ctx_; }
     bool headless() const { return headless_; }
+    /** The window icon: the Shoalcade logo in [console_key]'s colours (icon.h), 32 px plus a 256 px version. */
+    void set_icon(const std::string &console_key);
     /** Drawn over the game picture each time the window is drawn, before the swap (the pause menu). Args: pixels. */
     std::function<void(int, int)> overlay;
     /** Where the game picture is in window coordinates (for the mouse = touch screen). */
@@ -80,6 +90,8 @@ private:
 
     SDL_Window *window_ = nullptr;
     SDL_GLContext ctx_ = nullptr;
+    SDL_GLContext core_ctx_ = nullptr; // the core's own context (core_context), else none
+    GLuint core_fbo_ = 0;              // the core's framebuffer object (FBOs aren't shared between contexts)
     bool headless_ = false;
     bool fullscreen_ = false;
     bool is_hw_ = false;

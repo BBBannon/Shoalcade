@@ -30,12 +30,14 @@ public static class ServerVersion
         return Math.Max(0, v.Revision);
     }
 
-    /// <summary>What people see: "s0.2 dev 1" for a dev build, "s1.0" for a release.</summary>
+    /// <summary>What people see: "s0.2 dev 1" for a dev build, "s1.0" for a release, "s0.11.1" for a patch release.</summary>
     /// <param name="v">Version.</param>
     /// <returns>Display name.</returns>
     public static string Display(Version v)
     {
+        ArgumentNullException.ThrowIfNull(v);
         var dev = Dev(v);
-        return dev > 0 ? Name(v) + " dev " + dev.ToString(CultureInfo.InvariantCulture) : Name(v);
+        var name = v.Build > 0 ? Name(v) + "." + v.Build.ToString(CultureInfo.InvariantCulture) : Name(v);
+        return dev > 0 ? name + " dev " + dev.ToString(CultureInfo.InvariantCulture) : name;
     }
 }

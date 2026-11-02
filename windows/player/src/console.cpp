@@ -24,8 +24,8 @@ static const ConsoleInfo kConsoles[] = {
     // in the save folder), coarse rewind (P10, D-8 kept: 90-110 MB states, one a second), four players, sticks,
     // analogue triggers, newest GL, unload before the GL context goes.
     //  key    name        save  folder rewind pl stick  clock  maxFF  abtn  newGL  unload rstick packed coarse-rewind click
-    {"gc", "GameCube", 0, true, true, 4, true, false, 4, true, true, true, true, true, 60, 0.9f},
-    {"wii", "Wii", 0, true, true, 4, true, false, 4, true, true, true, true, true, 60, 0.9f},
+    {"gc", "GameCube", 0, true, true, 4, true, false, 4, true, true, true, true, true, 60, 0.9f, true},
+    {"wii", "Wii", 0, true, true, 4, true, false, 4, true, true, true, true, true, 60, 0.9f, true},
     {"ps2", "PS2", 0, true, true, 4, true, false, 4, true, true, true, true, true, 60},
 };
 

@@ -87,6 +87,7 @@ typedef unsigned char GLubyte;
     X(void, glViewport, (GLint, GLint, GLsizei, GLsizei))                                                      \
     X(void, glClearColor, (GLfloat, GLfloat, GLfloat, GLfloat))                                                \
     X(void, glClear, (GLbitfield))                                                                             \
+    X(void, glFlush, (void))                                                                                   \
     X(void, glEnable, (GLenum))                                                                                \
     X(void, glDisable, (GLenum))                                                                               \
     X(void, glColorMask, (GLboolean, GLboolean, GLboolean, GLboolean))                                         \

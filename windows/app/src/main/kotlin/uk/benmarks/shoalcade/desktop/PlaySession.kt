@@ -226,7 +226,7 @@ class PlaySession(
                 note = when { e == null -> null; !e.here -> OTHER_DEVICE; file == null -> "Couldn't get it from Jellyfin."; else -> null }, empty = e == null)
         }
         // The browser's rule: the Automatic snapshot as the game closes, at most one a minute.
-        autoOnClose = snapshotsOn && autoGapOver()
+        autoOnClose = snapshotsOn && autoWanted() && autoGapOver()
         val mac = dsMac?.takeIf { console == Console.NDS }
         // The link's local stream: the player connects here first (PROTOCOL.md "Link play").
         val linkStart = link?.let { l ->
@@ -597,7 +597,7 @@ class PlaySession(
         if (closeMode == null || upload) closeMode = if (upload) CloseMode.UPLOAD else CloseMode.PLAIN
         val p = player ?: return
         scope.launch(Dispatchers.IO) {
-            if (!autoOnClose && snapshotsOn && phase == Phase.PLAYING && !guard.waiting && autoGapOver()) {
+            if (!autoOnClose && snapshotsOn && autoWanted() && phase == Phase.PLAYING && !guard.waiting && autoGapOver()) {
                 val done = CompletableDeferred<Unit>().also { autoSaved = it }
                 if (p.send("snapshot.save", mapOf("slot" to SnapshotStore.AUTO))) withTimeoutOrNull(5_000) { done.await() }
             }
@@ -605,6 +605,9 @@ class PlaySession(
             p.close(closeGraceMs)
         }
     }
+
+    /** Settings → Saves: the Automatic snapshot switch (D240), read as the game starts and as it closes. */
+    private fun autoWanted() = AutoSnapshot.on(DesktopStorage.context())
 
     private fun autoGapOver(): Boolean {
         val t = snapshots.stateFile(game, SnapshotStore.AUTO).takeIf { it.isFile }?.lastModified() ?: return true

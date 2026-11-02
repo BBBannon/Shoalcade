@@ -702,6 +702,24 @@ class AppModel(
         }
     }
 
+    /**
+     * "Delete…" on a snapshot in the launch choice (the dialog asks first): gone from Jellyfin and this PC, never the
+     * save (as the phone's Delete snapshot…). The choice stays open while a loadable snapshot is left.
+     */
+    fun deleteSnapshot(l: Launch, e: SnapshotStore.Entry) {
+        val snaps = snapshots() ?: return
+        scope.launch {
+            val r = runCatching { snaps.delete(l.game, e.slot) }
+            if (r.isFailure) {
+                message = "Couldn't delete the snapshot: ${r.exceptionOrNull()?.message ?: "unknown error"}. Nothing changed."
+                return@launch
+            }
+            message = "Snapshot deleted (${e.label}). Your save is kept."
+            val left = l.snapshots.filter { it.slot != e.slot }
+            if (launch === l) launch = if (left.isNotEmpty()) Launch(l.game, left, l.enabled) else null
+        }
+    }
+
     private suspend fun chooseStart(g: Game) {
         val snaps = snapshots() ?: return
         val (list, enabled) = runCatching { snaps.forLaunch(g) }.getOrDefault(emptyList<SnapshotStore.Entry>() to true)

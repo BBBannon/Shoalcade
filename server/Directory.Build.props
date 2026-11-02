@@ -1,12 +1,14 @@
 <Project>
   <!-- Server version, bumped here only (D41). Jellyfin stores "s0.2" as 0.2.0.0.
        Dev builds before a release (D88): ShoalcadeDevBuild = 1, 2, ... -> 0.2.0.1, 0.2.0.2 ..., shown as "s0.2 dev 1".
-       A release has ShoalcadeDevBuild = 0 (shown as "s1.0", no "dev"). The 4th part of the version is the dev number. -->
+       A release has ShoalcadeDevBuild = 0 (shown as "s1.0", no "dev"). The 4th part of the version is the dev number.
+       A patch release (fix only) bumps ShoalcadeServerPatch: 0.11.1.0, shown as "s0.11.1". Back to 0 for the next 0.x. -->
   <PropertyGroup>
     <ShoalcadeServerVersion>0.11</ShoalcadeServerVersion>
+    <ShoalcadeServerPatch>1</ShoalcadeServerPatch>
     <ShoalcadeDevBuild>0</ShoalcadeDevBuild>
-    <Version>$(ShoalcadeServerVersion).0.$(ShoalcadeDevBuild)</Version>
-    <AssemblyVersion>$(ShoalcadeServerVersion).0.$(ShoalcadeDevBuild)</AssemblyVersion>
-    <FileVersion>$(ShoalcadeServerVersion).0.$(ShoalcadeDevBuild)</FileVersion>
+    <Version>$(ShoalcadeServerVersion).$(ShoalcadeServerPatch).$(ShoalcadeDevBuild)</Version>
+    <AssemblyVersion>$(ShoalcadeServerVersion).$(ShoalcadeServerPatch).$(ShoalcadeDevBuild)</AssemblyVersion>
+    <FileVersion>$(ShoalcadeServerVersion).$(ShoalcadeServerPatch).$(ShoalcadeDevBuild)</FileVersion>
   </PropertyGroup>
 </Project>

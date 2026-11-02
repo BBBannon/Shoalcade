@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "video.h"
+#include "icon.h"
 
 #include <algorithm>
 #include <cmath>
@@ -59,7 +60,7 @@ GLuint compile(GLenum kind, const char *src, std::string &err) {
 } // namespace
 
 bool Video::create(const std::string &title, const retro_game_geometry &geom, const retro_hw_render_callback *hw,
-                   bool headless, std::string &err, bool newest_gl) {
+                   bool headless, std::string &err, bool newest_gl, bool core_context) {
     headless_ = headless;
     geom_ = geom;
     is_hw_ = hw != nullptr;
@@ -140,8 +141,48 @@ bool Video::create(const std::string &title, const retro_game_geometry &geom, co
     if (!build_program(err)) return false;
     glGenVertexArrays(1, &vao_);
     glGenTextures(1, &tex_);
+    if (core_context) {
+        // Same version and profile as ours (those attributes are still set), sharing textures and renderbuffers.
+        SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+        core_ctx_ = SDL_GL_CreateContext(window_);
+        SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
+        if (!core_ctx_) {
+            err = std::string("couldn't start the game's own OpenGL context: ") + SDL_GetError();
+            return false;
+        }
+        SDL_GL_MakeCurrent(window_, ctx_);
+        LOGI("the core has its own GL context (shared context)");
+    }
     return true;
 }
+
+void Video::set_icon(const std::string &console_key) {
+    if (!window_) return;
+    RgbaImage small = make_icon(console_key, 32), big = make_icon(console_key, 256);
+    SDL_Surface *s = SDL_CreateSurfaceFrom(small.width, small.height, SDL_PIXELFORMAT_RGBA32, small.pixels.data(), small.width * 4);
+    SDL_Surface *b = SDL_CreateSurfaceFrom(big.width, big.height, SDL_PIXELFORMAT_RGBA32, big.pixels.data(), big.width * 4);
+    if (s && b) SDL_AddSurfaceAlternateImage(s, b); // Windows picks the size it needs (title bar, taskbar, Alt+Tab)
+    if (s && !SDL_SetWindowIcon(window_, s)) LOGW("window icon not set: %s", SDL_GetError());
+    if (b) SDL_DestroySurface(b);
+    if (s) SDL_DestroySurface(s);
+}
+
+void Video::use_player() {
+    if (core_ctx_) SDL_GL_MakeCurrent(window_, ctx_);
+}
+
+void Video::use_core() {
+    if (core_ctx_) SDL_GL_MakeCurrent(window_, core_ctx_);
+}
+
+namespace {
+// Our drawing runs in our context; the core's context is current again afterwards.
+struct PlayerContext {
+    Video &v;
+    explicit PlayerContext(Video &video) : v(video) { v.use_player(); }
+    ~PlayerContext() { v.use_core(); }
+};
+} // namespace
 
 bool Video::build_program(std::string &err) {
     GLuint vs = compile(GL_VERTEX_SHADER, kVertex, err);
@@ -169,6 +210,13 @@ bool Video::build_program(std::string &err) {
 }
 
 void Video::destroy() {
+    if (core_ctx_) {
+        SDL_GL_MakeCurrent(window_, core_ctx_);
+        if (core_fbo_) glDeleteFramebuffers(1, &core_fbo_), core_fbo_ = 0;
+        SDL_GL_MakeCurrent(window_, ctx_);
+        SDL_GL_DestroyContext(core_ctx_);
+        core_ctx_ = nullptr;
+    }
     if (ctx_) {
         if (fbo_) glDeleteFramebuffers(1, &fbo_);
         if (fbo_tex_) glDeleteTextures(1, &fbo_tex_);
@@ -184,6 +232,7 @@ void Video::destroy() {
 }
 
 bool Video::ensure_hw_fbo(unsigned max_w, unsigned max_h, std::string &err) {
+    PlayerContext in_ours(*this);
     max_w = std::max(1u, max_w), max_h = std::max(1u, max_h);
     if (fbo_ && max_w <= fbo_w_ && max_h <= fbo_h_) return true;
     if (fbo_) glDeleteFramebuffers(1, &fbo_), fbo_ = 0;
@@ -216,6 +265,26 @@ bool Video::ensure_hw_fbo(unsigned max_w, unsigned max_h, std::string &err) {
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (core_ctx_) {
+        // The core draws through a framebuffer object of its own context, on the same (shared) texture; ours above
+        // stays for reading the picture back.
+        glFlush();
+        SDL_GL_MakeCurrent(window_, core_ctx_);
+        if (core_fbo_) glDeleteFramebuffers(1, &core_fbo_), core_fbo_ = 0;
+        glGenFramebuffers(1, &core_fbo_);
+        glBindFramebuffer(GL_FRAMEBUFFER, core_fbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbo_tex_, 0);
+        if (fbo_rb_)
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, hw_stencil_ ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT,
+                                      GL_RENDERBUFFER, fbo_rb_);
+        GLenum core_status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        SDL_GL_MakeCurrent(window_, ctx_);
+        if (core_status != GL_FRAMEBUFFER_COMPLETE) {
+            err = "the game's framebuffer couldn't be made in its own context (status " + std::to_string(core_status) + ")";
+            return false;
+        }
+    }
     fbo_w_ = max_w, fbo_h_ = max_h;
     LOGI("game framebuffer %ux%u (depth %d, stencil %d)", max_w, max_h, hw_depth_, hw_stencil_);
     return true;
@@ -290,6 +359,7 @@ SDL_FRect Video::game_rect_window() const {
 
 void Video::present() {
     if (headless_ || !window_) return;
+    PlayerContext in_ours(*this);
     int pw = 0, ph = 0;
     SDL_GetWindowSizeInPixels(window_, &pw, &ph);
     // A GL core may leave any state behind: set everything our drawing depends on.
@@ -366,6 +436,7 @@ bool Video::take_window_capture(RgbaImage &out) {
 RgbaImage Video::capture() {
     RgbaImage img;
     if (!have_frame_) return img;
+    PlayerContext in_ours(*this);
     img.width = (int)last_w_, img.height = (int)last_h_;
     img.pixels.resize((size_t)last_w_ * last_h_ * 4);
     if (last_is_hw_) {

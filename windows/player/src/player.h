@@ -149,6 +149,7 @@ private:
     retro_system_info sys_info_{};
     retro_system_av_info av_{};
     bool hw_requested_ = false;
+    bool hw_shared_ = false; // SET_HW_SHARED_CONTEXT: the core gets a GL context of its own (Video::create)
     retro_hw_render_callback hw_{};
     bool loaded_ = false, inited_ = false;
     retro_frame_time_callback frame_time_{};
@@ -219,6 +220,7 @@ private:
     double check_next_ = 0;
     uint64_t check_frames_at_ = 0;
     std::vector<int> check_fps_;
+    bool check_picture_ = true; // false: the check's scene showed nothing at all (an all-black picture at the end)
     std::string check_reason_, check_line_;
     // Snapshots possible with this core: asked once (Azahar takes a whole state to answer, citra_libretro.cpp).
     mutable int can_snapshot_ = -1;

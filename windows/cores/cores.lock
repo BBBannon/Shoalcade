@@ -6,7 +6,7 @@ azahar	win	https://github.com/azahar-emu/azahar.git	219d743a1e698101fe1ab8bef43e
 dolphin	win	https://github.com/libretro/dolphin.git	b93001ed50c8b34e6ead4eed713c2005a80386e4	GPL-2.0-or-later (modified: tools/dolphin-patches)	dolphin_libretro.dll	27736667	24734f1f53d0518f328b2c99e0ce76807c9436a3119f70b473a341ee7ec46263
 gpsp	linux	https://github.com/libretro/gpsp.git	5819380c2ffb0900219d700a382ee68c464ebb99	GPL-2.0-or-later	gpsp_libretro.so	799376	00033f0384f1420d6441a0152f8d55519fc80d4ae6592c76caa69be3c5397437
 gpsp	win	https://github.com/libretro/gpsp.git	5819380c2ffb0900219d700a382ee68c464ebb99	GPL-2.0-or-later	gpsp_libretro.dll	846848	eef2dff201ca503f67c77de627b1ed2353d73e04b3f667485bba423eaefd5c83
-lrps2	win	https://github.com/libretro/parallel-ps2.git	083de59f52159ce4dd2f63a63f74fa9f0e936ee3	GPL-3.0 (modified: tools/lrps2-patches)	pcsx2_libretro.dll	14754425	ea592582ae4b52aeacf614db9e723f341dda6924ebc6cfc546ca2a78f292b041
+lrps2	win	https://github.com/libretro/parallel-ps2.git	083de59f52159ce4dd2f63a63f74fa9f0e936ee3	GPL-3.0 (modified: tools/lrps2-patches)	pcsx2_libretro.dll	14754425	ceaa88090d1be15a5a09d248fc36e9464bc50e98d0aed208e503256b2aa031eb
 melonds	linux	https://github.com/JesseTG/melonds-ds.git	f394adbacb5722ee97c1b37c8064da9a25818310	GPL-3.0	melondsds_libretro.so	5451328	8666d5969beb9c65157adfdffe95bea1556321e91e47b4b7e3d14e7cd11a04de
 melonds	win	https://github.com/JesseTG/melonds-ds.git	f394adbacb5722ee97c1b37c8064da9a25818310	GPL-3.0	melondsds_libretro.dll	5293340	a86c62fd021e19cf7f44436b3bb34069d497e1e6d37a57e3ca63d8d0222ba6ad
 mgba	linux	https://github.com/libretro/mgba.git	7a12d6d4b9acb14c0ae62c9166b6a2f3d08007f6	MPL-2.0	mgba_libretro.so	3326880	c54711ddf48bc8329e56ce83a51b8dcb4cc8cb7088c4fe138495278d2a535b6f
