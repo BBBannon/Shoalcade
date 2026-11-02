@@ -29,9 +29,23 @@ fun hasLaunchSnapshot(ctx: Context, game: Game, userId: String): Boolean {
 /**
  * The launch choice (D90), same words as the browser player: "Continue from save" (the default, focused first) or
  * the phone's snapshot, with its picture and time. Loading a snapshot never changes the save; only saving in the game does.
+ * [onDelete] (if given) adds "Delete snapshot…", which asks first and never touches the save.
  */
 @Composable
-fun LaunchChoiceDialog(game: Game, userId: String, onStart: (snapshot: Boolean) -> Unit, onDismiss: () -> Unit) {
+fun LaunchChoiceDialog(game: Game, userId: String, onStart: (snapshot: Boolean) -> Unit, onDismiss: () -> Unit,
+                       onDelete: (() -> Unit)? = null) {
+    var confirmDelete by remember { mutableStateOf(false) }
+    if (confirmDelete && onDelete != null) {
+        val t = remember(game.id) { formatTime(Storage.stateFile(userId, game).lastModified()) }
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { DialogTitle("Delete the snapshot?") },
+            text = { Text("The snapshot of ${game.name} from $t is deleted from this phone. This can't be undone. The save is kept.") },
+            confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Delete snapshot") } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        )
+        return
+    }
     val time = remember(game.id) { formatTime(Storage.stateFile(userId, game).lastModified()) }
     val picture = remember(game.id) {
         runCatching { BitmapFactory.decodeFile(Storage.stateImageFile(userId, game).path)?.asImageBitmap() }.getOrNull()
@@ -67,7 +81,11 @@ fun LaunchChoiceDialog(game: Game, userId: String, onStart: (snapshot: Boolean) 
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
+                if (onDelete != null) {
+                    TextButton(onClick = { confirmDelete = true }, modifier = Modifier.align(Alignment.End)) {
+                        Text("Delete snapshot…")
+                    }
+                } else Spacer(Modifier.height(8.dp))
                 Text("Loading a snapshot never changes your save. Only saving in the game does.",
                     style = MaterialTheme.typography.bodySmall)
             }

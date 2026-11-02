@@ -574,7 +574,8 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
 
     launching?.let { o ->
         if (userId != null) LaunchChoiceDialog(o.game, userId, onStart = { snapshot -> launching = null; play(o, snapshot) },
-            onDismiss = { launching = null })
+            onDismiss = { launching = null },
+            onDelete = { launching = null; busy = true; vm.deleteOrphanSnapshot(o) { busy = false; reload++ } })
     }
 
     removing?.let { o ->

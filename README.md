@@ -232,7 +232,7 @@
 - **Fast-forward** — tap **⏩** (2×, 3× or 4×, set in side menu → **Speed**). GBA goes up to 3×. Not on Game Boy / Game Boy Color
 - **Screenshot** — side menu → **Game** → **Screenshot**, saved to a **Shoalcade** album in your gallery
 - **Snapshots** — **Save snapshot** / **Load snapshot**, one per game with a picture, kept on the phone
-- **Launch choice:** games with a snapshot ask **Continue from save** or **Or load a snapshot**
+- **Launch choice:** games with a snapshot ask **Continue from save** or **Or load a snapshot**, with **Delete snapshot…** to remove it (asks first; the save is kept)
 - Side menu: **Close Game** or **Close Game (and Upload)**
 - Warns (**Keep playing** / **Close anyway**) if your latest save couldn't be kept
 

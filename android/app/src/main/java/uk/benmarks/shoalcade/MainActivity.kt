@@ -372,7 +372,7 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
         LaunchChoiceDialog(game, vm.session!!.userId, onStart = { snapshot ->
             launchGame = null
             ctx.startActivity(GameActivity.intent(ctx, game, vm.session!!.userId, snapshot = snapshot))
-        }, onDismiss = { launchGame = null })
+        }, onDismiss = { launchGame = null }, onDelete = { launchGame = null; vm.deleteSnapshot(game) })
     }
 }
 

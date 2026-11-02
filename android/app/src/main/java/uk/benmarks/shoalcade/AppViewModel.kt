@@ -562,12 +562,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** F9: deletes the phone snapshot of a game no longer listed (after the person confirmed). The save is never touched. */
-    fun deleteOrphanSnapshot(o: OrphanSave, done: () -> Unit) = viewModelScope.launch {
+    fun deleteOrphanSnapshot(o: OrphanSave, done: () -> Unit) = deleteSnapshot(o.game, o.title, done)
+
+    /** Deletes the phone snapshot of any game (after the person confirmed). The save is never touched. */
+    fun deleteSnapshot(game: Game, title: String = game.name, done: () -> Unit = {}) = viewModelScope.launch {
         val uid = session?.userId ?: run { message = "Not logged in."; done(); return@launch }
         if (GameActivity.running) { message = "Close the game first."; done(); return@launch }
-        withContext(Dispatchers.IO) { Storage.deleteSnapshot(uid, o.game) }
+        withContext(Dispatchers.IO) { Storage.deleteSnapshot(uid, game) }
         localDiskVersion++
-        message = "Snapshot of ${o.title} deleted. Its save is kept."
+        message = "Snapshot of $title deleted. Its save is kept."
         done()
     }
 
