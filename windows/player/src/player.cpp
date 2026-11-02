@@ -18,6 +18,7 @@
 #include "files.h"
 #include "log.h"
 #include "sha256.h"
+#include "statefile.h"
 
 namespace sc {
 namespace {
@@ -225,9 +226,21 @@ bool Player::environment(unsigned cmd, void *data) {
     case RETRO_ENVIRONMENT_SET_CONTENT_INFO_OVERRIDE:
     case RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY:
     case RETRO_ENVIRONMENT_SET_HW_SHARED_CONTEXT:
+        return true;
     case RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE:
+        // P12: kept for "Change disc" (the basic interface: no disc names).
+        if (data) {
+            auto *d = static_cast<const retro_disk_control_callback *>(data);
+            disk_ = retro_disk_control_ext_callback{};
+            disk_.set_eject_state = d->set_eject_state, disk_.get_eject_state = d->get_eject_state;
+            disk_.get_image_index = d->get_image_index, disk_.set_image_index = d->set_image_index;
+            disk_.get_num_images = d->get_num_images, disk_.replace_image_index = d->replace_image_index;
+            disk_.add_image_index = d->add_image_index;
+            have_disk_ = true;
+        }
+        return true;
     case RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE:
-        // Noted; nothing for the player to do (disc swapping comes with the pause menu).
+        if (data) disk_ = *static_cast<const retro_disk_control_ext_callback *>(data), have_disk_ = true;
         return true;
     case RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS:
         if (data) LOGI("serialization quirks 0x%llx", (unsigned long long)*static_cast<uint64_t *>(data));
@@ -457,8 +470,18 @@ bool Player::start(const json &msg, std::string &err) {
     if (!core_.open(core_path, err)) return false;
     g_player = this;
 
-    // Options: console rules first (locked ones can't be replaced), then the shell's choices.
-    const std::vector<ForcedOption> &forced = forced_options(console_key);
+    // Options: console rules first (locked ones can't be replaced), then the shell's choices. PS2 has two cores (the
+    // person picks, D222 D-3) with different rules: name the core first (retro_get_system_info may be called before
+    // retro_init) and refuse any other, so the memory card can never end up in the shared system folder.
+    std::string core_name;
+    if (console_key == "ps2") {
+        retro_system_info early{};
+        core_.get_system_info(&early);
+        core_name = early.library_name ? early.library_name : "";
+        if (core_name != "ParaLLEl PS2" && core_name != "PCEE2")
+            return err = "PS2 games play with LRPS2 or PCEE2, not \"" + core_name + "\"", false;
+    }
+    const std::vector<ForcedOption> forced = forced_options(console_key, core_name);
     for (const auto &o : forced) options_.want(o.key, o.value, o.locked);
     if (msg.contains("options") && msg["options"].is_object())
         for (auto it = msg["options"].begin(); it != msg["options"].end(); ++it) {
@@ -483,6 +506,16 @@ bool Player::start(const json &msg, std::string &err) {
     }
     if (console_key == "3ds")
         for (const auto &kv : n3ds_layout_options(n3ds_layout_, n3ds_flip_)) options_.change(kv.first, kv.second);
+    if (console_key == "wii" && msg.contains("controllers") && msg["controllers"].is_array()) {
+        // P5: each port's Wii controller type, as the shell remembers it for this game (["nunchuk", "remote", ...]).
+        const json &l = msg["controllers"];
+        for (size_t p = 0; p < l.size() && p < wii_controller_.size(); p++) {
+            std::string t = l[p].is_string() ? l[p].get<std::string>() : "";
+            if (wii_controller(t)) wii_controller_[p] = t;
+            else send("warning", {{"message", "Unknown Wii controller \"" + t + "\" for player " + std::to_string(p + 1) +
+                                                  "; the Wii Remote is used."}});
+        }
+    }
     // What the menu offers (the shell decides: a link session has no snapshots, speed or cheats).
     can_upload_ = boolean(msg, "canUpload", true);
     snapshots_allowed_ = boolean(msg, "snapshotsAllowed", true);
@@ -491,14 +524,19 @@ bool Player::start(const json &msg, std::string &err) {
     rewind_allowed_ = boolean(msg, "rewindAllowed", true);
     auto_snapshot_on_close_ = boolean(msg, "autoSnapshotOnClose", false);
     if (msg.contains("check") && msg["check"].is_object()) {
-        // The 3DS check (Game3dsActivity check mode): the test scene, measured; no menu, snapshots, cheats or speed.
-        if (console_key != "3ds") return err = "the check is for the 3DS", false;
+        // The 3DS check (Game3dsActivity check mode), and the advisory GameCube / Wii check (D222 D-7, our own scene
+        // tools/gc-check): the test scene, measured; no menu, snapshots, cheats or speed.
+        if (console_key != "3ds" && console_key != "gc" && console_key != "wii")
+            return err = "the check is for the 3DS, the GameCube and the Wii", false;
         check_ = true;
         check_warm_ = (int)std::clamp(number(msg["check"], "warmUp", 10), 0.0, 120.0);
         check_measure_ = (int)std::clamp(number(msg["check"], "measure", 30), 1.0, 300.0);
+        // The frame rate the scene runs at when the PC keeps up (the shell knows its scene: the GameCube check scene is
+        // PAL, 50); 0 = the core's own (av_info).
+        check_target_fps_ = std::clamp(number(msg["check"], "targetFps", 0), 0.0, 240.0);
         snapshots_allowed_ = speed_allowed_ = cheats_allowed_ = rewind_allowed_ = false;
         auto_snapshot_on_close_ = false;
-        check_line_ = "3DS check: getting ready...";
+        check_line_ = check_name() + ": getting ready...";
     }
     if (msg.contains("link") && !msg["link"].is_null() && !start_link(msg, console_key, err)) return false;
 
@@ -539,7 +577,8 @@ bool Player::start(const json &msg, std::string &err) {
         d.smooth = boolean(msg["display"], "smooth", false);
         video_.set_display(d);
     }
-    if (!video_.create("Shoalcade - " + title_, av_.geometry, hw_requested_ ? &hw_ : nullptr, cfg_.headless, err))
+    if (!video_.create("Shoalcade - " + title_, av_.geometry, hw_requested_ ? &hw_ : nullptr, cfg_.headless, err,
+                       console_->newest_gl))
         return false;
     if (msg.contains("display") && msg["display"].is_object() && boolean(msg["display"], "fullscreen", false))
         video_.set_fullscreen(true);
@@ -559,19 +598,32 @@ bool Player::start(const json &msg, std::string &err) {
     audio_.set_muted(boolean(msg, "muted", false));
 
     for (int p = 0; p < input_.ports(); p++) core_.set_controller_port_device((unsigned)p, RETRO_DEVICE_JOYPAD);
+    if (console_key == "wii")
+        for (int p = 0; p < input_.ports(); p++)
+            if (const WiiController *w = wii_controller(wii_controller_[p])) {
+                core_.set_controller_port_device((unsigned)p, w->device);
+                LOGI("player %d: %s (device 0x%x)", p + 1, w->label, w->device);
+            }
 
     saves_.configure(*console_, str(msg, "saveFile"), str(msg, "clockFile"));
     saves_.load(core_);
 
     if (msg.contains("ff") && msg["ff"].is_object()) ff_speed_ = (int)number(msg["ff"], "speed", 2);
     ff_speed_ = std::clamp(ff_speed_, 1, console_->max_ff);
+    rewind_interval_ = rewind_every(*console_); // also what the menu's Rewind switch uses (start.rewind not sent)
     if (msg.contains("rewind") && msg["rewind"].is_object() && boolean(msg["rewind"], "enabled", false)) {
         if (console_->rewind) {
             double mb = std::clamp(number(msg["rewind"], "mb", 64), 4.0, 1024.0);
             rewind_mb_ = (size_t)mb;
-            rewind_.configure((size_t)(mb * 1024 * 1024));
-            rewind_interval_ = (unsigned)std::clamp(number(msg["rewind"], "every", console_key == "psx" ? 2 : 1), 1.0, 60.0);
-            rewind_enabled_ = can_snapshot();
+            configure_rewind();
+            // P10: coarse rewind keeps its own interval whatever `every` says.
+            if (!console_->coarse_rewind_frames)
+                rewind_interval_ = (unsigned)std::clamp(number(msg["rewind"], "every", rewind_interval_), 1.0, 60.0);
+            // P10: the longest pause a step may cost before rewind goes off (default: two frames).
+            rewind_max_hitch_ms_ = std::clamp(number(msg["rewind"], "maxHitchMs", 0), 0.0, 10000.0);
+            // Dolphin / PCSX2 only say their state size once the game runs: coarse rewind starts anyway (a step is
+            // taken only when the core can snapshot).
+            rewind_enabled_ = can_snapshot() || console_->coarse_rewind_frames > 0;
             if (!rewind_enabled_) send("warning", {{"message", "Rewind isn't available: the emulator can't snapshot."}});
         } else {
             send("warning", {{"message", std::string("Rewind isn't available for ") + console_->short_name + "."}});
@@ -588,6 +640,7 @@ bool Player::start(const json &msg, std::string &err) {
                 send("warning", {{"message", std::string(k) + " is off in link play; ignored."}});
         if (rewind_enabled_) send("warning", {{"message", "Rewind is off in link play."}});
         rewind_enabled_ = false;
+        rewind_wait();
         rewind_.clear();
     }
     if (msg.contains("saveIntervalSeconds")) save_interval_s_ = std::clamp(number(msg, "saveIntervalSeconds", 30), 1.0, 600.0);
@@ -609,6 +662,10 @@ bool Player::start(const json &msg, std::string &err) {
                    {"layout", console_key == "3ds" ? json{{"n3ds", n3ds_layout_}, {"flip", n3ds_flip_}}
                               : console_key == "nds" ? json{{"ds", ds_layout_}, {"swap", ds_swap_}} : json(nullptr)},
                    {"check", check_ ? json{{"warmUp", check_warm_}, {"measure", check_measure_}} : json(nullptr)},
+                   {"discs", disc_names().size() > 1 ? json{{"index", disc_index()}, {"labels", disc_names()}} : json(nullptr)},
+                   {"controllers", console_key == "wii" ? json(std::vector<std::string>(
+                                                              wii_controller_.begin(), wii_controller_.begin() + input_.ports()))
+                                                        : json(nullptr)},
                    {"options", options_.describe()}});
     return true;
 }
@@ -685,7 +742,7 @@ json Player::link_json() const {
 
 bool Player::link_refuses(const char *what) {
     if (check_) { // the 3DS check: just the scene, measured (Game3dsActivity check mode)
-        send("warning", {{"message", std::string(what) + " is off during the 3DS check."}});
+        send("warning", {{"message", std::string(what) + " is off during the " + check_name() + "."}});
         return true;
     }
     if (!link_session_) return false;
@@ -774,7 +831,15 @@ bool Player::snapshot_save(const json &slot, const std::string &explicit_path, c
         make_dirs(parent_dir(path));
     }
     std::string err;
-    if (!write_file_atomic(path, buf.data(), buf.size(), &err)) {
+    // P8 (GameCube, Wii, PS2): written compressed (statefile.h); every other console: the core's bytes, as before.
+    // `size` and `sha256` are the file's; `coreSize` is the core's state.
+    std::vector<uint8_t> packed;
+    if (console_->compress_states && !pack_state(buf.data(), buf.size(), packed, &err)) {
+        send("error", {{"message", "Couldn't write the snapshot: " + err}, {"fatal", false}});
+        return false;
+    }
+    const std::vector<uint8_t> &file = console_->compress_states ? packed : buf;
+    if (!write_file_atomic(path, file.data(), file.size(), &err)) {
         send("error", {{"message", "Couldn't write the snapshot: " + err}, {"fatal", false}});
         return false;
     }
@@ -783,8 +848,8 @@ bool Player::snapshot_save(const json &slot, const std::string &explicit_path, c
     png += ".png";
     RgbaImage img = video_.capture();
     if (!write_png(png, img, &err)) png.clear();
-    send("snapshotSaved", {{"slot", slot_name}, {"path", path}, {"png", png}, {"size", size},
-                           {"sha256", sha256_hex(buf.data(), buf.size())}, {"by", by}});
+    send("snapshotSaved", {{"slot", slot_name}, {"path", path}, {"png", png}, {"size", file.size()},
+                           {"coreSize", size}, {"sha256", sha256_hex(file.data(), file.size())}, {"by", by}});
     // The menu's slot shows the new picture and time straight away (the shell may send `slots` later).
     for (auto &s : slots_)
         if (s.slot == slot_name) {
@@ -797,12 +862,16 @@ bool Player::snapshot_save(const json &slot, const std::string &explicit_path, c
 }
 
 bool Player::snapshot_load(const std::string &path, std::string &err) {
-    std::vector<uint8_t> buf;
-    if (!read_file(path, buf, &err)) return false;
+    std::vector<uint8_t> file, buf;
+    if (!read_file(path, file, &err)) return false;
+    // A compressed snapshot (P8) is unpacked; any other file is the core's bytes (every snapshot made before P8).
+    if (!unpack_state(file, buf, &err)) return false;
+    file = std::vector<uint8_t>(); // the 100 MB copy isn't needed any more
     if (!core_.unserialize(buf.data(), buf.size())) {
         err = "the emulator couldn't load this snapshot (made by a different emulator version?)";
         return false;
     }
+    rewind_wait();
     rewind_.clear();
     return true;
 }
@@ -918,6 +987,8 @@ void Player::handle(const json &msg) {
     } else if (type == "close") {
         running_ = false;
         close_reason_ = "shell";
+    } else if (type == "restart") {
+        restart_game("shell");
     } else if (type == "snapshot.save") {
         if (link_refuses("Snapshots")) return;
         snapshot_save(msg.contains("slot") ? msg["slot"] : json(1), str(msg, "path"));
@@ -946,6 +1017,10 @@ void Player::handle(const json &msg) {
         screenshot(str(msg, "path"));
     } else if (type == "layout") {
         apply_layout(msg);
+    } else if (type == "disc.set") {
+        set_disc((int)number(msg, "index", -1), "shell");
+    } else if (type == "controller.set") {
+        set_wii_controller((unsigned)number(msg, "port", 0), str(msg, "controller"), "shell");
     } else if (type == "display") {
         DisplaySettings d = video_.display();
         d.integer_scale = boolean(msg, "integerScale", d.integer_scale);
@@ -982,7 +1057,9 @@ void Player::handle(const json &msg) {
         }
         if (type == "debug.pokeSave") {
             std::vector<uint8_t> bytes;
-            bool ok = from_hex(str(msg, "hex"), bytes) && saves_.poke(core_, (size_t)number(msg, "offset", 0), bytes);
+            // A negative or huge double can't be cast to size_t safely, so it is refused first (P-L2).
+            double at = number(msg, "offset", 0);
+            bool ok = at >= 0 && at < 4294967296.0 && from_hex(str(msg, "hex"), bytes) && saves_.poke(core_, (size_t)at, bytes);
             send("debug.result", {{"what", type}, {"ok", ok}});
         } else if (type == "debug.dumpSave") {
             std::string err;
@@ -994,11 +1071,13 @@ void Player::handle(const json &msg) {
         } else if (type == "debug.readMemory") {
             // RETRO_MEMORY_* id (2 = system RAM), offset, length -> hex.
             unsigned id = (unsigned)number(msg, "id", RETRO_MEMORY_SYSTEM_RAM);
-            size_t off = (size_t)number(msg, "offset", 0), len = (size_t)number(msg, "length", 1);
+            double off_d = number(msg, "offset", 0), len_d = number(msg, "length", 1);
+            bool in_range = off_d >= 0 && off_d < 4294967296.0 && len_d >= 0 && len_d <= 4096; // before any cast (P-L2)
+            size_t off = in_range ? (size_t)off_d : 0, len = in_range ? (size_t)len_d : 0;
             size_t size = core_.get_memory_size(id);
             auto *mem = static_cast<const uint8_t *>(core_.get_memory_data(id));
             std::string hex;
-            bool ok = mem && off + len <= size && len <= 4096;
+            bool ok = in_range && mem && off <= size && len <= size - off;
             if (ok) {
                 static const char *digits = "0123456789abcdef";
                 for (size_t i = 0; i < len; i++) hex += digits[mem[off + i] >> 4], hex += digits[mem[off + i] & 15];
@@ -1041,10 +1120,28 @@ void Player::handle(const json &msg) {
                 if (l) r["frame"] = {l->frame_w, l->frame_h};
             }
             send("debug.result", r);
+        } else if (type == "debug.input") {
+            // What the core reads: {port, device (1 joypad, 5 analog...), index, id} -> value (P4 / P4b tests).
+            int16_t v = input_.state((unsigned)number(msg, "port", 0), (unsigned)number(msg, "device", 1),
+                                     (unsigned)number(msg, "index", 0), (unsigned)number(msg, "id", 0));
+            send("debug.result", {{"what", type}, {"ok", true}, {"value", v}});
         } else if (type == "debug.pointer") {
             auto p = input_.pointer_seen();
             send("debug.result", {{"what", "debug.pointer"}, {"ok", true}, {"x", p.x}, {"y", p.y}, {"down", p.down},
                                   {"pressedReads", p.pressed_reads}});
+        } else if (type == "debug.motion") {
+            // The pointer moved to {x, y} (window coordinates) through SDL's event queue, no click (the ☰ button).
+            bool ok = video_.window() != nullptr;
+            if (ok) {
+                float x = (float)number(msg, "x", 0), y = (float)number(msg, "y", 0);
+                SDL_WarpMouseInWindow(video_.window(), x, y);
+                SDL_Event e{};
+                e.type = SDL_EVENT_MOUSE_MOTION;
+                e.motion.windowID = SDL_GetWindowID(video_.window());
+                e.motion.x = x, e.motion.y = y;
+                SDL_PushEvent(&e);
+            }
+            send("debug.result", {{"what", type}, {"ok", ok}});
         } else if (type == "debug.click") {
             // A left click at {x, y} (window coordinates) through SDL's event queue (the menu's mouse path).
             bool ok = video_.window() != nullptr;
@@ -1090,10 +1187,23 @@ void Player::handle(const json &msg) {
                     if (name == names[i]) b = i;
                 ok = b >= 0 && SDL_SetJoystickVirtualButton(test_pad_, b, boolean(msg, "on", true));
             }
+            // {axis: lx|ly|rx|ry|l2|r2, value: -1..1 (triggers 0..1)}: sticks and the analogue triggers (P4).
+            std::string axis = str(msg, "axis");
+            if (ok && !axis.empty()) {
+                static const char *axes[] = {"lx", "ly", "rx", "ry", "l2", "r2"}; // SDL_GamepadAxis order
+                int a = -1;
+                for (int i = 0; i < 6; i++)
+                    if (axis == axes[i]) a = i;
+                double v = std::clamp(number(msg, "value", 0), -1.0, 1.0);
+                ok = a >= 0 && SDL_SetJoystickVirtualAxis(test_pad_, a, (Sint16)std::lround(v * 32767));
+            }
             send("debug.result", {{"what", type}, {"ok", ok}});
         } else if (type == "debug.stats") {
+            rewind_wait();
             json st = {{"audio", audio_.stats()}, {"shownFrames", shown_frames_}, {"coreFrames", core_frames_},
-                       {"rewindBytes", rewind_.bytes()}, {"rewindSteps", rewind_.steps()}};
+                       {"rewindBytes", rewind_.bytes()}, {"rewindSteps", rewind_.steps()},
+                       {"rewindEvery", rewind_interval_}};
+            if (rewind_capture_n_) st["rewindCaptureMs"] = rewind_capture_json();
             if (link_session_) st["link"] = link_json();
             send("stats", st);
         } else if (type == "debug.frame") {
@@ -1109,7 +1219,10 @@ void Player::handle(const json &msg) {
 void Player::run_frame() {
     update_speed();
     if (rewinding_) {
-        if (rewind_.step_back(rewind_scratch_)) {
+        // P10 coarse rewind: each step is about a second of play, so step back four times a second, not every frame.
+        bool step = !console_->coarse_rewind_frames || rewind_shown_++ % 15 == 0;
+        rewind_wait();
+        if (step && rewind_.step_back(rewind_scratch_)) {
             core_.unserialize(rewind_scratch_.data(), rewind_scratch_.size());
         }
         // One frame to show where we are (silent); not added to the ring.
@@ -1122,9 +1235,23 @@ void Player::run_frame() {
     int runs = ff_effective_ ? ff_speed_ : 1;
     for (int i = 0; i < runs; i++) {
         if (rewind_enabled_ && core_frames_ % rewind_interval_ == 0) {
+            double t0 = now_s();
             size_t size = core_.serialize_size();
             rewind_scratch_.resize(size);
-            if (size && core_.serialize(rewind_scratch_.data(), size)) rewind_.push(rewind_scratch_);
+            double t1 = t0;
+            if (console_->coarse_rewind_frames) rewind_wait(); // the last step's packing (done long ago: a second)
+            if (size && core_.serialize(rewind_scratch_.data(), size)) {
+                t1 = now_s();
+                if (console_->coarse_rewind_frames) {
+                    // P10: the 100 MB step is packed on another thread, so the game only waits for the core's own
+                    // snapshot. Two buffers take turns: the core fills one while the other is packed.
+                    rewind_scratch_.swap(rewind_job_buf_);
+                    rewind_job_ = std::async(std::launch::async, [this] { rewind_.push(rewind_job_buf_); });
+                } else {
+                    rewind_.push(rewind_scratch_);
+                }
+            }
+            if (console_->coarse_rewind_frames && size) note_rewind_capture((now_s() - t0) * 1000.0, (t1 - t0) * 1000.0);
         }
         // Fast-forward: only the last run of a shown frame needs its picture (GL cores always draw).
         av_enable_ = (i + 1 < runs && !hw_requested_) ? 2 : 3;
@@ -1168,6 +1295,17 @@ void Player::loop(Inbox &inbox) {
                 if (e.type == SDL_EVENT_GAMEPAD_ADDED || e.type == SDL_EVENT_GAMEPAD_REMOVED) input_.handle_event(e);
                 else menu_event(e);
                 continue;
+            }
+            // The ☰ button: the mouse moving shows it; a click on it opens the menu (never a touch on the game).
+            if (e.type == SDL_EVENT_MOUSE_MOTION) mouse_moved_at_ = now_s();
+            if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT && menu_button_shown()) {
+                float r[4];
+                if (menu_button_rect(r) && e.button.x >= r[0] && e.button.x < r[0] + r[2] && e.button.y >= r[1] &&
+                    e.button.y < r[1] + r[3]) {
+                    input_.block_pointer_until_released();
+                    open_menu("user");
+                    continue;
+                }
             }
             if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
                 // Controller: the Guide button, or Start and Select together, opens the menu.
@@ -1321,11 +1459,16 @@ void Player::check_tick() {
         int left = check_warm_ + check_measure_ - check_second_;
         bool warming = check_second_ <= check_warm_;
         // The phone's words (N3dsCheck / Game3dsActivity), on this PC's corner line.
-        check_line_ = warming ? "3DS check: warming up... " + std::to_string(left) + " s"
-                              : "3DS check: measuring... " + std::to_string(left) + " s \u00b7 " + std::to_string(f) + " fps";
+        check_line_ = warming ? check_name() + ": warming up... " + std::to_string(left) + " s"
+                              : check_name() + ": measuring... " + std::to_string(left) + " s \u00b7 " + std::to_string(f) + " fps";
         send("checkTick", {{"second", check_second_}, {"phase", warming ? "warmUp" : "measure"}, {"left", left}, {"fps", f}});
         if (left <= 0) stop_check("done");
     }
+}
+
+std::string Player::check_name() const {
+    // The words in the corner and in warnings: "3DS check" (the phone's), "GameCube check", "Wii check".
+    return std::string(console_ && std::string(console_->key) == "3ds" ? "3DS" : console_ ? console_->short_name : "") + " check";
 }
 
 void Player::stop_check(const char *reason) {
@@ -1340,8 +1483,11 @@ void Player::shutdown(const char *reason) {
         saves_.flush(core_, "close");
         report_play_time(true);
         if (cfg_.hash_every) send_frame_info();
+        rewind_wait();
         json st = {{"audio", audio_.stats()}, {"shownFrames", shown_frames_}, {"coreFrames", core_frames_},
-                   {"rewindBytes", rewind_.bytes()}, {"rewindSteps", rewind_.steps()}};
+                   {"rewindBytes", rewind_.bytes()}, {"rewindSteps", rewind_.steps()},
+                   {"rewindEvery", rewind_interval_}};
+        if (rewind_capture_n_) st["rewindCaptureMs"] = rewind_capture_json();
         if (link_session_) st["link"] = link_json();
         send("stats", st);
         // PPSSPP boots on its own thread; closing before that finishes crashes inside the core's retro_unload_game
@@ -1354,14 +1500,25 @@ void Player::shutdown(const char *reason) {
                 SDL_Delay(10);
             }
         }
-        // GL context first: PPSSPP's retro_unload_game deletes the object its context_destroy uses.
-        if (hw_requested_ && hw_.context_destroy) {
-            LOGI("closing: GL context destroy");
-            hw_.context_destroy();
+        if (console_->unload_before_gl_destroy) {
+            // P7 (GameCube, Wii, PS2): Dolphin and PCSX2 flush GPU work and write their memory cards as the game
+            // unloads, so the GL context must still be there (RetroArch's order too).
+            LOGI("closing: unload game");
+            core_.unload_game();
+            if (hw_requested_ && hw_.context_destroy) {
+                LOGI("closing: GL context destroy");
+                hw_.context_destroy();
+            }
+        } else {
+            // GL context first: PPSSPP's retro_unload_game deletes the object its context_destroy uses.
+            if (hw_requested_ && hw_.context_destroy) {
+                LOGI("closing: GL context destroy");
+                hw_.context_destroy();
+            }
+            if (link_session_) link_.shutdown(); // linkshim.c: stop the core's session before retro_unload_game
+            LOGI("closing: unload game");
+            core_.unload_game();
         }
-        if (link_session_) link_.shutdown(); // linkshim.c: stop the core's session before retro_unload_game
-        LOGI("closing: unload game");
-        core_.unload_game();
         loaded_ = false;
     }
     if (inited_) {
@@ -1398,7 +1555,8 @@ int Player::run(const json &start_msg, Inbox &inbox) {
     if (check_) {
         bool done = check_reason_ == "done";
         send("checkResult", {{"done", done}, {"reason", check_reason_.empty() ? close_reason_ : check_reason_},
-                             {"fps", check_fps_}, {"warmUp", check_warm_}, {"measure", check_measure_}});
+                             {"fps", check_fps_}, {"warmUp", check_warm_}, {"measure", check_measure_},
+                             {"targetFps", check_target_fps_ > 0 ? check_target_fps_ : av_.timing.fps}});
     }
     json closing = {{"reason", close_reason_}};
     if (close_reason_ == "menu") closing["upload"] = close_upload_; // the shell uploads for "Close Game (and Upload)"
@@ -1421,8 +1579,9 @@ menu::Context Player::menu_context() const {
     c.max_ff = console_->max_ff;
     c.ff_on = ff_on_;
     c.ff_speed = ff_speed_;
-    c.rewind_possible = console_->rewind && rewind_allowed_ && can_snapshot();
+    c.rewind_possible = console_->rewind && rewind_allowed_ && can_snapshot() && rewind_off_why_.empty();
     c.rewind_on = rewind_enabled_;
+    c.rewind_off_why = rewind_off_why_;
     c.cheats_allowed = cheats_allowed_;
     c.cheats = cheats_;
     c.muted = audio_.muted();
@@ -1434,11 +1593,19 @@ menu::Context Player::menu_context() const {
     c.ds_swap = ds_swap_;
     c.n3ds = n3ds_layout_;
     c.n3ds_flip = n3ds_flip_;
-    for (const auto &l : input_.describe_buttons()) c.controls.push_back({l.what, l.keys, l.pad});
-    for (const auto &l : input_.describe_hotkeys()) c.shortcuts.push_back({l.what, l.keys, l.pad});
+    c.wii_controller = wii_controller_[0];
+    c.discs = disc_names();
+    c.disc = disc_index();
+    for (const auto &l : input_.describe_buttons()) c.controls.push_back({l.name, l.what, l.keys, l.pad, l.fixed});
+    for (const auto &l : input_.describe_hotkeys()) c.shortcuts.push_back({l.name, l.what, l.keys, l.pad, l.fixed});
     c.ff_key = input_.hotkey_keys(Hotkey::FastForward);
     c.rewind_key = input_.hotkey_keys(Hotkey::Rewind);
     c.armed = armed_;
+    c.console_name = console_->short_name;
+    Input::PadInfo pad;
+    if (input_.shown_pad(pad)) c.pad_name = pad.name;
+    c.listening = listen_id_;
+    c.can_restart = !link_session_ && core_.reset;
     return c;
 }
 
@@ -1463,6 +1630,7 @@ void Player::open_menu(const char *by) {
     show_focus_ = false;
     scroll_to_top_ = true;
     armed_.clear();
+    listen_id_.clear();
     pad_repeat_dir_ = 0;
     refresh_menu(true);
     nav_.reset();
@@ -1472,6 +1640,7 @@ void Player::open_menu(const char *by) {
 void Player::close_menu(const char *by, bool resume) {
     if (!menu_open_) return;
     menu_open_ = false;
+    listen_id_.clear();
     armed_.clear();
     pad_repeat_dir_ = 0;
     input_.block_until_released(); // the key or button that closed it mustn't reach the game
@@ -1490,6 +1659,10 @@ void Player::menu_tick() {
     if (!armed_.empty() && now - armed_at_ > 5) {
         armed_.clear(); // a second press has to come within 5 s
         if (menu_open_) refresh_menu();
+    }
+    if (!listen_id_.empty() && now - listen_at_ > 10) { // the phone's BindListener.TIMEOUT_MS
+        stop_listening();
+        toast(menu::NOTHING_PRESSED);
     }
     if (menu_open_ && pad_repeat_dir_ && now >= pad_repeat_at_) {
         menu_nav(pad_repeat_dir_ < 0 ? menu::NavKey::Up : menu::NavKey::Down, true, "user");
@@ -1522,6 +1695,10 @@ void Player::menu_nav(menu::NavKey k, bool repeat, const char *by) {
 
 void Player::menu_event(const SDL_Event &e) {
     using menu::NavKey;
+    if (!listen_id_.empty()) {
+        listen_event(e);
+        return;
+    }
     if (e.type == SDL_EVENT_KEY_DOWN) {
         bool rep = e.key.repeat;
         switch (e.key.scancode) {
@@ -1594,13 +1771,40 @@ void Player::menu_pick(const std::string &id, const char *by) {
         armed_ = id;
         armed_at_ = now_s();
         refresh_menu();
+        // The toolbar rail shows no hint under its buttons, so Restart says it in a note (the browser's toast).
+        if (id == menu::ID_RESTART) toast(menu::RESTART_AGAIN, 5);
         send("menuConfirm", {{"id", id}, {"by", by}});
         return;
     }
     armed_.clear();
     const std::string snap_save = "snap.save.", snap_load = "snap.load.";
+    if (item->kind == menu::Kind::Bind) {
+        // A second pick (or a click) on the row that is waiting cancels it, as in the browser.
+        bool again = listen_id_ == id || (listen_cancelled_ == id && now_s() - listen_cancelled_at_ < 1.0);
+        listen_cancelled_.clear();
+        if (again) stop_listening();
+        else start_listening(id);
+        return;
+    }
     if (id == menu::ID_RESUME) {
         close_menu(by);
+    } else if (id == menu::ID_RESTART) {
+        close_menu(by);
+        if (restart_game(by)) toast(menu::RESTARTED);
+    } else if (id == menu::ID_RESET_KEYS) {
+        input_.reset_keys();
+        send_controls(true, true, "");
+        toast(std::string(console_->short_name) + " keys reset to defaults.");
+    } else if (id == menu::ID_RESET_SHORTCUTS) {
+        input_.reset_hotkeys();
+        send_controls(true, true, "");
+        toast(std::string(console_->short_name) + " shortcuts reset to defaults.");
+    } else if (id == menu::ID_RESET_PAD) {
+        Input::PadInfo pad;
+        if (input_.shown_pad(pad) && input_.reset_pad(pad.id)) {
+            send_controls(false, false, pad.model);
+            toast(menu::RESET_PAD_DONE);
+        }
     } else if (id == menu::ID_SCREENSHOT) {
         close_menu(by);
         toast(screenshot("") ? "Screenshot saved." : "Couldn't save the screenshot.");
@@ -1651,8 +1855,131 @@ void Player::menu_pick(const std::string &id, const char *by) {
         apply_layout(json{{"n3ds", n3ds_layout_}, {"flip", !n3ds_flip_}}, by);
     } else if (id.rfind("3ds.", 0) == 0) {
         apply_layout(json{{"n3ds", id.substr(4)}, {"flip", n3ds_flip_}}, by);
+    } else if (id.rfind(menu::DISC_PREFIX, 0) == 0) {
+        set_disc(std::atoi(id.c_str() + menu::DISC_PREFIX.size()), by);
+    } else if (id.rfind(menu::WII_CONTROLLER_PREFIX, 0) == 0) {
+        set_wii_controller(0, id.substr(std::strlen(menu::WII_CONTROLLER_PREFIX)), by);
     }
     // Volume (a slider) and the Controls lines do nothing when picked.
+    if (menu_open_) refresh_menu();
+}
+
+bool Player::restart_game(const char *by) {
+    if (link_refuses("Restarting")) return false; // the 3DS check too
+    if (!core_.reset) {
+        send("warning", {{"message", std::string("Restarting isn't available for ") + console_->short_name + " here."}});
+        return false;
+    }
+    // Saves are precious: the game's save is on disk before the reset (a reset keeps the core's save memory too, but
+    // nothing is left to chance). A folder save (PSP, 3DS, GameCube...) is written by the core itself as it goes.
+    saves_.flush(core_, "restart");
+    rewind_wait();
+    rewind_.clear(); // rewinding mustn't go back past the restart
+    core_.reset();
+    LOGI("game restarted (%s)", by);
+    send("restarted", {{"by", by}});
+    return true;
+}
+
+void Player::start_listening(const std::string &id) {
+    listen_id_ = id;
+    listen_at_ = now_s();
+    listen_rest_.clear();
+    // Where each controller's axes rest now: a trigger resting pushed in (some rest at -1) isn't a new press.
+    int n = 0;
+    SDL_JoystickID *ids = SDL_GetGamepads(&n);
+    for (int i = 0; ids && i < n; i++) {
+        SDL_Gamepad *g = SDL_GetGamepadFromID(ids[i]);
+        if (!g) continue;
+        auto &rest = listen_rest_[ids[i]];
+        for (int a = 0; a < SDL_GAMEPAD_AXIS_COUNT; a++) rest[a] = SDL_GetGamepadAxis(g, (SDL_GamepadAxis)a) / 32767.0f;
+    }
+    SDL_free(ids);
+    send("controlsListening", {{"id", id}});
+    if (menu_open_) refresh_menu();
+}
+
+void Player::stop_listening() {
+    if (listen_id_.empty()) return;
+    listen_id_.clear();
+    if (menu_open_) refresh_menu();
+}
+
+void Player::listen_event(const SDL_Event &e) {
+    const bool shortcut = listen_id_.rfind(menu::SHORTCUT_PREFIX, 0) == 0;
+    const std::string name = listen_id_.substr(shortcut ? menu::SHORTCUT_PREFIX.size() : menu::CONTROL_PREFIX.size());
+    if (e.type == SDL_EVENT_KEY_DOWN) {
+        if (e.key.repeat) return;
+        if (e.key.scancode == SDL_SCANCODE_ESCAPE) { // Esc always cancels (it is the menu's own key)
+            stop_listening();
+            return;
+        }
+        std::string code = Input::code_of(e.key.scancode);
+        stop_listening();
+        if (code.empty()) {
+            toast("That key can't be used. Choose another key.");
+            return;
+        }
+        bind_done(input_.bind_key(name, shortcut, code), false);
+    } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+        auto b = (SDL_GamepadButton)e.gbutton.button;
+        if (b == SDL_GAMEPAD_BUTTON_GUIDE) { // the Guide button always opens the menu: it cancels, never binds
+            stop_listening();
+            return;
+        }
+        if (shortcut) return; // shortcuts are keys only (as in the browser)
+        std::string input = Input::pad_input_of_button(b);
+        if (input.empty()) return; // a button the controls can't name: keep waiting
+        stop_listening();
+        bind_done(input_.bind_pad(e.gbutton.which, name, input), true);
+    } else if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && !shortcut) {
+        float v = e.gaxis.value / 32767.0f;
+        if (std::fabs(v) < 0.6f) return;
+        auto r = listen_rest_.find(e.gaxis.which);
+        float rest = r != listen_rest_.end() && e.gaxis.axis < SDL_GAMEPAD_AXIS_COUNT ? r->second[e.gaxis.axis] : 0.0f;
+        if (std::fabs(rest) >= 0.3f && (rest > 0) == (v > 0)) return; // already pushed that way when it began
+        std::string input = Input::pad_input_of_axis((SDL_GamepadAxis)e.gaxis.axis, v > 0);
+        if (input.empty()) return;
+        stop_listening();
+        bind_done(input_.bind_pad(e.gaxis.which, name, input), true);
+    } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        // A click anywhere cancels; a click on the row itself mustn't start it again (menu_pick).
+        listen_cancelled_ = listen_id_;
+        listen_cancelled_at_ = now_s();
+        stop_listening();
+    }
+}
+
+void Player::bind_done(const Input::Change &c, bool pad) {
+    if (!c.ok) {
+        toast(pad ? "That button can't be used here. Nothing changed." : "That key can't be used here. Nothing changed.");
+        return;
+    }
+    // The phone's ControlsWords.isNow and the browser's bindKey note.
+    std::string taken;
+    for (const auto &t : c.taken) taken += (taken.empty() ? "" : ", ") + t;
+    std::string input = c.input;
+    if (pad && !input.empty()) input[0] = (char)std::toupper((unsigned char)input[0]);
+    std::string text = c.what + " is now " + input + (pad ? " on this controller." : ".");
+    if (!taken.empty()) text += " Taken from " + taken + ".";
+    else if (!pad) text += " Saved.";
+    toast(text, 4);
+    Input::PadInfo info;
+    if (pad && input_.shown_pad(info)) send_controls(false, false, info.model);
+    else send_controls(true, true, "");
+}
+
+void Player::send_controls(bool keyboard, bool hotkeys, const std::string &pad_model) {
+    json m = {{"console", console_->key}, {"by", "user"}};
+    if (keyboard) m["keyboard"] = input_.keyboard_json();
+    if (hotkeys) m["hotkeys"] = input_.hotkeys_json();
+    if (!pad_model.empty()) {
+        Input::PadInfo info;
+        std::string name = input_.shown_pad(info) && info.model == pad_model ? info.name : pad_model;
+        m["gamepads"] = {{pad_model, input_.pad_json(pad_model)}};
+        m["controller"] = name;
+    }
+    send("controlsChanged", m);
     if (menu_open_) refresh_menu();
 }
 
@@ -1668,19 +1995,121 @@ void Player::set_ff(bool on, int speed, const char *by) {
     if (menu_open_) refresh_menu();
 }
 
+void Player::rewind_wait() {
+    // get(), not wait(): a step that failed to pack (out of memory) must not leave the ring half-changed (review #13).
+    std::string err = rewind_.finish_push(rewind_job_);
+    if (!err.empty()) {
+        LOGW("rewind: a step couldn't be saved (%s); the rewind history was cleared", err.c_str());
+        send("warning", {{"message", "Rewind history was cleared: a rewind step couldn't be saved (" + err + ")."}});
+    }
+}
+
+void Player::configure_rewind() {
+    // P10 (GameCube, Wii, PS2): one 90-110 MB state a second; at least 256 MB for the changes, ~30 s kept.
+    rewind_wait();
+    if (console_->coarse_rewind_frames)
+        rewind_.configure(std::max<size_t>(rewind_mb_, 256) * 1024 * 1024, 30);
+    else
+        rewind_.configure(rewind_mb_ * 1024 * 1024);
+}
+
+void Player::note_rewind_capture(double ms, double core_ms) {
+    // P10: saving a step pauses the game for this long. Logged; the stats carry it; if the first few steps take more
+    // than a frame and a half, rewind goes off for this game (it would stutter every second) and the menu says why.
+    rewind_capture_n_++;
+    rewind_capture_total_ms_ += ms;
+    rewind_capture_max_ms_ = std::max(rewind_capture_max_ms_, ms);
+    if (rewind_capture_n_ <= 3 || rewind_capture_n_ % 30 == 0)
+        LOGI("rewind: step %llu saved in %.1f ms (the core %.1f; average %.1f, most %.1f)", (unsigned long long)rewind_capture_n_,
+             ms, core_ms, rewind_capture_total_ms_ / rewind_capture_n_, rewind_capture_max_ms_);
+    const double frame_ms = 1000.0 / (av_.timing.fps > 1 ? av_.timing.fps : 60.0);
+    if (rewind_capture_n_ == 1) rewind_first_ms_ = ms;
+    const double settled = rewind_capture_n_ > 1 ? (rewind_capture_total_ms_ - rewind_first_ms_) / (rewind_capture_n_ - 1) : 0;
+    const double limit = rewind_max_hitch_ms_ > 0 ? rewind_max_hitch_ms_ : frame_ms * 2;
+    if (rewind_capture_n_ == 6 && settled > limit) {
+        char why[200];
+        std::snprintf(why, sizeof why,
+                      "Rewind is off for this game: on this PC each step takes %.0f ms, so the game would stutter every second.",
+                      settled);
+        rewind_off_why_ = why;
+        LOGW("%s", why);
+        set_rewind_enabled(false, "player");
+        send("warning", {{"message", rewind_off_why_}});
+    }
+}
+
 void Player::set_rewind_enabled(bool on, const char *by) {
     if (on && !(console_->rewind && rewind_allowed_ && can_snapshot())) {
         send("warning", {{"message", std::string("Rewind isn't available for ") + console_->short_name + " here."}});
         return;
     }
-    if (on && !rewind_enabled_) rewind_.configure(rewind_mb_ * 1024 * 1024);
+    if (on && !rewind_off_why_.empty()) {
+        send("warning", {{"message", rewind_off_why_}});
+        return;
+    }
+    if (on && !rewind_enabled_) configure_rewind(); // rewind_interval_ was set at start (rewind_every)
     rewind_enabled_ = on;
     if (!on) {
         rewind_held_proto_ = false;
+        rewind_wait();
         rewind_.clear(); // frees the memory
     }
     send("rewindChanged", {{"enabled", rewind_enabled_}, {"by", by}});
     if (menu_open_) refresh_menu();
+}
+
+bool Player::set_wii_controller(unsigned port, const std::string &type, const char *by) {
+    const WiiController *w = wii_controller(type);
+    if (std::string(console_->key) != "wii" || port >= (unsigned)input_.ports() || !w) {
+        send("warning", {{"message", "Wii controller \"" + type + "\" can't be set for player " +
+                                         std::to_string(port + 1) + " here."}});
+        return false;
+    }
+    wii_controller_[port] = type;
+    core_.set_controller_port_device(port, w->device);
+    LOGI("player %u: %s (device 0x%x)", port + 1, w->label, w->device);
+    // The shell keeps it for this game (P5: remembered per game).
+    send("controllerChanged", {{"port", port}, {"controller", type}, {"device", w->device}, {"by", by}});
+    if (menu_open_) refresh_menu();
+    return true;
+}
+
+std::vector<std::string> Player::disc_names() const {
+    std::vector<std::string> out;
+    if (!have_disk_ || !disk_.get_num_images) return out;
+    unsigned n = disk_.get_num_images();
+    for (unsigned i = 0; i < n && i < 16; i++) {
+        char label[256] = {0};
+        if (disk_.get_image_label && disk_.get_image_label(i, label, sizeof label) && label[0])
+            out.push_back(label);
+        else
+            out.push_back("Disc " + std::to_string(i + 1));
+    }
+    return out;
+}
+
+int Player::disc_index() const {
+    return have_disk_ && disk_.get_image_index ? (int)disk_.get_image_index() : -1;
+}
+
+bool Player::set_disc(int index, const char *by) {
+    std::vector<std::string> names = disc_names();
+    if (names.size() < 2 || index < 0 || index >= (int)names.size() || !disk_.set_eject_state || !disk_.set_image_index) {
+        send("warning", {{"message", "There's no disc " + std::to_string(index + 1) + " to change to here."}});
+        return false;
+    }
+    // As RetroArch: open the tray, swap, close it. The game sees the disc change as on the console.
+    bool ok = disk_.set_eject_state(true) && disk_.set_image_index((unsigned)index) && disk_.set_eject_state(false);
+    if (!ok) {
+        if (disk_.get_eject_state && disk_.get_eject_state()) disk_.set_eject_state(false);
+        send("warning", {{"message", "The emulator couldn't change the disc."}});
+        return false;
+    }
+    LOGI("disc %d of %zu in the drive (%s)", index + 1, names.size(), names[index].c_str());
+    send("discChanged", {{"index", index}, {"count", names.size()}, {"label", names[index]}, {"by", by}});
+    toast(names[index] + " is in the drive.");
+    if (menu_open_) refresh_menu();
+    return true;
 }
 
 void Player::set_mute(bool on, const char *by) {
@@ -1763,9 +2192,38 @@ void Player::load_slots(const json &list) {
     if (menu_open_) refresh_menu();
 }
 
+bool Player::menu_button_rect(float out[4]) const {
+    if (!video_.window()) return false;
+    int w = 0, h = 0;
+    SDL_GetWindowSize(video_.window(), &w, &h);
+    if (w <= 0 || h <= 0) return false;
+    MenuUi::menu_button_rect((float)w, (float)h, out);
+    return true;
+}
+
+bool Player::menu_button_shown() const {
+    // Mouse-only use (the browser's toolbar rail): shown for 2.5 s after the mouse moves over the window, and while
+    // the mouse is on it. Never with the menu open, in the 3DS check, or headless (nothing is drawn).
+    if (menu_open_ || check_ || !ui_.ready() || cfg_.headless) return false;
+    if (now_s() - mouse_moved_at_ < 2.5) return true;
+    float r[4], x = 0, y = 0;
+    if (!menu_button_rect(r)) return false;
+    if (!(SDL_GetWindowFlags(video_.window()) & SDL_WINDOW_MOUSE_FOCUS)) return false;
+    SDL_GetMouseState(&x, &y);
+    return x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3];
+}
+
 void Player::draw_overlay() {
-    if (!ui_.ready() || (!menu_open_ && toast_.empty() && !link_session_ && !check_)) return;
+    const bool button = menu_button_shown();
+    if (!ui_.ready() || (!menu_open_ && toast_.empty() && !link_session_ && !check_ && !button)) return;
     MenuUi::View v;
+    v.menu_button = button;
+    if (button) {
+        float r[4], x = 0, y = 0;
+        SDL_GetMouseState(&x, &y);
+        v.menu_button_hover = menu_button_rect(r) && (SDL_GetWindowFlags(video_.window()) & SDL_WINDOW_MOUSE_FOCUS) &&
+                              x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3];
+    }
     v.open = menu_open_;
     v.title = title_;
     v.sections = &sections_;
@@ -1781,7 +2239,7 @@ void Player::draw_overlay() {
 }
 
 void Player::send_menu_state() {
-    static const char *kinds[] = {"action", "choice", "toggle", "slider", "info", "heading", "note", "slot"};
+    static const char *kinds[] = {"action", "choice", "toggle", "slider", "info", "bind", "heading", "note", "slot"};
     json secs = json::array();
     for (const auto &s : sections_) {
         json items = json::array();
@@ -1797,7 +2255,10 @@ void Player::send_menu_state() {
         }
         secs.push_back({{"id", s.id}, {"title", s.title}, {"items", items}});
     }
+    float br[4];
+    json button = {{"shown", menu_button_shown()}};
+    if (menu_button_rect(br)) button["rect"] = {br[0], br[1], br[2], br[3]};
     send("menuState", {{"open", menu_open_}, {"focus", nav_.focus()}, {"showFocus", show_focus_}, {"armed", armed_},
-                       {"drawn", ui_.ready()}, {"sections", secs}});
+                       {"drawn", ui_.ready()}, {"listening", listen_id_}, {"menuButton", button}, {"sections", secs}});
 }
 } // namespace sc

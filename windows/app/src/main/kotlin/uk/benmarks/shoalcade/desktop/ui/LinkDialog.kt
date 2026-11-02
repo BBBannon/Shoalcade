@@ -11,17 +11,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -83,7 +76,7 @@ fun LinkDialogView(console: Console, lobby: PcLinkLobby, online: Boolean, proble
         if (state is LobbyState.Connected) lobby.take()?.let(onLinked)
     }
 
-    AlertDialog(
+    PocketDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.widthIn(min = 520.dp),
         title = { Text("Link play") },
@@ -96,13 +89,13 @@ fun LinkDialogView(console: Console, lobby: PcLinkLobby, online: Boolean, proble
                         Text(LinkText.STEPS, Modifier.padding(vertical = 8.dp))
                         if (console == Console.GBA) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(cable, { cable = it })
+                                PocketCheckbox(cable, { cable = it })
                                 Text("Link cable mode: Ruby/Sapphire with Emerald/FireRed/LeafGreen, and Emerald hacks like Monomyth (host decides)")
                             }
                         }
                         if (console == Console.NDS) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(dsMac, { dsMac = it; LinkPrefs.setDsMacEnabled(ctx, it) })
+                                PocketCheckbox(dsMac, { dsMac = it; LinkPrefs.setDsMacEnabled(ctx, it) })
                                 Text("Use a different DS wireless ID on this PC")
                             }
                             Text(LinkText.DS_MAC_HINT, style = MaterialTheme.typography.bodySmall)
@@ -111,17 +104,17 @@ fun LinkDialogView(console: Console, lobby: PcLinkLobby, online: Boolean, proble
                             HorizontalDivider(Modifier.padding(vertical = 8.dp))
                             Text(PcWords.link(OnlineLink.ONLINE_INTRO))
                             Text(OnlineLink.ONLINE_SLOWER, style = MaterialTheme.typography.bodySmall)
-                            OutlinedButton(onClick = { lobby.hostOnline(cable) }, Modifier.fillMaxWidth().padding(top = 8.dp)) { Text(OnlineLink.HOST_ONLINE) }
-                            OutlinedButton(onClick = { lobby.joinOnlineForm() }, Modifier.fillMaxWidth()) { Text(OnlineLink.JOIN_ONLINE) }
+                            PocketButton(onClick = { lobby.hostOnline(cable) }, Modifier.fillMaxWidth().padding(top = 8.dp)) { Text(OnlineLink.HOST_ONLINE) }
+                            PocketButton(onClick = { lobby.joinOnlineForm() }, Modifier.fillMaxWidth()) { Text(OnlineLink.JOIN_ONLINE) }
                         }
                         if (celioOn) {
                             HorizontalDivider(Modifier.padding(vertical = 8.dp))
                             Text(CelioText.TITLE, style = MaterialTheme.typography.titleSmall)
                             Text(CelioText.INTRO)
                             Text(CelioText.SWITCH_HINT, style = MaterialTheme.typography.bodySmall)
-                            OutlinedButton(onClick = { lobby.celio(LinkPrefs.celioServer(ctx), null) },
+                            PocketButton(onClick = { lobby.celio(LinkPrefs.celioServer(ctx), null) },
                                 Modifier.fillMaxWidth().padding(top = 8.dp)) { Text(CelioText.MAKE) }
-                            OutlinedButton(onClick = { lobby.celioJoinForm() }, Modifier.fillMaxWidth()) { Text(CelioText.JOIN) }
+                            PocketButton(onClick = { lobby.celioJoinForm() }, Modifier.fillMaxWidth()) { Text(CelioText.JOIN) }
                         }
                     }
                     LobbyState.CelioConnecting -> Waiting(CelioText.CONNECTING)
@@ -132,10 +125,10 @@ fun LinkDialogView(console: Console, lobby: PcLinkLobby, online: Boolean, proble
                     }
                     LobbyState.CelioJoining -> {
                         val code = CelioWire.cleanRoom(celioRoom)
-                        OutlinedTextField(celioRoom, { celioRoom = CelioWire.typingRoom(it) }, label = { Text(CelioText.ROOM_FROM_PC) },
+                        PocketTextField(celioRoom, { celioRoom = CelioWire.typingRoom(it) }, label = { Text(CelioText.ROOM_FROM_PC) },
                             singleLine = true, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
                         if (code == null) Text(CelioText.ROOM_DIGITS, style = MaterialTheme.typography.bodySmall)
-                        Button(onClick = { if (code != null) lobby.celio(LinkPrefs.celioServer(ctx), code) }, enabled = code != null,
+                        PocketButton(primary = true, onClick = { if (code != null) lobby.celio(LinkPrefs.celioServer(ctx), code) }, enabled = code != null,
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text(CelioText.JOIN_BUTTON) }
                     }
                     is LobbyState.HostingOnline -> if (st.paused) {
@@ -153,11 +146,11 @@ fun LinkDialogView(console: Console, lobby: PcLinkLobby, online: Boolean, proble
                     }
                     LobbyState.JoiningOnline -> {
                         val code = RelayWire.cleanCode(room)
-                        OutlinedTextField(room, { room = RelayWire.typingCode(it) }, label = { Text(PcWords.link(OnlineLink.ROOM_CODE_FROM_HOST)) },
+                        PocketTextField(room, { room = RelayWire.typingCode(it) }, label = { Text(PcWords.link(OnlineLink.ROOM_CODE_FROM_HOST)) },
                             singleLine = true, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
                         PinField(pin) { pin = it }
                         Text(OnlineLink.ONLINE_SLOWER, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
-                        Button(onClick = { if (code != null) lobby.joinOnline(code, pin) }, enabled = code != null && LinkRules.isPin(pin),
+                        PocketButton(primary = true, onClick = { if (code != null) lobby.joinOnline(code, pin) }, enabled = code != null && LinkRules.isPin(pin),
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Connect") }
                     }
                     is LobbyState.Hosting -> if (st.paused) {
@@ -182,14 +175,14 @@ fun LinkDialogView(console: Console, lobby: PcLinkLobby, online: Boolean, proble
                         Spacer(Modifier.height(8.dp))
                         if (st.peers.isEmpty()) Waiting(LinkText.LOOKING)
                         st.peers.forEach { p ->
-                            OutlinedButton(onClick = { lobby.join(p.host, p.port, pin) }, enabled = pinOk, modifier = Modifier.fillMaxWidth()) {
+                            PocketButton(onClick = { lobby.join(p.host, p.port, pin) }, enabled = pinOk, modifier = Modifier.fillMaxWidth()) {
                                 Text("${p.name} · ${p.game}")
                             }
                         }
                         Spacer(Modifier.height(12.dp))
-                        OutlinedTextField(typed, { typed = it.trim() }, label = { Text("Or type the host's address") }, singleLine = true,
+                        PocketTextField(typed, { typed = it.trim() }, label = { Text("Or type the host's address") }, singleLine = true,
                             modifier = Modifier.fillMaxWidth())
-                        TextButton(enabled = typed.isNotBlank() && pinOk, onClick = {
+                        PocketButton(enabled = typed.isNotBlank() && pinOk, onClick = {
                             val (host, port) = LinkRules.parseAddress(typed)
                             lobby.join(host, port, pin)
                         }) { Text("Connect") }
@@ -203,18 +196,18 @@ fun LinkDialogView(console: Console, lobby: PcLinkLobby, online: Boolean, proble
         confirmButton = {
             Row {
                 if (problem == null && state is LobbyState.Idle) {
-                    TextButton(onClick = { lobby.host(cable) }) { Text("Host") }
-                    TextButton(onClick = { lobby.search() }) { Text("Join") }
+                    PocketButton(onClick = { lobby.host(cable) }) { Text("Host") }
+                    PocketButton(onClick = { lobby.search() }) { Text("Join") }
                 }
                 val paused = (state as? LobbyState.Hosting)?.paused == true || (state as? LobbyState.HostingOnline)?.paused == true
-                if (paused) TextButton(onClick = { lobby.keepHosting() }) { Text("Keep hosting") }
+                if (paused) PocketButton(onClick = { lobby.keepHosting() }) { Text("Keep hosting") }
                 // A mistyped PIN: back to the form, keeping what was typed so it can be fixed.
                 (state as? LobbyState.Failed)?.takeIf { it.retryJoin }?.let { f ->
-                    TextButton(onClick = { if (f.celio) lobby.celioJoinForm() else if (f.online) lobby.joinOnlineForm() else lobby.search() }) { Text("Try again") }
+                    PocketButton(onClick = { if (f.celio) lobby.celioJoinForm() else if (f.online) lobby.joinOnlineForm() else lobby.search() }) { Text("Try again") }
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(if (state is LobbyState.Failed) "Close" else "Cancel") } },
+        dismissButton = { PocketButton(onClick = onDismiss) { Text(if (state is LobbyState.Failed) "Close" else "Cancel") } },
     )
 }
 
@@ -234,44 +227,36 @@ private fun BigDigits(label: String, digits: String, spoken: String = label) {
 
 @Composable
 private fun PinField(pin: String, onChange: (String) -> Unit) {
-    OutlinedTextField(pin, { onChange(it.filter(Char::isDigit).take(4)) }, label = { Text(LinkText.PIN_FROM_HOST) },
+    PocketTextField(pin, { onChange(it.filter(Char::isDigit).take(4)) }, label = { Text(LinkText.PIN_FROM_HOST) },
         singleLine = true, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
     if (!LinkRules.isPin(pin)) Text("Type the PIN first.", style = MaterialTheme.typography.bodySmall)
 }
 
 /**
  * Settings → Link play (the phone's Settings section): Celio Link (trade with PC players), off by default, per PC,
- * with its server. A third-party service, so it says so.
+ * with its server. A third-party service, so it says so. The Settings panel's Link play tab.
  */
 @Composable
-fun LinkSettingsDialog(onDismiss: () -> Unit) {
+fun LinkSettingsContent() {
     val ctx = remember { DesktopStorage.context() }
     var celioOn by remember { mutableStateOf(LinkPrefs.celioOn(ctx)) }
     var server by remember { mutableStateOf(LinkPrefs.celioServer(ctx)) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        modifier = Modifier.widthIn(min = 520.dp),
-        title = { Text(CelioText.HEADING) },
-        text = {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(CelioText.SWITCH, Modifier.weight(1f))
-                    Switch(celioOn, { celioOn = it; LinkPrefs.setCelioOn(ctx, it) })
-                }
-                Text(CelioText.SWITCH_HINT, style = MaterialTheme.typography.bodySmall)
-                if (celioOn) {
-                    val problem = CelioWire.serverProblem(server)
-                    OutlinedTextField(server, { server = it.trim(); LinkPrefs.setCelioServer(ctx, server) },
-                        label = { Text(CelioText.SERVER) }, singleLine = true, isError = problem != null,
-                        supportingText = problem?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-                    if (server != CelioWire.DEFAULT_SERVER) {
-                        TextButton(onClick = { server = CelioWire.DEFAULT_SERVER; LinkPrefs.setCelioServer(ctx, server) }) { Text(CelioText.USE_PUBLIC) }
-                    }
-                }
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(CelioText.SWITCH, Modifier.weight(1f))
+            PocketSwitch(celioOn, { celioOn = it; LinkPrefs.setCelioOn(ctx, it) })
+        }
+        Text(CelioText.SWITCH_HINT, style = MaterialTheme.typography.bodySmall)
+        if (celioOn) {
+            val problem = CelioWire.serverProblem(server)
+            PocketTextField(server, { server = it.trim(); LinkPrefs.setCelioServer(ctx, server) },
+                label = { Text(CelioText.SERVER) }, singleLine = true, isError = problem != null,
+                supportingText = problem?.let { { Text(it) } }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+            if (server != CelioWire.DEFAULT_SERVER) {
+                PocketButton(onClick = { server = CelioWire.DEFAULT_SERVER; LinkPrefs.setCelioServer(ctx, server) }) { Text(CelioText.USE_PUBLIC) }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-    )
+        }
+    }
 }
 
 /** The phone's link words (docs/wording.md "Link play PIN"), for a PC: the other side may be a phone or a PC. */

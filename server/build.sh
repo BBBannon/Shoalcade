@@ -49,6 +49,7 @@ while read -r name ver sha; do
 done < emulatorjs.lock
 cp "$ROOT/LICENSE" "$OUT/LICENSE.txt"
 cp "$ROOT/THIRD_PARTY_NOTICES.md" "$OUT/THIRD_PARTY_NOTICES.md"   # incl. the JellyEMU MIT notice for the ported scanner code
+cp "$ROOT/THIRD_PARTY_LICENCES.txt" "$OUT/THIRD_PARTY_LICENCES.txt" # every bundled part's licence text (tools/make_third_party_licences.py)
 cp "$ROOT/server/assets/thumb.png" "$OUT/thumb.png"               # plugin picture in Jellyfin's dashboard (imagePath)
 cat > "$OUT/meta.json" <<JSON
 {

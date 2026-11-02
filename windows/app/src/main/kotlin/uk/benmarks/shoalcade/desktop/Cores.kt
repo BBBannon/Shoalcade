@@ -12,7 +12,9 @@ import java.io.File
  * only ever loaded by a core with exactly that tag (plan §6, the browser's own rule). A Linux development build gets
  * `linux-…`, so its snapshots never go into the Windows build.
  */
-class Cores(private val rows: List<Row>, val target: String) {
+class Cores(private val rows: List<Row>, val target: String,
+            /** Settings → PS2 → PS2 emulator (D-3), asked each time: LRPS2 (default) or PCEE2. */
+            private val ps2: () -> Ps2.Emulator = { Ps2.Emulator.LRPS2 }) {
     data class Row(val core: String, val target: String, val commit: String, val file: String, val sha256: String)
 
     /** The lock's name for the core that plays [c] (link play: [linkCoreName]). */
@@ -23,6 +25,8 @@ class Cores(private val rows: List<Row>, val target: String) {
         Console.N64 -> "mupen"
         Console.PSP -> "ppsspp"
         Console.N3DS -> "azahar"
+        Console.GC, Console.WII -> "dolphin" // Windows only (D218)
+        Console.PS2 -> ps2().core // "lrps2" (pcsx2_libretro.dll) or "pcee2": each has its own snapshot tag
     }
 
     /** Link play's core (the phone's LinkRules.GPSP_CORE for GBA: mGBA has no link; the DS keeps melonDS DS). */
@@ -42,16 +46,16 @@ class Cores(private val rows: List<Row>, val target: String) {
     fun tag(c: Console): String? = row(c)?.let { "${it.target}-${it.core}-${it.commit.take(7)}" }
 
     companion object {
-        fun parse(text: String, target: String): Cores = Cores(text.lineSequence().map { it.trim() }
+        fun parse(text: String, target: String, ps2: () -> Ps2.Emulator = { Ps2.Emulator.LRPS2 }): Cores = Cores(text.lineSequence().map { it.trim() }
             .filter { it.isNotEmpty() && !it.startsWith("#") }
-            .mapNotNull { l -> l.split('\t').takeIf { it.size >= 8 }?.let { Row(it[0], it[1], it[3], it[5], it[7]) } }.toList(), target)
+            .mapNotNull { l -> l.split('\t').takeIf { it.size >= 8 }?.let { Row(it[0], it[1], it[3], it[5], it[7]) } }.toList(), target, ps2)
 
         /** "win" on Windows, "linux" elsewhere (development and tests). */
         fun thisTarget() = if (Paths.isWindows()) "win" else "linux"
 
         /** The lock packed into the app (resource `cores.lock`). */
-        fun packed(): Cores = parse(Cores::class.java.getResource("/cores.lock")?.readText()
-            ?: error("cores.lock missing from the app"), thisTarget())
+        fun packed(ps2: () -> Ps2.Emulator = { Ps2.Emulator.LRPS2 }): Cores = parse(Cores::class.java.getResource("/cores.lock")?.readText()
+            ?: error("cores.lock missing from the app"), thisTarget(), ps2)
     }
 }
 

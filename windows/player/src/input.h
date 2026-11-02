@@ -18,6 +18,7 @@
 
 #include "console.h"
 #include "nlohmann/json.hpp"
+#include "remap.h"
 
 namespace sc {
 enum class Hotkey { None, Pause, FastForward, QuickSave, QuickLoad, Screenshot, Fullscreen, Rewind, Menu, Flip };
@@ -48,11 +49,16 @@ public:
     };
     PointerSeen pointer_seen() const { return seen_; }
     int ports() const { return players_; }
+    bool pressure_cross() const { return pressure_cross_; }
     void close();
 
-    /** For the menu's Controls list: each game button and what presses it, in plain words. */
+    /**
+     * For the menu's Controls list: each game button and what presses it, in plain words. `name` = the button's or
+     * shortcut's name in `controls` ("A", "StickUp", "pause"); `fixed` = can't be changed (Esc = menu).
+     */
     struct ControlText {
-        std::string what, keys, pad;
+        std::string name, what, keys, pad;
+        bool fixed = false;
     };
     std::vector<ControlText> describe_buttons() const;
     std::vector<ControlText> describe_hotkeys() const;
@@ -60,6 +66,47 @@ public:
     std::string hotkey_keys(Hotkey h) const;
     /** After the menu closes: the game gets no buttons until every key, button and the mouse are let go. */
     void block_until_released() { blocked_ = true; }
+    /** The ☰ button (or anything else on top of the game) has the mouse: the game gets no touch until it's let go. */
+    void block_pointer_until_released() { pointer_blocked_ = true; }
+
+    // ---- Changing the buttons (the menu's Controls section; remap.h has the rules) ----
+    /** The controller the Controls list shows: the one used last (a button press), else the newest connected. */
+    struct PadInfo {
+        SDL_JoystickID id = 0;
+        std::string model, name; // model = "vvvv:pppp" (USB vendor:product), or the name when the driver gives none
+    };
+    bool shown_pad(PadInfo &out) const;
+    bool pad_info(SDL_JoystickID id, PadInfo &out) const;
+    /** The words for one game button on this console ("Cross", "C-stick up"), or for a shortcut. */
+    std::string button_words(const std::string &name) const;
+    std::string shortcut_words(const std::string &name) const;
+    bool is_button(const std::string &name) const { return targets_.count(name) > 0; }
+    bool is_shortcut(const std::string &name) const;
+    /** One result of a change, for the note the menu shows. `taken` = words for what lost it ("B", "pause"). */
+    struct Change {
+        bool ok = false;
+        std::string what, input;       // "A", "Z" / "right button"
+        std::vector<std::string> taken; // "B", "Screenshot (now has no key)"
+    };
+    /** A key (KeyboardEvent.code name) for a game button, or for a shortcut. */
+    Change bind_key(const std::string &name, bool shortcut, const std::string &code);
+    /** A controller input (`controls.gamepad` names: "east", "l2", "a1-") for a game button, on one controller model. */
+    Change bind_pad(SDL_JoystickID pad, const std::string &button, const std::string &input);
+    void reset_keys();
+    void reset_hotkeys();
+    bool reset_pad(SDL_JoystickID pad);
+    /** What changed, as `controlsChanged` carries it (PROTOCOL.md): the whole map, or null = back to the defaults. */
+    nlohmann::json keyboard_json() const;
+    nlohmann::json hotkeys_json() const;
+    nlohmann::json pad_json(const std::string &model) const;
+    /** The key's KeyboardEvent.code name ("KeyZ", "ArrowUp"), or "" for a key that can't be used. */
+    static std::string code_of(SDL_Scancode sc);
+    /** A controller button / axis as a `controls.gamepad` name ("south", "l2", "a0-"), or "" for one that can't be used. */
+    static std::string pad_input_of_button(SDL_GamepadButton b);
+    static std::string pad_input_of_axis(SDL_GamepadAxis a, bool positive);
+    /** The plain words for a key ("Z", "Up arrow") and a controller input ("right button"). */
+    static std::string key_words(const std::string &code);
+    static std::string pad_words(const std::string &input);
 
 private:
     struct Target {
@@ -76,18 +123,30 @@ private:
     struct Port {
         uint16_t buttons = 0;
         int16_t analog[2][2] = {{0, 0}, {0, 0}};
+        /** P4: each button's level 0-0x7fff (a trigger's real level), for consoles with analog_buttons. */
+        int16_t button_level[16] = {};
     };
+    using Names = std::map<std::string, std::vector<std::string>>;
     struct Pad {
         SDL_Gamepad *pad = nullptr;
         SDL_JoystickID id = 0;
         int slot = 0;
         uint16_t strong = 0, weak = 0;
+        std::string model, name;
+        std::map<std::string, std::vector<PadSource>> map; // this controller model's buttons
+        Names names;                                        // the same, as configured (for the words)
     };
 
     float key_level(const std::vector<SDL_Scancode> &keys, const bool *ks) const;
     float pad_level(const std::vector<PadSource> &srcs, SDL_Gamepad *pad, bool analog) const;
     void add_pad(SDL_JoystickID id);
     void remove_pad(SDL_JoystickID id);
+    /** keys_ / hotkeys_ from key_names_ / hot_names_ (after configure and every change). */
+    void compile_keys();
+    /** A controller's map: the console's defaults, `controls.gamepad`, then its model's own (`controls.gamepads`). */
+    void compile_pad(Pad &p);
+    Names pad_names_for(const std::string &model) const;
+    const Pad *find_pad(SDL_JoystickID id) const;
 
     const ConsoleInfo *console_ = nullptr;
     bool mouse_forced_ = false, mouse_down_ = false;
@@ -96,9 +155,13 @@ private:
     int players_ = 1;
     std::map<std::string, Target> targets_;
     std::map<std::string, std::vector<SDL_Scancode>> keys_;
-    std::map<std::string, std::vector<PadSource>> pad_;
-    std::map<std::string, std::vector<std::string>> pad_names_; // as configured, for describe_buttons()
-    bool blocked_ = false;
+    Names key_names_, default_keys_;   // keyboard: now / the console's defaults (KeyboardEvent.code names)
+    Names hot_names_, default_hot_;    // shortcuts: now / defaults (the 3DS's flip only on the 3DS)
+    Names pad_base_;                   // controller defaults + `controls.gamepad` (every model)
+    std::map<std::string, Names> pad_models_; // `controls.gamepads`: each model's own whole map
+    SDL_JoystickID shown_pad_ = 0;     // the controller the Controls list shows (0 = the newest connected)
+    bool blocked_ = false, pointer_blocked_ = false;
+    bool pressure_cross_ = false; // P4b: the right trigger is a pressure-sensitive Cross (B)
     std::map<Hotkey, std::vector<SDL_Scancode>> hotkeys_;
     std::vector<bool> hotkey_scancode_; // keys used by shortcuts never reach the game
     std::vector<Pad> pads_;

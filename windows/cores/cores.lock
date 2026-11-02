@@ -3,14 +3,17 @@
 # core	target	repo	commit	licence	file	bytes	sha256
 azahar	linux	https://github.com/azahar-emu/azahar.git	219d743a1e698101fe1ab8bef43e6563126c3c27	GPL-3.0-or-later (modified: tools/azahar-patches)	azahar_libretro.so	48341160	3c270aac4f7a9e3fb33c32af39c6ae523d9c8e07a16abecd8d343502bfe26b5f
 azahar	win	https://github.com/azahar-emu/azahar.git	219d743a1e698101fe1ab8bef43e6563126c3c27	GPL-3.0-or-later (modified: tools/azahar-patches)	azahar_libretro.dll	35581784	2806d0fb23fe1e8e863dfa978115b49f4249160570d3cd9bb0b3762316e226e1
+dolphin	win	https://github.com/libretro/dolphin.git	b93001ed50c8b34e6ead4eed713c2005a80386e4	GPL-2.0-or-later (modified: tools/dolphin-patches)	dolphin_libretro.dll	27736667	24734f1f53d0518f328b2c99e0ce76807c9436a3119f70b473a341ee7ec46263
 gpsp	linux	https://github.com/libretro/gpsp.git	5819380c2ffb0900219d700a382ee68c464ebb99	GPL-2.0-or-later	gpsp_libretro.so	799376	00033f0384f1420d6441a0152f8d55519fc80d4ae6592c76caa69be3c5397437
 gpsp	win	https://github.com/libretro/gpsp.git	5819380c2ffb0900219d700a382ee68c464ebb99	GPL-2.0-or-later	gpsp_libretro.dll	846848	eef2dff201ca503f67c77de627b1ed2353d73e04b3f667485bba423eaefd5c83
+lrps2	win	https://github.com/libretro/parallel-ps2.git	083de59f52159ce4dd2f63a63f74fa9f0e936ee3	GPL-3.0 (modified: tools/lrps2-patches)	pcsx2_libretro.dll	14754425	ea592582ae4b52aeacf614db9e723f341dda6924ebc6cfc546ca2a78f292b041
 melonds	linux	https://github.com/JesseTG/melonds-ds.git	f394adbacb5722ee97c1b37c8064da9a25818310	GPL-3.0	melondsds_libretro.so	5451328	8666d5969beb9c65157adfdffe95bea1556321e91e47b4b7e3d14e7cd11a04de
 melonds	win	https://github.com/JesseTG/melonds-ds.git	f394adbacb5722ee97c1b37c8064da9a25818310	GPL-3.0	melondsds_libretro.dll	5293340	a86c62fd021e19cf7f44436b3bb34069d497e1e6d37a57e3ca63d8d0222ba6ad
 mgba	linux	https://github.com/libretro/mgba.git	7a12d6d4b9acb14c0ae62c9166b6a2f3d08007f6	MPL-2.0	mgba_libretro.so	3326880	c54711ddf48bc8329e56ce83a51b8dcb4cc8cb7088c4fe138495278d2a535b6f
 mgba	win	https://github.com/libretro/mgba.git	7a12d6d4b9acb14c0ae62c9166b6a2f3d08007f6	MPL-2.0	mgba_libretro.dll	2994459	a5e5f5bb983ed61fd7e53c2c5deaf387011564b64c6885ccbd47b14e13c2a8b2
 mupen	linux	https://github.com/libretro/mupen64plus-libretro-nx.git	15bada85906593376e8fd697f1b0b3af3a20f512	GPL-3.0 as combined	mupen64plus_next_libretro.so	7648320	876be3fd2cae42531da5101c0abf8efc1d2b6096d3e0d5087f6a875c143eeb77
 mupen	win	https://github.com/libretro/mupen64plus-libretro-nx.git	15bada85906593376e8fd697f1b0b3af3a20f512	GPL-3.0 as combined	mupen64plus_next_libretro.dll	8361597	3ff7f0df67bb3265e99a4dcbf3ceeeb826bc8cc260df935d23dfcd3478ca8962
+pcee2	win	https://github.com/WizzardSK/pcee2-libretro.git	5719627731beb90e379ff1be1223391b7f563b3b	GPL-3.0-or-later (modified: tools/pcee2-patches)	pcee2_libretro.dll	46368926	e2d0c8c99336ba3c2ec7770387c40c753252b70ae3e08c4eeab8606e8ea5c772
 pcsx	linux	https://github.com/libretro/pcsx_rearmed.git	c8816799b50388e61cfe237fe2cdbb7d8175f20a	GPL-2.0-or-later	pcsx_rearmed_libretro.so	2164064	c67d6c2cbb802c875b884291e18fc85d1ae6524a9ae9e779e7c48a1da5a14a82
 pcsx	win	https://github.com/libretro/pcsx_rearmed.git	c8816799b50388e61cfe237fe2cdbb7d8175f20a	GPL-2.0-or-later	pcsx_rearmed_libretro.dll	7026688	90cf47f73be266fbfa4e33a8cbc262a4070fc1da806446f54cf916aedd808854
 ppsspp	linux	https://github.com/hrydgard/ppsspp.git	902e5ccd8c1400b4387b73942491cded655e5f9c	GPL-2.0-or-later (Windows build: + tools/ppsspp-patches build fix)	ppsspp_libretro.so	23046368	13430c50c2d8a959a4780e5675aa813be8ac09d24aa2f6c82a93884decbdf94f

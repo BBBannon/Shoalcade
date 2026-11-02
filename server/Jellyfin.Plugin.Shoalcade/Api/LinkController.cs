@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -78,7 +79,7 @@ public class LinkController : ShoalcadeControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<LinkSeatDto> Create([FromBody] LinkRoomRequest? body)
     {
-        if (RequireUser(out var user) is ActionResult fail)
+        if (RequireRelay(out var user) is ActionResult fail)
         {
             return fail;
         }
@@ -86,6 +87,11 @@ public class LinkController : ShoalcadeControllerBase
         if (ConsoleKey(body?.Console) is not string console)
         {
             return NotGba();
+        }
+
+        if (!SeesGame(user, console))
+        {
+            return NoGame();
         }
 
         var (seat, error) = _rooms.Create(user.Id, console);
@@ -105,7 +111,7 @@ public class LinkController : ShoalcadeControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<LinkSeatDto> Join([FromBody] LinkRoomRequest? body)
     {
-        if (RequireUser(out var user) is ActionResult fail)
+        if (RequireRelay(out var user) is ActionResult fail)
         {
             return fail;
         }
@@ -113,6 +119,11 @@ public class LinkController : ShoalcadeControllerBase
         if (ConsoleKey(body?.Console) is not string console)
         {
             return NotGba();
+        }
+
+        if (!SeesGame(user, console))
+        {
+            return NoGame();
         }
 
         var (seat, error) = _rooms.Join(user.Id, body?.Code, console);
@@ -132,7 +143,7 @@ public class LinkController : ShoalcadeControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<ActionResult> Down(CancellationToken cancellationToken)
     {
-        if (RequireUser(out var user) is ActionResult fail)
+        if (RequireRelay(out var user) is ActionResult fail)
         {
             return fail;
         }
@@ -201,7 +212,7 @@ public class LinkController : ShoalcadeControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> Up(CancellationToken cancellationToken)
     {
-        if (RequireUser(out var user) is ActionResult fail)
+        if (RequireRelay(out var user) is ActionResult fail)
         {
             return fail;
         }
@@ -231,7 +242,7 @@ public class LinkController : ShoalcadeControllerBase
         return _rooms.Up(seat, seq, gen, data) switch
         {
             UpOutcome.Sent or UpOutcome.Duplicate => NoContent(),
-            UpOutcome.PeerGone => Fail(StatusCodes.Status409Conflict, "peer_gone", "The other phone left."),
+            UpOutcome.PeerGone => Fail(StatusCodes.Status409Conflict, "peer_gone", "The other player left."),
             UpOutcome.BadSequence => Fail(StatusCodes.Status409Conflict, "bad_seq", "Link data arrived out of order."),
             UpOutcome.TooFast => Fail(StatusCodes.Status429TooManyRequests, "too_fast", "Too much link data at once. Try again in a moment."),
             _ => RoomClosed(),
@@ -244,7 +255,7 @@ public class LinkController : ShoalcadeControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public ActionResult Kick()
     {
-        if (RequireUser(out var user) is ActionResult fail)
+        if (RequireRelay(out var user) is ActionResult fail)
         {
             return fail;
         }
@@ -269,7 +280,7 @@ public class LinkController : ShoalcadeControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public ActionResult Leave()
     {
-        if (RequireUser(out var user) is ActionResult fail)
+        if (RequireRelay(out var user) is ActionResult fail)
         {
             return fail;
         }
@@ -281,6 +292,27 @@ public class LinkController : ShoalcadeControllerBase
 
         return NoContent(); // already gone is fine too
     }
+
+    /// <summary>Gets or sets whether the admin has the relay switched on (a seam for tests; the server reads the plugin settings).</summary>
+    internal Func<bool> RelayOn { get; init; } = static () => ShoalcadeServices.Config.EnableLinkRelay;
+
+    /// <summary>A signed-in user, and the relay switched on (security review R-L1): off, every link route answers 404 <c>link_off</c>.</summary>
+    private ActionResult? RequireRelay(out Jellyfin.Database.Implementations.Entities.User user)
+    {
+        if (RequireUser(out user) is ActionResult fail)
+        {
+            return fail;
+        }
+
+        return RelayOn() ? null : Fail(StatusCodes.Status404NotFound, "link_off", "Internet link play is switched off on this Jellyfin server.");
+    }
+
+    /// <summary>True if the user can see at least one game of this console (R-L1): an account with no GBA game gets no relay.</summary>
+    private bool SeesGame(Jellyfin.Database.Implementations.Entities.User user, string console) =>
+        Library.ListRoms(user).Any(r => string.Equals(r.Console.Key, console, StringComparison.Ordinal));
+
+    private ObjectResult NoGame() =>
+        Fail(StatusCodes.Status404NotFound, "no_game", "Internet link play needs a Game Boy Advance game you can see on this Jellyfin server.");
 
     /// <summary>Only GBA link play goes over the internet for now (DS wireless needs the low latency of local Wi-Fi).</summary>
     private static string? ConsoleKey(string? console) =>
@@ -308,9 +340,9 @@ public class LinkController : ShoalcadeControllerBase
     {
         "too_many" => Fail(StatusCodes.Status429TooManyRequests, "too_many", "Too many tries. Wait a minute and try again."),
         "busy" => Fail(StatusCodes.Status503ServiceUnavailable, "busy", "Jellyfin has too many link rooms open. Try again later."),
-        "no_room" => Fail(StatusCodes.Status404NotFound, "no_room", "That room code wasn't found. Check it on the host phone."),
+        "no_room" => Fail(StatusCodes.Status404NotFound, "no_room", "That room code wasn't found. Check it on the host's phone or PC."),
         "other_console" => Fail(StatusCodes.Status409Conflict, "other_console", "That room is for a different console."),
-        "full" => Fail(StatusCodes.Status409Conflict, "full", "That room already has two phones."),
+        "full" => Fail(StatusCodes.Status409Conflict, "full", "That room already has two players."),
         _ => RoomClosed(),
     };
 }

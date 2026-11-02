@@ -66,12 +66,25 @@ add_executable(ShoalcadePlayer
   src/menu.cpp
   src/menu_ui.cpp
   src/link.cpp
+  src/statefile.cpp
+  src/remap.cpp
   ${SC_FONT_SOURCES}
 )
 target_include_directories(ShoalcadePlayer PRIVATE src third_party third_party/imgui)
 target_link_libraries(ShoalcadePlayer PRIVATE sc_imgui)
 target_compile_definitions(ShoalcadePlayer PRIVATE SC_PLAYER_VERSION="${PROJECT_VERSION}")
 target_link_libraries(ShoalcadePlayer PRIVATE SDL3::SDL3)
+
+# zstd (BSD-3-Clause) for the GameCube / Wii / PS2 snapshots (plan P8, src/statefile.cpp). Windows: MSYS2's static
+# libzstd.a (mingw-w64-x86_64-zstd), linked in, so the player is still one exe + SDL3.dll. Linux: the system's.
+find_path(ZSTD_INCLUDE_DIR zstd.h REQUIRED)
+if(WIN32)
+  find_library(ZSTD_LIBRARY NAMES libzstd.a REQUIRED)
+else()
+  find_library(ZSTD_LIBRARY NAMES zstd REQUIRED)
+endif()
+target_include_directories(ShoalcadePlayer PRIVATE ${ZSTD_INCLUDE_DIR})
+target_link_libraries(ShoalcadePlayer PRIVATE ${ZSTD_LIBRARY})
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(ShoalcadePlayer PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -96,8 +109,9 @@ endif()
 # Unit tests (no core, no window): ShoalcadePlayerUnitTests <scratch dir>. Builds for Linux and Windows.
 add_executable(ShoalcadePlayerUnitTests
   tests/unit_tests.cpp src/rewind.cpp src/sha256.cpp src/files.cpp src/log.cpp src/core_options.cpp
-  src/console.cpp src/forced_options.cpp src/menu.cpp src/link.cpp)
-target_include_directories(ShoalcadePlayerUnitTests PRIVATE src third_party)
+  src/console.cpp src/forced_options.cpp src/menu.cpp src/link.cpp src/statefile.cpp src/remap.cpp)
+target_include_directories(ShoalcadePlayerUnitTests PRIVATE src third_party ${ZSTD_INCLUDE_DIR})
+target_link_libraries(ShoalcadePlayerUnitTests PRIVATE ${ZSTD_LIBRARY})
 if(WIN32)
   target_compile_definitions(ShoalcadePlayerUnitTests PRIVATE __USE_MINGW_ANSI_STDIO=1)
   target_link_options(ShoalcadePlayerUnitTests PRIVATE -static -static-libgcc -static-libstdc++)

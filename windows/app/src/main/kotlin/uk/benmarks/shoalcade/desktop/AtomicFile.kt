@@ -37,4 +37,28 @@ object AtomicFile {
             tmp.delete() // no-op after a successful move
         }
     }
+
+    /**
+     * Pictures only (box art, snapshot pictures fetched from Jellyfin), never saves: the player's `write_file_direct`
+     * rule (D225). Antivirus that watches for "write X.tmp, rename onto X.png/.jpg" (Trend Micro killed processes on
+     * the 3rd such rename) sees a plain write: any old file is deleted, the new one created, written and flushed. A
+     * failed write deletes what it started, so it never leaves a part-picture; a crash mid-write can, and costs only a
+     * picture that won't decode (shown as none; the next fetch writes it again).
+     */
+    fun writeDirect(f: File, bytes: ByteArray) {
+        f.parentFile?.mkdirs()
+        var tries = 0
+        while (true) {
+            try { Files.deleteIfExists(f.toPath()); break } catch (e: AccessDeniedException) { // a scanner holding it a moment
+                if (++tries >= 20) throw IOException("Couldn't replace ${f.name}.", e)
+                Thread.sleep(25)
+            }
+        }
+        try {
+            FileOutputStream(f).use { it.write(bytes); it.fd.sync() }
+        } catch (e: IOException) {
+            f.delete()
+            throw e
+        }
+    }
 }

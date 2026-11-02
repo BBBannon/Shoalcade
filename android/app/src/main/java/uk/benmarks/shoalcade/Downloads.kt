@@ -111,7 +111,7 @@ class DownloadService : Service() {
         val store = SessionStore(this)
         val client = JellyfinClient(store.deviceId, store.load() ?: throw java.io.IOException("Not logged in."))
         var lastPct = -1
-        val target = client.download(game.id, Storage.downloadFolder(game), Storage.fallbackRomName(game)) { p ->
+        val progress: (Float) -> Unit = { p ->
             val pct = (p * 100).toInt()
             if (pct != lastPct) { // throttle: at most 100 UI/notification updates per game
                 lastPct = pct
@@ -121,6 +121,9 @@ class DownloadService : Service() {
                 }
             }
         }
+        // D-8: a disc set (PS1 on two or more discs): every disc, then its .m3u; the Discs menu swaps them in play.
+        val target = if (DiscSets.isSet(game)) DiscSets.download(client, game, progress)
+        else client.download(game.id, Storage.downloadFolder(game), Storage.fallbackRomName(game), progress)
         withContext(Dispatchers.IO) {
             Storage.unpackIfZipped(game, target)
             if (game.console == Console.PSP) PspAssets.ensure(this@DownloadService) // ready for offline play

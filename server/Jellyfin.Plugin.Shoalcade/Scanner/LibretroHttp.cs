@@ -123,6 +123,12 @@ public sealed class LibretroHttp : IDisposable
             {
                 throw new HttpRequestException($"{url} took longer than {timeout.TotalSeconds:0} seconds");
             }
+            catch (ObjectDisposedException ex)
+            {
+                // Jellyfin's in-process restart disposed the container: its client factory makes each new handler
+                // from it (first request, then every ~2 min) and throws. Stand down like "unreachable" (review #15).
+                throw new HttpRequestException("Jellyfin is restarting, so libretro wasn't asked; trying again later", ex);
+            }
         }
         finally
         {

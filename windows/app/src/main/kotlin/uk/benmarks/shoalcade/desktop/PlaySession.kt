@@ -82,11 +82,16 @@ class PlaySession(
     val link: PcLink? = null,
     /** The phone's "different DS wireless ID" ([uk.benmarks.shoalcade.LinkPrefs.dsMac]): every DS game, as on the phone. */
     private val dsMac: String? = null,
+    /** D-6 folder watcher timing: the folder save must stay unchanged this long before it goes up (tests: shorter). */
+    private val folderQuietMs: Long = FolderWatcher.QUIET_MS,
+    private val folderPollMs: Long = 1_000,
 ) {
     enum class Phase { LOADING, PLAYING, CLOSING, ENDED }
     enum class CloseMode { PLAIN, UPLOAD }
 
     private val console: Console = game.console ?: throw IOException("Unknown console.")
+    /** D143: none in a link session; D210: none for the 3DS (Azahar's retro_cheat_set is empty). */
+    private val cheatsAllowed = link == null && CheatEditor.allowed(console)
     private val guard = SnapshotGuard()
     private val lock = Any()
 
@@ -126,6 +131,13 @@ class PlaySession(
     private val hasFolder = console.hasFolderSaves
     /** 3DS: the screen layout kept on this PC (D206). */
     private val n3dsDisplay by lazy { N3dsDisplay(DesktopStorage.context()) }
+    /** DS: the screens kept on this PC, the same way. */
+    private val dsDisplay by lazy { DsDisplay(DesktopStorage.context()) }
+    /** Wii: each port's controller, kept per game on this PC. */
+    private val wiiControllers by lazy { WiiControllers(DesktopStorage.context()) }
+    /** Games on more than one disc: the disc each was on, kept per game on this PC (P12). */
+    private val discs by lazy { DiscMemory(DesktopStorage.context()) }
+    private val controlsStore by lazy { ControlsStore(DesktopStorage.context()) }
     private var useClock = false
 
     /** What [prepare] made ready: the `start` message, and anything the person should be told first. */
@@ -142,14 +154,18 @@ class PlaySession(
         require(link == null || snapshot == null) { "A link session can't start from a snapshot." }
         snapshotsOn = snapshotsEnabled && link == null
         val notes = mutableListOf<String>()
-        val rom = Storage.romFile(game) ?: throw IOException("Game file missing. Download it again.")
+        val found = Storage.romFile(game) ?: throw IOException("Game file missing. Download it again.")
         // D161 (Game3dsActivity): a .cia is an installer package Azahar's core can't open; say so instead of failing.
-        if (console == Console.N3DS && rom.extension.equals("cia", ignoreCase = true)) throw IOException(CIA_TEXT)
-        RomCheck.problem(console, rom)?.let { throw IOException(RomCheck.message(console, it)) }
+        if (console == Console.N3DS && found.extension.equals("cia", ignoreCase = true)) throw IOException(CIA_TEXT)
+        RomCheck.problem(console, found)?.let { throw IOException(RomCheck.message(console, it)) }
         if (!DesktopStorage.playableHere(console)) throw IOException("${console.shortName} games don't play on Windows yet.")
         val core = setup.core(console, link = link != null)
             ?: throw IOException("The ${console.shortName} ${if (link != null) "link " else ""}emulator isn't installed. Install Shoalcade again.")
         if (!setup.player.isFile) throw IOException("The game player isn't installed. Install Shoalcade again.")
+        // PS2 (plan §7): never started without the person's own BIOS (PCEE2 would show a black screen), and the game
+        // file is <id>.<ext> so the memory card's name is the same on every PC and in both PS2 emulators.
+        if (console == Console.PS2 && Ps2.installed(DesktopStorage.context(), setup.systemDir) == null) throw IOException(Ps2.BIOS_MISSING)
+        val rom = DesktopStorage.ps2RomName(game, found)
 
         // Keep a copy of the save as it was before this session (the phone's rule, last 10). No backup = saving off.
         runCatching { Storage.backupSave(userId, game) }.onFailure {
@@ -183,7 +199,8 @@ class PlaySession(
         // Cheats (D143): Jellyfin's list first when it can be reached (a few seconds at most), else the one here.
         // D143: none in a link session. 3DS: none at all (Azahar 2126.2's retro_cheat_set is empty; the phone's
         // Game3dsActivity has cheatsAllowed = false), so nothing is synced, sent or marked.
-        val noCheats = link != null || console == Console.N3DS
+        val noCheats = !cheatsAllowed
+        PcCheatHost.handOver(userId, game.id) // review S9: the game sheet's editor stops before the list is read
         book = if (noCheats) CheatBook() else CheatStore.read(userId, game.id).first
         if (!noCheats) cheatSync?.let { cs ->
             val holder = object : CheatSyncCore.Holder { override var book: CheatBook get() = this@PlaySession.book; set(v) = setBook(v) }
@@ -221,19 +238,41 @@ class PlaySession(
             console = console.key, core = core, rom = rom, saveFile = saveFile, clockFile = if (useClock) workClock else null,
             saveFolder = saveFolder, systemDir = setup.systemDir, statesDir = snapshots.dir(game).apply { mkdirs() },
             screenshotDir = screenshotDir, title = game.name, snapshot = snapFile,
-            cheatItems = book.cheats.map { StartRequest.CheatItem(it.id, it.name, CheatRules.forCore(it.code), book.isOn(it.id)) },
+            cheatItems = cheatItems().also { sentCheats = it },
             snapshotsAllowed = snapshotsOn, autoSnapshotOnClose = autoOnClose, canUpload = true, slots = slots,
-            options = if (mac != null) mapOf("melonds_mac_address_mode" to mac) else emptyMap(), link = linkStart,
+            options = (if (mac != null) mapOf("melonds_mac_address_mode" to mac) else emptyMap()) +
+                PictureSize.options(DesktopStorage.context(), console) +
+                (if (console == Console.PS2) Ps2.options(DesktopStorage.context(), setup.systemDir) else emptyMap()) +
+                NetworkAdapter.options(DesktopStorage.context(), console, game.id), link = linkStart,
             cheatsAllowed = if (noCheats) false else null,
             n3dsLayout = if (console == Console.N3DS) n3dsDisplay.let { StartRequest.N3dsLayoutStart(it.layout, it.flip) } else null,
+            dsLayout = if (console == Console.NDS) dsDisplay.let { StartRequest.DsLayoutStart(it.layout, it.swap) } else null,
+            controllers = if (console == Console.WII) wiiControllers.get(game.id) else emptyList(),
+            pressureCross = if (console == Console.PS2 && Ps2.pressureCross(DesktopStorage.context())) true else null,
+            controls = controlsStore.start(console.key),
         ), notes)
     }
 
-    private fun setBook(b: CheatBook) {
+    /**
+     * [strict] (the cheat editor, review S8): a list that couldn't be written throws [IOException] and nothing changes,
+     * as [PcCheatHost.put], so the editor never says "Cheat added." for a cheat that wasn't kept. Otherwise (the menu's
+     * switches, sync, snapshots) it is used for this session and the person is told.
+     */
+    private fun setBook(b: CheatBook, strict: Boolean = false) {
         if (b == book) return
+        try {
+            CheatStore.write(userId, game.id, b)
+        } catch (e: Exception) {
+            val why = PcWords.of("Couldn't keep the cheat list on the phone: ${e.message}")
+            if (strict) throw IOException(why, e)
+            onNote(why)
+        }
         book = b
-        runCatching { CheatStore.write(userId, game.id, b) }.onFailure { onNote(PcWords.of("Couldn't keep the cheat list on the phone: ${it.message}")) }
+        onCheatsChanged?.invoke(b)
     }
+
+    /** Told about every new cheat list (the app's cheat editor, open while the game runs, follows the menu's switches). */
+    @Volatile private var onCheatsChanged: ((CheatBook) -> Unit)? = null
 
     /** D143: cheats were on at some point this session: every save written from then on is marked. */
     private fun markCheated() {
@@ -257,7 +296,7 @@ class PlaySession(
                 is PlayerEvent.BadLine -> Log.w("player sent a line that isn't the protocol")
                 is PlayerEvent.Message -> when (e.type) {
                     "hello" -> if (!sentStart) { sentStart = true; if (!p.start(prepared.start)) Log.w("player went before start") }
-                    "firstFrame" -> { if (phase == Phase.LOADING) phase = Phase.PLAYING; startCelioLine(p) }
+                    "firstFrame" -> { if (phase == Phase.LOADING) phase = Phase.PLAYING; startCelioLine(p); startFolderWatch() }
                     "linkStatus" -> linkState = e.string("state")
                     "saveRefused" -> {
                         saving = false
@@ -279,11 +318,27 @@ class PlaySession(
                     "cheatToggled" -> onCheatToggled(e.string("id"), e.bool("on") == true)
                     // 3DS: the layout chosen in the menu or with Flip is kept for the next game (D206).
                     "layoutChanged" -> if (console == Console.N3DS) n3dsDisplay.keep(e.string("n3ds"), e.bool("flip"))
+                        else if (console == Console.NDS) dsDisplay.keep(e.string("ds"), e.bool("swap"))
+                    // Wii: a controller changed in the game's menu; the next start of this game uses it again.
+                    "controllerChanged" -> if (console == Console.WII) wiiControllers.changed(game.id, e.long("port")?.toInt() ?: -1, e.string("controller"))
+                    "ready" -> {
+                        if (console == Console.WII) e.json.optJSONArray("controllers")?.let { Log.i("player: Wii controllers $it") }
+                        // P12: a game on more than one disc goes back in with the disc it was on last time.
+                        e.json.optJSONObject("discs")?.let { d ->
+                            val count = d.optJSONArray("labels")?.length() ?: 0
+                            val want = discs.get(game.id)
+                            if (want in 1 until count && want != d.optInt("index")) p.send("disc.set", mapOf("index" to want))
+                        }
+                    }
+                    "discChanged" -> discs.keep(game.id, e.long("index")?.toInt(), e.long("count")?.toInt())
+                    // Buttons changed in the game menu's Controls: kept for every game of this console.
+                    "controlsChanged" -> if (e.string("console") == console.key) controlsStore.changed(e.json)
                     "warning", "coreMessage" -> e.string("message")?.let { if (e.type == "warning") Log.i("player: $it") }
                 }
             }
         }
         celioLine?.cancel()
+        folderWatch?.stop()
         link?.problem?.let { onNote("Link play: " + PcWords.link(it)) } // e.g. the internet link was too slow
         link?.close() // the game has gone: the other player sees the link end (the phone's LinkHolder.end)
         val crashed = exitedCode != 0 || (ended ?: 0) != 0
@@ -355,6 +410,27 @@ class PlaySession(
         }
     }
 
+    // ---- Folder saves: auto upload once the save folder settles (D-6) ----
+
+    private var folderWatch: FolderWatcher? = null
+
+    /**
+     * PSP, 3DS, GameCube, Wii, PS2 write their own save files: the browser-style auto upload ([scheduleAutoUpload], its
+     * 30 s gap and its rules) starts ~5 s after those files stop changing. Not while saving is off (a copy is played)
+     * or linked. A change after a snapshot load is the game's own save now: marked "saved after loading a snapshot".
+     */
+    private fun startFolderWatch() {
+        if (!hasFolder || !saving || link != null || folderWatch != null) return
+        folderWatch = FolderWatcher(scope, { Storage.saveStamp(userId, game) }, onSettled = {
+            if (phase == Phase.PLAYING || phase == Phase.LOADING) {
+                synchronized(lock) {
+                    if (guard.active) { syncStore.set(SaveSyncCore.afterSnapshotKey(userId, game.id), "1"); guard.clear() }
+                }
+                scheduleAutoUpload()
+            }
+        }, quietMs = folderQuietMs, pollMs = folderPollMs).also { it.start() }
+    }
+
     private fun onSaveChanged() {
         changedSinceUpload = false
         val t = persist()
@@ -410,10 +486,34 @@ class PlaySession(
 
     // ---- Cheats ----
 
-    /** Sends the active cheats to the game (always a reset, then each one: PROTOCOL.md `cheats.set`). */
+    /** The whole list as the game's menu shows it (`{id, name, code, enabled}`): the start message and `cheats.set`. */
+    private fun cheatItems() = book.cheats.map { StartRequest.CheatItem(it.id, it.name, CheatRules.forCore(it.code), book.isOn(it.id)) }
+    /** What the game was last given (start or `cheats.set`). */
+    @Volatile private var sentCheats: List<StartRequest.CheatItem>? = null
+
+    /**
+     * Sends the cheats to the game (always a reset, then each one switched on: PROTOCOL.md `cheats.set`), as the whole
+     * list with ids and names, so the pause menu's Cheats section shows exactly this PC's list (new, renamed or deleted
+     * cheats, and a cheat's server id once Jellyfin has it: the menu's switches name cheats by id).
+     */
     private fun sendCheats() {
-        player?.send(org.json.JSONObject().put("type", "cheats.set").put("cheats",
-            org.json.JSONArray(book.activeCheats().map { CheatRules.forCore(it.code) })))
+        val items = cheatItems()
+        sentCheats = items
+        player?.send(org.json.JSONObject().put("type", "cheats.set").put("cheats", org.json.JSONArray(items.map {
+            org.json.JSONObject().put("id", it.id).put("name", it.name).put("code", it.code).put("enabled", it.enabled)
+        })))
+    }
+
+    private val cheatHolder = object : CheatSyncCore.Holder {
+        override var book: CheatBook get() = this@PlaySession.book; set(v) = setBook(v)
+    }
+
+    /** One cheat sync at a time; afterwards, a list Jellyfin changed (or new server ids) goes into the game too. */
+    private val cheatLoop by lazy {
+        CheatSyncLoop(scope, cheatSync, game.id, cheatHolder) {
+            if (book.activeCheats().isNotEmpty()) markCheated()
+            if (phase == Phase.PLAYING && cheatItems() != sentCheats) sendCheats()
+        }
     }
 
     /**
@@ -423,9 +523,29 @@ class PlaySession(
     private fun onCheatToggled(id: String?, on: Boolean) {
         if (id == null || book.byId(id) == null) return
         setBook(book.setOn(id, on).let { if (on && saving) it.copy(backedUp = true) else it }) // backed up at the start
+        sentCheats = cheatItems() // the player already has this switch
         if (book.activeCheats().isNotEmpty()) markCheated()
-        cheatSync?.let { cs -> scope.launch { runCatching { cs.sync(game.id, object : CheatSyncCore.Holder {
-            override var book: CheatBook get() = this@PlaySession.book; set(v) = setBook(v) }) } } }
+        cheatLoop.request()
+    }
+
+    /**
+     * The app's cheat editor on this game while it runs (null: a link session or the 3DS, D210). A change is kept as
+     * the menu's switches are, goes into the game at once (`cheats.set`, which also refreshes its menu) and on to Jellyfin.
+     */
+    val cheatHost: CheatHost? = if (!cheatsAllowed) null else object : CheatHost {
+        override val book: CheatBook get() = this@PlaySession.book
+        override fun put(b: CheatBook) {
+            // The save was backed up as the game started (prepare); with saving off nothing reaches the save anyway.
+            setBook(if (saving && b.activeCheats().isNotEmpty()) b.copy(backedUp = true) else b, strict = true)
+            if (book.activeCheats().isNotEmpty()) markCheated()
+            sendCheats()
+        }
+        override fun sync() = cheatLoop.request()
+        override val online get() = cheatSync != null
+        override val playing get() = phase == Phase.PLAYING
+        override var onChange: ((CheatBook) -> Unit)?
+            get() = onCheatsChanged
+            set(v) { onCheatsChanged = v }
     }
 
     // ---- Auto upload (D59: the browser's rule) ----

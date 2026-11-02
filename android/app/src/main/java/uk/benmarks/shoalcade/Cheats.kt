@@ -38,18 +38,161 @@ object CheatRules {
 
     private val N64_CODE = Regex("^[0-9A-Fa-f]{8} [0-9A-Fa-f]{4}$")
     private val N64_RUN = Regex("^[0-9A-Fa-f]{12}$")
+    private val CBDS_FIRST = Regex("^[08]000[0-9A-Fa-f]{4} ?([0-9A-Fa-f]{8})$")
+
+    /**
+     * A CodeBreaker DS code: its first line is `0000xxxx` (encrypted) or `8000xxxx` (not encrypted) followed by the
+     * game's 4-character code (letters/digits) in hex, e.g. `8000FD28 41534D45` = "ASME". The DS core only runs Action
+     * Replay codes, so such a code would run as the wrong code type. We never convert them: the encrypted ones need key
+     * data from the DS BIOS, which Shoalcade doesn't ship or ask for.
+     */
+    fun isCodeBreakerDs(code: String): Boolean {
+        val first = tidyCode(code).substringBefore('\n').split('+').first().trim()
+        val id = CBDS_FIRST.matchEntire(first)?.groupValues?.get(1) ?: return false
+        return id.chunked(2).all { it.toInt(16).toChar().let { c -> c in 'A'..'Z' || c in '0'..'9' } }
+    }
 
     /**
      * The code as it should be kept for [console]. N64 (plan-n64 Step 0): the core splits a GameShark code at any
      * non-hex character, so `8XXXXXXXYYYY` with no space would be one number that silently does nothing. Each such line
      * (or "+"-joined part) gets its space put in; anything else is left for [problem] to judge.
+     * GameCube / Wii / PS2 (Windows only): `XXXXXXXXYYYYYYYY` gets its space too. PS2: pnach lines
+     * (`patch=1,EE,ADDR,TYPE,VALUE`) become the two blocks LRPS2 / PCEE2 turn back into exactly that line (the "="
+     * can't be kept: the server's code rule has no "="), and a pasted .pnach's own lines (gametitle=, comment=,
+     * author=, description=, [sections], // notes) are left out.
      */
-    fun normalise(console: Console?, code: String): String {
-        if (console != Console.N64) return code
-        return tidyCode(code).split('\n').joinToString("\n") { line ->
+    fun normalise(console: Console?, code: String): String = when (console) {
+        Console.N64 -> tidyCode(code).split('\n').joinToString("\n") { line ->
             line.split('+').joinToString("+") { p -> p.trim().let { if (N64_RUN.matches(it)) it.substring(0, 8) + " " + it.substring(8) else it } }
         }
+        // GBA: mGBA's libretro reader takes each line as "XXXXXXXX YYYYYYYY" (or CodeBreaker "XXXXXXXX YYYY"); without the
+        // space it reads 17 characters at a time, eating the next line's first, so the whole cheat silently does nothing.
+        Console.GBA -> tidyCode(code).split('\n').joinToString("\n") { line ->
+            line.split('+').joinToString("+") { p -> p.trim().let { if (HEX16.matches(it) || N64_RUN.matches(it)) it.substring(0, 8) + " " + it.substring(8) else it } }
+        }
+        // Review S10: a PS2 cheat that can't be converted safely is left as typed, so [problem] can say why.
+        Console.PS2 -> if (pnachProblem(code) != null) tidyCode(code) else normaliseWindows(console, code)
+        Console.GC, Console.WII -> normaliseWindows(console, code)
+        else -> code
     }
+
+    private fun normaliseWindows(console: Console, code: String): String {
+            val (prefix, body) = splitPrefix(console, tidyCode(code))
+            val lines = body.split('\n').flatMap { it.split('+') }.map { it.trim() }.filter { it.isNotEmpty() }
+                .filterNot { console == Console.PS2 && PNACH_META.containsMatchIn(it) }
+                .map { l ->
+                    val p = if (console == Console.PS2) pnachToRaw(l) ?: l else l
+                    if (HEX16.matches(p)) p.substring(0, 8) + " " + p.substring(8) else p
+                }
+            return prefix + lines.joinToString("\n")
+    }
+
+    /**
+     * Review S10: PS2 pastes that can't become one cheat. A .pnach with more than one [section] holds several cheats.
+     * And a byte / short / word line becomes an extended line (types 0 / 1 / 2), which LRPS2 runs in turn with the
+     * other extended lines: after a two-line code (3040, 3050, 4, 5, 6) or a condition (D, E) it would be read as that
+     * code's next line (pcsx2/Patch.cpp `PrevCheatType` / `SkipCount`), which a real byte / short / word line never is.
+     */
+    private fun pnachProblem(code: String): String? {
+        val lines = tidyCode(code).split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+        if (lines.count { it.startsWith("[") } > 1) return PNACH_SECTIONS
+        val pnach = lines.mapNotNull { PNACH.matchEntire(it)?.destructured }
+        val converted = pnach.any { (place, cpu, _, type, _) -> place == "1" && cpu.equals("EE", true) && !type.equals("extended", true) }
+        if (!converted) return null
+        val extendedAddrs = pnach.filter { it.component4().equals("extended", true) }.map { it.component3().toLong(16) } +
+            lines.flatMap { it.split('+') }.map { it.trim().replace(" ", "") }.filter { HEX16.matches(it) }.map { it.substring(0, 8).toLong(16) }
+        return if (extendedAddrs.any { a -> (a ushr 28) in MULTI_LINE_TYPES || (a and 0xFFFF0000L) in TWO_LINE_INC_DEC }) PNACH_MIX else null
+    }
+
+    private val MULTI_LINE_TYPES = setOf(0x4L, 0x5L, 0x6L, 0xDL, 0xEL)
+    private val TWO_LINE_INC_DEC = setOf(0x30400000L, 0x30500000L)
+    const val PNACH_SECTIONS = "That's a .pnach with more than one cheat in it ([sections]). Add each cheat separately."
+    const val PNACH_MIX = "A pnach byte, short or word line can't share a cheat with a two-line or conditional extended code " +
+        "(3040, 3050, 4, 5, 6, D or E): the emulator would read it as part of that code. Add it as its own cheat."
+
+    private val HEX16 = Regex("^[0-9A-Fa-f]{16}$")
+    private val HEX8x2 = Regex("^[0-9A-Fa-f]{8} [0-9A-Fa-f]{8}$")
+    /** Dolphin's encrypted Action Replay line (ActionReplay::DeserializeLine): XXXX-XXXX-XXXXX. */
+    private val AR_ENCRYPTED = Regex("^[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{5}$")
+    private val PNACH_META = Regex("^(gametitle|comment|author|description)\\s*=|^\\[|^//", RegexOption.IGNORE_CASE)
+    private val PNACH = Regex("^patch\\s*=\\s*([01])\\s*,\\s*(EE|IOP)\\s*,\\s*([0-9A-Fa-f]{1,8})\\s*,\\s*(extended|byte|short|word)\\s*,\\s*([0-9A-Fa-f]{1,8})$",
+        RegexOption.IGNORE_CASE)
+    /** The PS2's encrypted code families: CodeBreaker 7's BEEFC0DE key code and GameShark 3/4's DEADFACE seed. */
+    private val PS2_KEY = Regex("^(BEEFC0D[EF]|DEADFACE)", RegexOption.IGNORE_CASE)
+
+    /** GameCube: Dolphin's patch reads "AR:" / "GECKO:" in front of the whole code (tools/dolphin-patches/0001). Kept as typed. */
+    private fun splitPrefix(console: Console, code: String): Pair<String, String> {
+        if (console != Console.GC && console != Console.WII) return "" to code
+        val m = Regex("^(AR|GECKO):\\s*", RegexOption.IGNORE_CASE).find(code) ?: return "" to code
+        return m.value.trim().uppercase() + " " to code.substring(m.range.last + 1)
+    }
+
+    /**
+     * A pnach line as the two blocks the PS2 patch (tools/lrps2-patches/0003) turns back into
+     * `patch=1,EE,<a>,extended,<b>`: extended as written; byte / short / word as PCSX2's extended types 0 / 1 / 2.
+     * Null when it can't be the same cheat that way (patch=0 runs once, IOP is another processor, a value too big).
+     */
+    private fun pnachToRaw(line: String): String? {
+        val m = PNACH.matchEntire(line) ?: return null
+        val (place, cpu, addrHex, type, valueHex) = m.destructured
+        if (place != "1" || !cpu.equals("EE", ignoreCase = true)) return null
+        val addr = addrHex.toLong(16)
+        val value = valueHex.toLong(16)
+        fun hex(v: Long) = java.lang.Long.toHexString(v).uppercase().padStart(8, '0')
+        return when (type.lowercase()) {
+            "extended" -> hex(addr) + " " + hex(value)
+            else -> {
+                if (addr > 0x0FFFFFFF) return null
+                val (kind, max) = when (type.lowercase()) { "byte" -> 0L to 0xFFL; "short" -> 1L to 0xFFFFL; else -> 2L to 0xFFFFFFFFL }
+                if (value > max) return null
+                hex((kind shl 28) or addr) + " " + hex(value)
+            }
+        }
+    }
+
+    /**
+     * Windows-only consoles (D218): what Shoalcade's Dolphin / LRPS2 / PCEE2 patches can read, judged on the
+     * [normalise]d code. Null = fine, or a plain reason.
+     */
+    private fun windowsProblem(console: Console, code: String): String? {
+        val (prefix, body) = splitPrefix(console, code)
+        val lines = body.split('\n').flatMap { it.split('+') }.map { it.trim() }.filter { it.isNotEmpty() }
+        if (lines.isEmpty()) return "Type the cheat code."
+        if (console == Console.PS2) pnachProblem(code)?.let { return it }
+        return when (console) {
+            Console.GC -> {
+                val ar = prefix.startsWith("AR")
+                val dashed = lines.all { AR_ENCRYPTED.matches(it) }
+                when {
+                    ar && (dashed || lines.all { HEX8x2.matches(it) }) -> null
+                    !ar && !prefix.startsWith("GECKO") && dashed -> null
+                    !ar && lines.all { HEX8x2.matches(it) } -> null
+                    lines.any { AR_ENCRYPTED.matches(it) } && lines.any { !AR_ENCRYPTED.matches(it) } ->
+                        "An encrypted Action Replay code (XXXX-XXXX-XXXXX) can't be mixed with other lines. Add each code as its own cheat."
+                    else -> GC_FORMAT
+                }
+            }
+            Console.WII -> when {
+                prefix.startsWith("AR") || lines.any { '-' in it } ->
+                    "Wii cheats are Gecko (Ocarina) codes, like 04xxxxxx yyyyyyyy. Action Replay codes don't work on the Wii."
+                lines.all { HEX8x2.matches(it) } -> null
+                else -> "Wii codes look like 04xxxxxx yyyyyyyy: two blocks of 8 per line, one code per line."
+            }
+            else -> when { // PS2
+                lines.any { '-' in it } -> // raw codes never have dashes; AR MAX codes are XXXXX-XXXXX-XXXXX
+                    "That looks like an Action Replay MAX code. Encrypted PS2 codes don't work: look for the unencrypted (raw) version, like 2xxxxxxx yyyyyyyy."
+                lines.any { PS2_KEY.containsMatchIn(it) } ->
+                    "That's an encrypted CodeBreaker or GameShark code. Encrypted PS2 codes don't work: look for the unencrypted (raw) version, like 2xxxxxxx yyyyyyyy."
+                lines.any { it.startsWith("patch", ignoreCase = true) } ->
+                    "Only pnach lines like patch=1,EE,2xxxxxxx,extended,yyyyyyyy can be used (EE, and extended, byte, short or word)."
+                lines.all { HEX8x2.matches(it) } -> null
+                else -> "PS2 codes look like 2xxxxxxx yyyyyyyy: two blocks of 8 per line, one code per line (or pnach lines: patch=1,EE,…)."
+            }
+        }
+    }
+
+    private const val GC_FORMAT = "GameCube codes look like 04xxxxxx yyyyyyyy (Gecko) or XXXX-XXXX-XXXXX (encrypted Action Replay). " +
+        "Put AR: in front of unencrypted Action Replay codes."
 
     /** Plain-English reason the name or code can't be used, or null if both are fine. [console]'s own code format is checked too (N64). */
     fun problem(name: String, code: String, console: Console? = null): String? {
@@ -58,15 +201,19 @@ object CheatRules {
         val bad = c.firstOrNull { !allowed(it) }
         val n64Bad = console == Console.N64 && c.isNotEmpty() &&
             c.split('\n').flatMap { it.split('+') }.any { !N64_CODE.matches(it.trim()) }
+        val windows = if (console == Console.GC || console == Console.WII || console == Console.PS2) windowsProblem(console, c) else null
         return when {
             n.isEmpty() -> "Give the cheat a name."
             n.length > MAX_NAME -> "Names can be up to $MAX_NAME characters."
             n.any(Char::isISOControl) -> "The name has a character that can't be used."
             c.isEmpty() -> "Type the cheat code."
+            windows != null -> windows // before the character rule: a pnach line's "=" gets its own words
             bad != null -> "Codes use only letters, numbers, spaces and + - : _ . , so \"$bad\" can't be used."
             c.length > MAX_CODE -> "That code is too long (up to $MAX_CODE characters)."
             c.count { it == '\n' } + 1 > MAX_LINES -> "That code has too many lines (up to $MAX_LINES)."
             n64Bad -> "N64 codes look like 8XXXXXXX YYYY: 8 characters, a space, then 4. One code per line."
+            console == Console.NDS && isCodeBreakerDs(c) ->
+                "CodeBreaker DS codes aren't supported (the DS engine only runs Action Replay codes). Look for the Action Replay version of this cheat."
             else -> null
         }
     }
@@ -81,11 +228,17 @@ object CheatRules {
     fun hint(console: Console): String = when (console) {
         Console.GB, Console.GBC -> "Game Boy: GameShark codes, 8 characters each, like 01xxxxxx. One code per line."
         Console.GBA -> "Game Boy Advance: CodeBreaker, GameShark or Action Replay codes. One code per line, as written."
-        Console.NDS -> "DS: Action Replay codes (sites often call them GameShark DS: the same codes), two blocks of 8 per line, like 02xxxxxx yyyyyyyy."
+        Console.NDS -> "DS: Action Replay codes (sites often call them GameShark DS: the same codes), two blocks of 8 per line, like 02xxxxxx yyyyyyyy. CodeBreaker DS codes don't work."
         Console.PSX -> "PlayStation: GameShark codes, like 8xxxxxxx yyyy. One code per line."
         Console.PSP -> "PSP: CWCheat codes, one per line, like _L 0x2xxxxxxx 0xyyyyyyyy."
         Console.N64 -> "Nintendo 64: GameShark codes, like 8XXXXXXX YYYY. One code per line."
         Console.N3DS -> "3DS: cheats aren't supported yet."
+        // Windows only (D218): Shoalcade's Dolphin / LRPS2 / PCEE2 cheat patches (tools/*-patches), D-4 for GameCube.
+        Console.GC -> "GameCube: Gecko codes, two blocks of 8 per line, like 04xxxxxx yyyyyyyy. Action Replay codes: " +
+            "encrypted ones (XXXX-XXXX-XXXXX) as written, or put AR: in front of unencrypted ones."
+        Console.WII -> "Wii: Gecko (Ocarina) codes, two blocks of 8 per line, like 04xxxxxx yyyyyyyy."
+        Console.PS2 -> "PlayStation 2: unencrypted codes, two blocks of 8 per line, like 2xxxxxxx yyyyyyyy, or pnach lines " +
+            "(patch=1,EE,…). Encrypted CodeBreaker, GameShark and Action Replay MAX codes don't work."
     }
 }
 
@@ -299,5 +452,7 @@ object CheatApply {
         data class Set(val index: Int, val code: String) : Op()
     }
 
-    fun ops(active: List<Cheat>): List<Op> = listOf(Op.Reset) + active.mapIndexed { i, c -> Op.Set(i, CheatRules.forCore(c.code)) }
+    /** [console]: codes saved before a console's spacing rule existed get it here too, so they work without re-typing. */
+    fun ops(active: List<Cheat>, console: Console? = null): List<Op> =
+        listOf(Op.Reset) + active.mapIndexed { i, c -> Op.Set(i, CheatRules.forCore(CheatRules.normalise(console, c.code))) }
 }

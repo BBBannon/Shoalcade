@@ -40,13 +40,19 @@ data class Game(
     val favourite: Boolean = false,
     /** This user's total play time on the game from every device (seconds, from the server; 0 = none or older server). */
     val playSeconds: Long = 0,
+    /** Discs of a disc-set game (D-8: PS1, PS2, GameCube, Wii); 0 for a one-file game or an older server. */
+    val discs: Int = 0,
 )
+
+/** One disc of a disc-set game (D-8), as /shoalcade/games/{id}/discs lists it. */
+data class DiscFile(val index: Int, val name: String, val size: Long)
 
 /** Game ↔ JSON, for the offline game list and for passing a game to the download service. */
 object GameJson {
     fun toJson(g: Game): JSONObject = JSONObject().put("id", g.id).put("name", g.name).put("console", g.console?.name)
         .put("file", g.fileName).put("dl", g.canDownload).put("img", g.imageTag)
         .put("year", g.year).put("played", g.serverPlayed).put("fav", g.favourite).put("play", g.playSeconds)
+        .put("discs", g.discs)
 
     fun fromJson(s: String) = fromJson(JSONObject(s))
 
@@ -62,7 +68,11 @@ object GameJson {
         serverPlayed = if (o.has("played") && !o.isNull("played")) o.optLong("played") else null,
         favourite = o.optBoolean("fav", false),
         playSeconds = o.optLong("play", 0L).coerceAtLeast(0L),
+        discs = o.optInt("discs", 0).coerceIn(0, MAX_DISCS),
     )
+
+    /** More discs than any real game has: anything above is a bad reply. */
+    const val MAX_DISCS = 16
 }
 
 data class QuickConnectCode(val serverUrl: String, val code: String, val secret: String)
@@ -286,6 +296,54 @@ class JellyfinClient(
                 }
             }
             conn.disconnect()
+            if (!part.renameTo(dest)) throw IOException("Couldn't save the download.")
+            dest
+        }
+
+    /**
+     * A disc-set game's discs (D-8), in play order. Names are checked: one plain file name each, no folders, unique
+     * (a bad name from the server could otherwise write outside the game's folder).
+     */
+    suspend fun discs(itemId: String): List<DiscFile> = plugin {
+        val arr = JSONObject(getText("/shoalcade/games/${id(itemId)}/discs")).optJSONArray("discs") ?: throw BadReplyException()
+        val list = (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            DiscFile(o.getInt("index"), o.getString("name"), o.optLong("size", -1L))
+        }
+        if (list.isEmpty() || list.size > GameJson.MAX_DISCS || list.map { it.index } != list.indices.toList()
+            || list.any { !isSafeDiscName(it.name) } || list.map { it.name.lowercase() }.toSet().size != list.size) throw BadReplyException()
+        list
+    }
+
+    /**
+     * Streams one disc of a set into [dir] as [disc]'s name, through a .part file (as [download]). The size must match
+     * the disc list, so a cut-short download is never kept.
+     */
+    suspend fun downloadDisc(itemId: String, disc: DiscFile, dir: File, onProgress: (Float) -> Unit): File =
+        plugin(limit = null) {
+            if (!isSafeDiscName(disc.name)) throw BadReplyException()
+            val conn = open("${s.serverUrl}/shoalcade/games/${id(itemId)}/discs/${disc.index}").checkOk()
+            val total = conn.contentLengthLong.takeIf { it > 0 } ?: disc.size
+            val dest = File(dir, disc.name)
+            val part = File(dir, disc.name + ".part")
+            dir.mkdirs()
+            var done = 0L
+            conn.inputStream.use { input ->
+                part.outputStream().use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        ensureActive()
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        done += n
+                        if (total > 0) onProgress(done.toFloat() / total)
+                    }
+                }
+            }
+            conn.disconnect()
+            if (disc.size >= 0 && done != disc.size) { part.delete(); throw IOException("The disc didn't download completely.") }
+            if (dest.exists() && !dest.delete()) throw IOException("Couldn't replace the old disc file.")
             if (!part.renameTo(dest)) throw IOException("Couldn't save the download.")
             dest
         }
@@ -614,6 +672,11 @@ class JellyfinClient(
             return if (n.isNullOrEmpty() || n == "." || n == "..") fallback else n
         }
 
+        /** A disc name from the server (D-8) used as a file name: a plain, short file name, never a list or part file. */
+        fun isSafeDiscName(name: String): Boolean = name.length in 1..200 && safeFileName(name, "") == name && !name.startsWith(".")
+            && !name.startsWith("#") // review S12: an .m3u line starting "#" is a comment, so that disc would vanish
+            && !name.endsWith(".m3u", ignoreCase = true) && !name.endsWith(".part", ignoreCase = true)
+
         /** The server's longest kept save name (SaveStore.MaxLabelLength), used until /info says otherwise. */
         const val DEFAULT_MAX_LABEL = 60
         /** Log out never hangs: the server call gives up after this (connect and read each). */
@@ -669,6 +732,7 @@ data class RemoteGame(val game: Game, val save: SaveVersion?) {
                     serverPlayed = GameSort.lastPlayed(lastPlayed, save?.createdMillis),
                     favourite = o.optBoolean("favourite", false),
                     playSeconds = o.optLong("playSeconds", 0L).coerceAtLeast(0L),
+                    discs = o.optInt("discs", 0).coerceIn(0, GameJson.MAX_DISCS),
                 ),
                 save,
             )

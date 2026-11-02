@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Shoalcade.Common;
 using Jellyfin.Plugin.Shoalcade.Library;
 using Jellyfin.Plugin.Shoalcade.Web;
 using Microsoft.AspNetCore.Authorization;
@@ -10,18 +11,21 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Jellyfin.Plugin.Shoalcade.Api;
 
-/// <summary>What the Settings page shows about the phone app.</summary>
+/// <summary>What the Settings page (and the apps' update banner) shows about the phone or Windows app.</summary>
 /// <param name="Enabled">The admin offers the download (always true here: off answers 404).</param>
-/// <param name="Available">This plugin build includes the app.</param>
-/// <param name="Version">App version, or null.</param>
-/// <param name="Size">APK size in bytes, or null.</param>
-/// <param name="Sha256">APK SHA-256, or null.</param>
+/// <param name="Available">Phone: this plugin build includes the app. Windows: always (it is on the release page).</param>
+/// <param name="Version">App version, or null (unknown).</param>
+/// <param name="Size">APK size in bytes, or null (always null for Windows).</param>
+/// <param name="Sha256">APK SHA-256, or null (always null for Windows).</param>
+/// <param name="Url">Windows (S2, D181): this release's page on GitHub, where the installer is. Null for the phone app,
+/// which downloads from this server.</param>
 public sealed record AppInfoDto(
     [property: JsonPropertyName("enabled")] bool Enabled,
     [property: JsonPropertyName("available")] bool Available,
     [property: JsonPropertyName("version")] string? Version,
     [property: JsonPropertyName("size")] long? Size,
-    [property: JsonPropertyName("sha256")] string? Sha256);
+    [property: JsonPropertyName("sha256")] string? Sha256,
+    [property: JsonPropertyName("url")] string? Url = null);
 
 /// <summary>A short-lived download link for the QR code.</summary>
 /// <param name="Url">Path from the Jellyfin base URL, e.g. <c>/shoalcade/app/Shoalcade.apk?ticket=…</c>.</param>
@@ -62,13 +66,43 @@ public class AppController : ShoalcadeControllerBase
         _policies = policies;
     }
 
-    /// <summary>The bundled app's version, size and SHA-256.</summary>
-    /// <returns>Info, or 404 when the admin has turned the download off.</returns>
+    /// <summary>Where the Windows app's installer is: this release's page (D181; the plugin never carries it).</summary>
+    internal const string ReleasePage = "https://github.com/BBBannon/Shoalcade/releases/tag/v";
+
+    /// <summary>
+    /// The bundled phone app's version, size and SHA-256; with <c>platform=windows</c> (S2), the Windows app's version
+    /// (the same number as the phone app, plan-windows §6) and this release's page.
+    /// </summary>
+    /// <param name="platform"><c>android</c> (default) or <c>windows</c>.</param>
+    /// <returns>Info, or 404 when the admin has turned that app off, or 400 for another platform.</returns>
     [HttpGet("info")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult<AppInfoDto> GetInfo()
+    public ActionResult<AppInfoDto> GetInfo([FromQuery] string? platform)
     {
+        var windows = string.Equals(platform, "windows", StringComparison.OrdinalIgnoreCase);
+        if (!windows && !string.IsNullOrEmpty(platform) && !string.Equals(platform, "android", StringComparison.OrdinalIgnoreCase))
+        {
+            return Fail(StatusCodes.Status400BadRequest, "bad_platform", "platform must be android or windows.");
+        }
+
+        if (windows)
+        {
+            if (!ShoalcadeServices.Config.OfferWindowsApp)
+            {
+                return Off();
+            }
+
+            if (RequireUser(out _) is ActionResult wfail)
+            {
+                return wfail;
+            }
+
+            Response.Headers.CacheControl = "no-store";
+            return DescribeWindows(_app, ServerVersion.Current);
+        }
+
         if (!_app.Enabled)
         {
             return Off();
@@ -168,6 +202,13 @@ public class AppController : ShoalcadeControllerBase
     /// <returns>The DTO.</returns>
     internal static AppInfoDto Describe(PhoneApp app) =>
         app.Package is { } p ? new AppInfoDto(true, true, p.Version, p.Size, p.Sha256) : new AppInfoDto(true, false, null, null, null);
+
+    /// <summary>The Windows info answer: the phone app's version (same number) and this release's GitHub page.</summary>
+    /// <param name="app">The bundled phone app (null version if this build has none).</param>
+    /// <param name="plugin">This plugin's version (release tag = its first three parts).</param>
+    /// <returns>The DTO.</returns>
+    internal static AppInfoDto DescribeWindows(PhoneApp app, Version plugin) =>
+        new(true, true, app.Package?.Version, null, null, ReleasePage + plugin.ToString(3));
 
     private async Task<bool> SignedInAsync()
     {

@@ -6,7 +6,8 @@
  * order (Game, Snapshots, Speed, Cheats, Sound, Display, Controls), the same words, the same item ids where the phone
  * has them, and DrawerNav's rules (Up / Down a row, L1 / R1 jump a section, A pick, B close, headings skipped).
  * Windows differences: snapshot slots 1-3 + Automatic (as the browser), Rewind, Volume, window / full screen,
- * whole-number scale and smooth picture, and a read-only Controls list. The drawer itself is menu_ui.cpp.
+ * whole-number scale and smooth picture, Restart (the browser's), and Controls where keys, controller buttons and
+ * shortcut keys are changed (the phone's and the browser's rules). The drawer itself is menu_ui.cpp.
  */
 #pragma once
 #include <string>
@@ -43,6 +44,31 @@ inline const char *const N3DS_SCREENS = "3DS screens";
 inline const char *const N3DS_FLIP = "Swap the two screens";
 inline const char *const N3DS_FLIP_HINT = "Flip: Tab, or click the left stick";
 inline const char *const CONTROLS = "Controls";
+/** Restart (the browser player's toolbar button and its words, play-ui.js act "restart"). */
+inline const char *const RESTART = "Restart";
+inline const char *const RESTART_AGAIN = "Press Restart again to restart the game.";
+inline const char *const RESTARTED = "Game restarted.";
+// Changing the buttons: the phone's Controls screen (ControlsScreen.kt ControlsWords) and the browser's (play-ui.js).
+inline const char *const GAME_BUTTONS = "Game buttons";
+inline const char *const SHORTCUTS = "Shortcuts";
+inline const char *const CONTROLS_FINE = "Pick a game button, then press the key or controller button you want for it. "
+                                         "Esc and the Guide button always open the game menu, so they can't be changed.";
+inline const char *const NO_CONTROLLER = "No controller found";
+inline const char *const NO_CONTROLLER_HELP =
+    "Connect a controller and press any button on it. Each controller model gets its own buttons.";
+inline const char *const LISTEN = "Press a key or a controller button\xE2\x80\xA6 Esc cancels.";
+inline const char *const LISTEN_KEY = "Press a key\xE2\x80\xA6 Esc cancels.";
+inline const char *const NOTHING_PRESSED = "Nothing pressed, so nothing changed.";
+inline const char *const RESET_PAD = "Reset this controller to defaults";
+inline const char *const RESET_PAD_DONE = "This controller is back to the default buttons.";
+inline const char *const SHORTCUTS_FINE = "Shortcuts work while the game is running and the menu is closed.";
+inline const char *const NOT_SET = "Not set";
+/** P5: the Wii controller type (player 1), as the shell remembers it per game. */
+inline const char *const WII_CONTROLLER = "Wii controller";
+inline const char *const WII_CONTROLLER_PREFIX = "wii.ctrl.";
+/** P12: the disc in the drive, for a game on more than one disc. Item ids disc.0, disc.1, ... */
+inline const char *const CHANGE_DISC = "Change disc";
+inline const std::string DISC_PREFIX = "disc.";
 
 // Item ids (stable: the player acts on these and the shell / tests send them, never the words).
 inline const char *const ID_RESUME = "resume";
@@ -59,13 +85,21 @@ inline const char *const ID_INTEGER = "display.integer";
 inline const char *const ID_SMOOTH = "display.smooth";
 inline const char *const ID_DS_SWAP = "ds.swap";
 inline const char *const ID_3DS_FLIP = "3ds.flip";
+inline const char *const ID_RESTART = "restart";
+inline const char *const ID_RESET_KEYS = "controls.reset.keys";
+inline const char *const ID_RESET_PAD = "controls.reset.pad";
+inline const char *const ID_RESET_SHORTCUTS = "controls.reset.shortcuts";
+/** A game button's row: control.<button> ("control.A"); a shortcut's: shortcut.<name> ("shortcut.pause"). */
+inline const std::string CONTROL_PREFIX = "control.";
+inline const std::string SHORTCUT_PREFIX = "shortcut.";
 
 enum class Kind {
     Action,  // does something, then the menu closes
     Choice,  // one of a group (radio button); the menu stays open
     Toggle,  // on / off switch; the menu stays open
     Slider,  // a number (Volume): Left / Right change it
-    Info,    // a line you can move onto but not change (Controls list)
+    Info,    // a line you can move onto but not change (a shortcut that can't be changed)
+    Bind,    // a game button or shortcut and what presses it: pick it, then press the new key or button
     Heading, // a label over a group; can't be picked
     Note,    // grey words; can't be picked
     Slot,    // a snapshot slot's picture, name and time; can't be picked (its Save / Load rows can)
@@ -103,7 +137,8 @@ struct Cheat {
 
 /** One line of the Controls list: a game button or shortcut, and what presses it. */
 struct ControlLine {
-    std::string what, keys, pad;
+    std::string name, what, keys, pad; // name = the button's or shortcut's name ("A", "pause")
+    bool fixed = false;                // can't be changed (the menu's own key)
 };
 
 /** Everything the menu needs to decide what it shows (GameMenu.kt MenuContext). */
@@ -118,6 +153,7 @@ struct Context {
     int ff_speed = 2;
     bool rewind_possible = false;
     bool rewind_on = false;
+    std::string rewind_off_why; // P10: why rewind is off for this game (shown instead of the row)
     bool cheats_allowed = true;
     std::vector<Cheat> cheats;
     bool muted = false;
@@ -127,7 +163,14 @@ struct Context {
     bool ds_swap = false;
     std::string n3ds = "stacked";
     bool n3ds_flip = false;
+    std::string wii_controller = "remote"; // player 1's (console.h wii_controllers keys)
+    std::vector<std::string> discs;        // P12: each disc's name (2 or more = a "Change disc" row)
+    int disc = 0;                          // the one in the drive
     std::vector<ControlLine> controls, shortcuts;
+    std::string console_name;  // "GBA" (for "Reset GBA keys to defaults")
+    std::string pad_name;      // the controller the list shows ("" = none connected)
+    std::string listening;     // the Controls row waiting for a key or button press ("" = none)
+    bool can_restart = true;   // not in link play
     /** Names of the keys held for fast-forward and rewind (for the hints), e.g. "Space". */
     std::string ff_key, rewind_key;
     /** An item waiting for its second press (Load, Save over): its hint says so. */

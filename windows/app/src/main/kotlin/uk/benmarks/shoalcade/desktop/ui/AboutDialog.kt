@@ -1,25 +1,25 @@
 package uk.benmarks.shoalcade.desktop.ui
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,49 +34,53 @@ import java.io.File
 /**
  * About Shoalcade (Windows): version, the GPL notice, and every part shipped with its licence and exact source link
  * (as the phone's AboutDialog). The links are selectable text, so they can be copied. "Licence texts" opens the
- * installed licences folder, which also holds SOURCE.txt's neighbour LICENSE.txt.
+ * installed licences folder, which also holds SOURCE.txt's neighbour LICENSE.txt. The Settings panel's About tab
+ * (the panel scrolls it).
  */
 @Composable
-fun AboutDialog(onDismiss: () -> Unit) {
+fun AboutContent() {
     var showLicence by remember { mutableStateOf(false) }
     val install = remember { WinLicences.installDir() }
     val licenceText = remember(showLicence) {
         if (!showLicence) "" else runCatching { File(install, "LICENSE.txt").readText() }
             .getOrDefault("The licence text is in the licences folder next to Shoalcade.exe, and at https://www.gnu.org/licenses/gpl-3.0.txt")
     }
-    AlertDialog(
+    Column {
+        Text(if (showLicence) "GNU GPL v3" else "$APP_NAME ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 8.dp).semantics { heading() })
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 12.dp)) {
+            if (install != null) PocketButton(onClick = { openFolder(File(install, "licences")) }) { Text("Licence texts") }
+            PocketButton(onClick = { showLicence = !showLicence }) { Text(if (showLicence) "Back" else "GPL v3 text") }
+        }
+        if (showLicence) {
+            SelectionContainer { Text(licenceText, fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp) }
+            return@Column
+        }
+        Text("Free software under the GNU General Public License v3. You may share and change it under those terms. It comes with no warranty.")
+        Spacer(Modifier.height(8.dp))
+        Text("Not an official Jellyfin project. No games, BIOS, firmware or keys are included.")
+        Spacer(Modifier.height(8.dp))
+        SelectionContainer {
+            Column {
+                Text("Source code: ${WinLicences.appSource()}", fontWeight = FontWeight.Bold)
+                if (install != null) Text("Where every part's source is: SOURCE.txt in ${install.path}",
+                    style = MaterialTheme.typography.bodySmall)
+                Section("Emulator cores", WinLicences.cores)
+                Section("Game player", WinLicences.player)
+                Section("App", WinLicences.app)
+            }
+        }
+    }
+}
+
+/** The same, as a dialog: the login screen's "About Shoalcade" (no Settings panel before logging in). */
+@Composable
+fun AboutDialog(onDismiss: () -> Unit) {
+    PocketDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.widthIn(max = 760.dp),
-        title = { Text(if (showLicence) "GNU GPL v3" else "$APP_NAME ${BuildConfig.VERSION_NAME}") },
-        text = {
-            Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
-                if (showLicence) {
-                    SelectionContainer { Text(licenceText, fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp) }
-                    return@Column
-                }
-                Text("Free software under the GNU General Public License v3. You may share and change it under those terms. It comes with no warranty.")
-                Spacer(Modifier.height(8.dp))
-                Text("Not an official Jellyfin project. No games, BIOS, firmware or keys are included.")
-                Spacer(Modifier.height(8.dp))
-                SelectionContainer {
-                    Column {
-                        Text("Source code: ${WinLicences.appSource()}", fontWeight = FontWeight.Bold)
-                        if (install != null) Text("Where every part's source is: SOURCE.txt in ${install.path}",
-                            style = MaterialTheme.typography.bodySmall)
-                        Section("Emulator cores", WinLicences.cores)
-                        Section("Game player", WinLicences.player)
-                        Section("App", WinLicences.app)
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-        dismissButton = {
-            Row {
-                if (install != null) TextButton(onClick = { openFolder(File(install, "licences")) }) { Text("Licence texts") }
-                TextButton(onClick = { showLicence = !showLicence }) { Text(if (showLicence) "Back" else "GPL v3 text") }
-            }
-        },
+        maxWidth = 760.dp,
+        text = { Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) { AboutContent() } },
+        confirmButton = { PocketButton(onClick = onDismiss) { Text("Close") } },
     )
 }
 

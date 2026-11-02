@@ -25,4 +25,11 @@ std::string join_path(const std::string &dir, const std::string &name);
  * `path` in one step, so a crash or power cut leaves either the old file or the new one, never half of one.
  */
 bool write_file_atomic(const std::string &path, const void *data, size_t size, std::string *err = nullptr);
+/**
+ * Pictures only (screenshots, snapshot thumbnails), never saves or snapshots: removes any old `path`, then writes the
+ * bytes straight into a new file of that name and flushes it. No temp file and no rename: some antivirus behaviour
+ * monitors (Trend Micro, 01/11/2026) kill a process on its 3rd `X.png.tmp` -> `X.png` rename, as ransomware does that.
+ * A crash mid-write can leave no picture or a cut-off one; readers treat a picture that won't decode as none (D225).
+ */
+bool write_file_direct(const std::string &path, const void *data, size_t size, std::string *err = nullptr);
 } // namespace sc

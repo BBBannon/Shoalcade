@@ -330,6 +330,13 @@
       this.lastUpload = 0;
       this.timer = 0;
       this.guard = new SnapshotGuard();
+      this.latest = null;      // the newest save the game made that the server hasn't got (M3: mirrored to the player page)
+    }
+
+    /** Notes the newest bytes read from the game (or none new) and tells the player page (M3 close-time packet). */
+    note(b) {
+      this.latest = this.isNew(b) ? b : null;
+      this.p.mirror();
     }
 
     start() { this.timer = setInterval(() => this.tick(), POLL_MS); }
@@ -346,6 +353,7 @@
       if (this.guard.waiting) return false; // mid snapshot load: anything unsent was sent before it
       let b;
       try { b = this.p.readSave(); } catch (e) { return true; } // can't tell: keep the "leave page?" guard
+      this.note(b);
       return this.isNew(b);
     }
 
@@ -367,6 +375,7 @@
       if (this.guard.waiting) { if (!this.p.loadingSnapshot) this.afterSnapshotLoad(); return; }
       let b;
       try { b = this.p.readSave(); } catch (e) { this.p.saveReadFailed(e); return; }
+      this.note(b);
       if (!this.isNew(b)) { this.pending = null; return; }
       if (!sameBytes(b, this.pending)) { // still changing: wait for it to settle
         this.pending = b;
@@ -385,6 +394,7 @@
       if (this.guard.waiting) return true; // mid snapshot load: nothing of the game's own to send
       let b;
       try { b = this.p.readSave(); } catch (e) { this.p.saveReadFailed(e); return false; }
+      this.note(b);
       if (!this.isNew(b)) {
         if (opts.manual) this.p.status("ok", this.base ? "Save is up to date on the server (version " + this.base + ")." : "Nothing to save yet.");
         return true;
@@ -415,6 +425,7 @@
         this.base = r.body.current ? r.body.current.version : this.base;
         this.synced = bytes;
         this.pending = null;
+        if (sameBytes(this.latest, bytes)) this.latest = null;
         this.lastUpload = Date.now();
         this.guard.clear(); // the game's own save is on the server: back to the normal rule
         this.p.cheatsUsed = this.p.activeCheats().length > 0; // a later save counts as "with cheats" only while some are on
@@ -425,11 +436,13 @@
         return true;
       })();
       this.inFlight = run;
-      return run.finally(() => { if (this.inFlight === run) this.inFlight = null; });
+      this.p.mirror();
+      return run.finally(() => { if (this.inFlight === run) this.inFlight = null; this.p.mirror(); });
     }
 
     enterConflict(local, server) {
       this.conflict = { local, server };
+      this.p.mirror();
       this.p.pause();
       this.p.status("conflict", "This save was changed somewhere else. Choose which one to keep.");
       this.p.emit("conflict", { server, localSize: local.length });
@@ -466,6 +479,8 @@
       this.conflict = null;
       this.pending = null;
       this.refused = null;
+      this.latest = null;
+      this.p.mirror();
       this.lastUpload = Date.now();
       this.p.status("saved", "Kept the " + (choice === "browser" ? "save from this browser" : "save from the server") + " (version " + this.base + "). The other copy stays in the list.");
       this.p.emit("resolved", { choice, version: this.base });
@@ -496,6 +511,9 @@
       css.rel = "stylesheet";
       css.href = EJS_DIR + "emulator.css";
       document.head.appendChild(css);
+      // M3: in the sandboxed frame any touch of storage throws (opaque origin), and EmulatorJS looks at
+      // window.localStorage before it checks its own disableLocalStorage flag. Say there is none.
+      if (api.inFrame) Object.defineProperty(window, "localStorage", { get: () => undefined, configurable: true });
       for (const f of EJS_SCRIPTS) await loadScript(EJS_DIR + f);
       patchEmulatorJs();
     })();
@@ -521,6 +539,31 @@
       if (!file) {
         this.EJS.startGameError("This file type (" + method + ") isn't supported. Use .zip or .7z.");
         return new Promise(() => {});
+      }
+      if (api.inFrame) {
+        // M3: a worker can't be started from the frame's opaque origin, so the player page runs it and passes the files on.
+        return new Promise(callback => {
+          const files = {};
+          const each = m => {
+            const d = m.d;
+            if (!d) return;
+            if (d.t === 4) { // progress
+              const num = Math.floor(d.current / d.total * 100);
+              if (!isNaN(num)) updateMsg(" " + num + "%", true);
+            } else if (d.t === 2) { // one file
+              if (typeof fileCbFunc === "function") { fileCbFunc(d.file, d.data); files[d.file] = true; }
+              else files[d.file] = d.data;
+            }
+          };
+          api.shell.call({ t: "unzip", method, data: data instanceof Uint8Array ? data : new Uint8Array(data), tag: workerTag }, null, each).then(m => {
+            if (m.error) {
+              console.error("Shoalcade: unzip failed", m.error);
+              this.EJS.startGameError("Couldn't unpack " + (method === "7z" ? "the emulator" : "the game") + ".");
+              return;
+            }
+            callback(files);
+          });
+        });
       }
       return new Promise(callback => {
         // "?v=" so a browser never reuses a copy cached before the worker headers changed.
@@ -648,6 +691,11 @@
   }
 
   /** A big game (a PS1 disc) is held in the browser's memory while it plays: say so, so a phone that runs out isn't a mystery. */
+  /** A disc set (D-8) in the browser: only disc 1 is here, and where to play the rest. */
+  function discsNote(n) {
+    return "This game has " + n + " discs. The browser plays disc 1 only; play it in the Windows app or the phone app to change discs.";
+  }
+
   function bigGameNote(bytes) {
     return "This is a big game (" + Math.round(bytes / (1024 * 1024)) + " MB). It is kept in this browser's memory while you play, so on a phone it may be slow to start or not start. The phone app plays it straight from storage.";
   }
@@ -660,6 +708,8 @@
   function cheatForCore(consoleKey, code) {
     let lines = code.split("\n");
     if (consoleKey === "n64") lines = lines.map(l => /^\s*[0-9A-Fa-f]{12}\s*$/.test(l) ? l.trim().slice(0, 8) + " " + l.trim().slice(8) : l);
+    // GBA: mGBA reads "XXXXXXXX YYYYYYYY" / "XXXXXXXX YYYY" lines; with no space it reads past the line end and the cheat does nothing.
+    if (consoleKey === "gba") lines = lines.map(l => /^\s*([0-9A-Fa-f]{12}|[0-9A-Fa-f]{16})\s*$/.test(l) ? l.trim().slice(0, 8) + " " + l.trim().slice(8) : l);
     return lines.join("+");
   }
 
@@ -691,6 +741,12 @@
       this.ms = 0;        // played and not yet made into a session
       this.pending = [];  // sessions made but not yet confirmed by the server
       this.sending = null;
+      this.nextId = sessionId(); // the id the time played now will get (M3: the player page uses it too, so never twice)
+    }
+
+    /** What the player page needs to send the play time itself if the tab closes now (M3). */
+    snapshot() {
+      return { pending: this.pending.map(s => Object.assign({}, s)), ms: this.ms, since: this.since, nextId: this.nextId };
     }
 
     /** Playing or not, right now. Call on every change (start, pause, resume, tab shown/hidden, exit). */
@@ -716,7 +772,8 @@
       const seconds = Math.round(this.ms / 1000);
       if (seconds >= PLAY_MIN_SECONDS) {
         this.ms = 0;
-        this.pending.push({ id: sessionId(), seconds: Math.min(seconds, 24 * 3600), endedAt: this.now() });
+        this.pending.push({ id: this.nextId, seconds: Math.min(seconds, 24 * 3600), endedAt: this.now() });
+        this.nextId = sessionId();
       } else if (opts.final) {
         this.ms = 0; // under 10 seconds: not worth counting
       }
@@ -768,6 +825,25 @@
     /** Tells the play clock whether the game is being played now. */
     playChanged() {
       if (this.playClock) this.playClock.update(this.isPlaying());
+      this.mirror();
+    }
+
+    /**
+     * M3 close-time packet: keeps the player page told about anything that must still reach the server (the newest
+     * save not yet sent, play time), because once the tab is closing this frame's messages may never run. The player
+     * page sends it with keepalive when the tab closes, and asks "Leave anyway?" while `dirty`. Only sent on a change.
+     */
+    mirror() {
+      if (!api.inFrame || !this.sync) return;
+      const s = this.sync;
+      const save = s.conflict ? null : s.latest;
+      const play = this.playClock ? this.playClock.snapshot() : null;
+      const dirty = !!(s.conflict || s.latest || s.inFlight);
+      const key = [s.base, dirty, s.guard.after, this.cheatsUsed, JSON.stringify(play)].join("|");
+      const last = this.mirrored;
+      if (last && last.key === key && (last.save === save || sameBytes(last.save, save))) return;
+      this.mirrored = { key, save };
+      api.shell.post({ t: "packet", save: save || null, base: s.base || 0, afterSnapshot: !!s.guard.after, cheats: !!this.cheatsUsed, dirty, play });
     }
 
     /** Tries the settings load again later (5 s, 15 s, 30 s, 60 s, then every 2 minutes). */
@@ -854,10 +930,11 @@
         this.rom = await api.rom(this.itemId, (got, total) => {
           this.status("loading", "Downloading the game " + (total ? "(" + mbOf(got, total) + ")" : "(" + Math.round(got / 1024) + " KB)")
             + (total > BIG_GAME_BYTES ? " " + bigGameNote(total) : ""), got, total);
-        });
+        }, game.discs > 1 ? { disc: 0 } : undefined);
         this.launchSnapshots = await this.launchChoices();
         this.setState("ready");
-        const big = this.rom.bytes.length > BIG_GAME_BYTES ? " " + bigGameNote(this.rom.bytes.length) : "";
+        const big = (this.rom.bytes.length > BIG_GAME_BYTES ? " " + bigGameNote(this.rom.bytes.length) : "")
+          + (game.discs > 1 ? " " + discsNote(game.discs) : "");
         this.status("ready", (this.prefsLoadFailed
           ? "Ready to play. Your settings couldn't be loaded, so defaults are used and changes won't be saved until the server answers."
           : "Ready to play.") + big);
@@ -980,6 +1057,7 @@
       this.playChanged();
       this.playTimer = setInterval(() => this.playClock.flush(), PLAY_SEND_MS);
       this.sync.start();
+      if (api.inFrame) setInterval(() => this.mirror(), 2000); // M3: play time sent or confirmed meanwhile
       this.setState("playing");
       if (this.startSnapshot) {
         const s = this.startSnapshot;

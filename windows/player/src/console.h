@@ -28,9 +28,48 @@ struct ConsoleInfo {
     bool gb_clock;
     /** Fastest fast-forward allowed (D183: 4x everywhere on Windows, once each console's 4x sound test passes). */
     int max_ff;
+    // Windows-only consoles (GameCube, Wii, PS2: D218, plan-windows-gc-wii-ps2.md section 3.2). Each is false for
+    // the phone's consoles, so nothing changes for them.
+    /** P4: analogue buttons (RETRO_DEVICE_INDEX_ANALOG_BUTTON): the triggers' real level (GC L/R, PS2 L2/R2). */
+    bool analog_buttons = false;
+    /** P2: ask the driver for the newest OpenGL core version it has (4.6 down to the core's own), not the core's. */
+    bool newest_gl = false;
+    /** P7: on close, unload the game before the GL context is destroyed (the core flushes GPU work on unload). */
+    bool unload_before_gl_destroy = false;
+    /** The right stick is a stick for the game (GC C-stick, PS2 right stick, Wii pointer when not the mouse). */
+    bool right_stick = false;
+    /** P8: snapshots are written compressed (statefile.h): 90-110 MB raw, mostly zeros. */
+    bool compress_states = false;
+    /**
+     * P10: coarse rewind: a state every this many frames (about a second), ~30 kept, each step back = one of them.
+     * 0 = the usual rewind (a state every frame or two).
+     */
+    int coarse_rewind_frames = 0;
+    /**
+     * P4: how far a trigger (an axis) must travel before it also presses its digital button, for analog_buttons
+     * consoles. GameCube/Wii: 90% (Dolphin's own threshold; the pad's L/R click at the end). PS2: half way, as every
+     * other button-from-an-axis (review #14).
+     */
+    float trigger_click = 0.5f;
 };
 
 const ConsoleInfo *find_console(const std::string &key);
+
+/**
+ * Frames between rewind states unless the start message says otherwise: the one rule for the start message and the
+ * menu's Rewind switch. PS1 every 2nd frame (bigger states), coarse rewind (gc/wii/ps2, P10) its own interval, else 1.
+ */
+unsigned rewind_every(const ConsoleInfo &c);
+
+/** P5: Wii controller types (Dolphin libretro's retro_set_controller_port_device ids, Input.cpp). */
+struct WiiController {
+    const char *key;   // remote, sideways, nunchuk, classic (what the shell sends and remembers per game)
+    const char *label; // menu words
+    unsigned device;   // RETRO_DEVICE_JOYPAD with Dolphin's subclass
+};
+const std::vector<WiiController> &wii_controllers();
+/** The type for a key, or nullptr if unknown. */
+const WiiController *wii_controller(const std::string &key);
 
 /** One core option the player sets. */
 struct ForcedOption {
@@ -45,6 +84,11 @@ struct ForcedOption {
 
 /** Options for a console, from the table in forced_options.cpp. */
 const std::vector<ForcedOption> &forced_options(const std::string &console_key);
+/**
+ * The same plus the rules for one core of that console, by the core's library_name (PS2 has two cores the person
+ * picks between, D222 D-3: LRPS2 "ParaLLEl PS2" and "PCEE2", whose option values differ).
+ */
+std::vector<ForcedOption> forced_options(const std::string &console_key, const std::string &core_name);
 
 /** melonDS DS options for a DS screen layout (GameLayout.kt DsLayout.variables). Empty if the layout is unknown. */
 std::vector<std::pair<std::string, std::string>> ds_layout_options(const std::string &layout, bool swap);

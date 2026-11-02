@@ -98,6 +98,18 @@ object GameMenu {
         }
     }
 
+    // D-8: a disc set (.m3u) - the core's own disk control, as the Windows player's "Change disc".
+    const val DISCS = "Discs"
+    private const val DISC_PREFIX = "disc."
+    fun discId(i: Int) = "$DISC_PREFIX$i"
+    fun discLabel(i: Int) = "Disc ${i + 1}"
+    fun discOf(id: String): Int? = id.takeIf { it.startsWith(DISC_PREFIX) }?.removePrefix(DISC_PREFIX)?.toIntOrNull()?.takeIf { it >= 0 }
+
+    /** Only for a game whose core reports two or more discs (a disc set's .m3u). */
+    val DISC_SECTION = MenuSection("discs", DISCS, visible = { it.discCount > 1 }) { c ->
+        buildList { (0 until c.discCount).forEach { add(MenuItem.Choice(discId(it), discLabel(it), "disc", c.disc == it)) } }
+    }
+
     /** Snapshots would break a link session; on/off per console comes from the server settings (D38). */
     val SNAPSHOT_SECTION = MenuSection("snapshots", SNAPSHOTS, visible = { it.states }) { c ->
         buildList {
@@ -162,7 +174,7 @@ object GameMenu {
      * Sound for App Mute), then Display before Controls, so in landscape the Screen choices are the first thing below the fold.
      * The Settings screen lists the same settings in the same order.
      */
-    val SECTIONS = listOf(GAME_SECTION, SNAPSHOT_SECTION, SPEED_SECTION, CHEATS_SECTION, SOUND_SECTION, DISPLAY_SECTION, CONTROLS_SECTION)
+    val SECTIONS = listOf(GAME_SECTION, DISC_SECTION, SNAPSHOT_SECTION, SPEED_SECTION, CHEATS_SECTION, SOUND_SECTION, DISPLAY_SECTION, CONTROLS_SECTION)
 
     /** The sections shown for [ctx]: visible ones with at least one item. */
     fun sections(ctx: MenuContext, registry: List<MenuSection> = SECTIONS): List<ShownSection> =
@@ -197,6 +209,9 @@ data class MenuContext(
     val fastForward: Boolean = false,
     /** The fast-forward speed chosen (2-4). */
     val ffSpeed: Int = FastForward.DEFAULT_SPEED,
+    /** D-8: discs the core has (2+ for a disc set's .m3u; 0 otherwise) and the one in now (from 0). */
+    val discCount: Int = 0,
+    val disc: Int = 0,
 )
 
 /** One cheat as the menu shows it. */

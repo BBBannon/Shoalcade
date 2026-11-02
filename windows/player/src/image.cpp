@@ -37,7 +37,7 @@ bool write_png(const std::string &path, const RgbaImage &img, std::string *err) 
         if (err) *err = "no picture to write";
         return false;
     }
-    return write_file_atomic(path, png.data(), png.size(), err);
+    return write_file_direct(path, png.data(), png.size(), err); // no .tmp -> .png rename (antivirus, D225)
 }
 
 std::string frame_hash(const RgbaImage &img) {

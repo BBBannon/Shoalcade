@@ -35,7 +35,9 @@ The only third party contacted is **libretro**, by your **server**, for game nam
 | **The Celio Link server** (default `celio-server.up.railway.app`, changeable) | Game link data and your **IP address**. This server is **not run by Shoalcade or your Jellyfin** | Only if you switch on **Celio Link** (**Settings → Link play**, off by default) and use it |
 
 - **The Windows app** sends the same things as the phone app, to the same places.
-- Apart from Celio Link (if you switch it on), the apps contact **no other server**. Not us, not libretro, not Google, not Microsoft.
+- **Network adapter** (Windows app, **GameCube and PS2** games, **off** unless you switch it on for that game): the **game's own network traffic** can then go out, LAN or online, as it would from the real console. Where it goes is up to the game, not Shoalcade. Most games don't use it. **Wii** games have the Wii's own network built into the emulator, with no switch.
+- **Your PS2 BIOS** stays on the PC you picked it on: never uploaded to your Jellyfin, never sent anywhere.
+- Apart from Celio Link and a game's own network play (if you switch them on), the apps contact **no other server**. Not us, not libretro, not Google, not Microsoft.
 - Box art comes from **your** server.
 - The browser player and library pages can only talk to **your** server (their security policy blocks anything else). EmulatorJS's update check is switched off.
 - **Patch a game** runs entirely in your browser: the game file and patch you pick are **never uploaded**, not even to your own server.
@@ -81,7 +83,7 @@ If the phone was offline when you logged out, remove it in **Dashboard → Devic
 
 **Removed:** the program, its shortcuts and its "Installed apps" entry.
 
-**Kept on the PC:** your downloaded games, saves, backups, snapshots and login, in `%LOCALAPPDATA%\Shoalcade\`. A message says where.
+**Kept on the PC:** your downloaded games, saves, backups, snapshots, your PS2 BIOS copy and login, in `%LOCALAPPDATA%\Shoalcade\`. A message says where.
 
 - To remove everything, delete that folder yourself. ⚠️ **Push all first**: saves not yet uploaded are only there.
 

@@ -2,9 +2,11 @@
  * ShoalcadePlayer: the pause menu drawn with Dear ImGui over the game (part of Shoalcade).
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * A side drawer from the left, as the phone's GameDrawer.kt: dark panel, a scrim over the rest of the window (a click
- * there closes the menu), the game's name and a close button at the top, then every section with its title in blue
- * capitals and rows at least 48 px tall. Atkinson Hyperlegible (OFL) at a size that grows with the window.
+ * The plugin's "Pocket" player look (D217; Pages/sc.css + play.css): the Game section as the dark toolbar rail down the
+ * left (icon over label), every other section a tab of the settings panel on the right (dark icon tab rail, the game's
+ * name and a close button at the top, then that tab's rows), and a scrim over the game between them (a click there
+ * closes the menu). The tab shown follows the keyboard / controller highlight (L1 / R1 jump a section = a tab); a
+ * click on a tab only changes what is shown. Atkinson Hyperlegible (OFL) at a size that grows with the window.
  * Only draws: what the rows mean and what a pick does is menu.cpp and player.cpp. Never used when headless.
  */
 #pragma once
@@ -35,7 +37,14 @@ public:
         bool scroll_to_top = false; // just opened: start at the top
         std::string toast;         // a short note at the bottom ("Saved to slot 2."), "" = none
         std::string corner;        // link play: the link's state in the top corner, as the phone shows it ("" = none)
+        bool menu_button = false;  // the ☰ button (menu closed, the mouse moved lately)
+        bool menu_button_hover = false;
     };
+    /**
+     * Where the ☰ button goes in a window of w x h (window coordinates: x, y, w, h): the top-left corner, as the
+     * browser player's toolbar rail is on the left. It grows with the window, like the menu's words.
+     */
+    static void menu_button_rect(float w, float h, float out[4]);
     struct Out {
         std::string pick;          // a row clicked with the mouse
         std::string slider;        // a slider dragged with the mouse ...
@@ -62,5 +71,6 @@ private:
         float x, y, w, h;
     };
     std::map<std::string, Rect> rects_;
+    std::string tab_, shown_tab_, last_focus_; // the panel tab shown, the one drawn last frame, the highlight then
 };
 } // namespace sc

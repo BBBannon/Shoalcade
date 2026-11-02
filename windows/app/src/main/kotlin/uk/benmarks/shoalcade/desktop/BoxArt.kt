@@ -22,8 +22,9 @@ class BoxArt(private val dir: File) {
         runCatching { org.jetbrains.skia.Image.makeFromEncoded(it.readBytes()).toComposeImageBitmap() }.getOrNull()
     }
 
-    /** Downloads any missing art. True if anything new arrived. */
-    suspend fun fetchMissing(client: JellyfinClient, games: List<Game>): Boolean = withContext(Dispatchers.IO) {
+    /** Downloads any missing art. True if anything new arrived. Stops (writing nothing more) once [keepGoing] is false. */
+    suspend fun fetchMissing(client: JellyfinClient, games: List<Game>, keepGoing: () -> Boolean = { true }): Boolean = withContext(Dispatchers.IO) {
+        if (!keepGoing()) return@withContext false
         dir.mkdirs()
         val existing = dir.listFiles()?.toList().orEmpty()
         var got = false
@@ -32,7 +33,8 @@ class BoxArt(private val dir: File) {
             if (f.isFile) continue
             if (!JellyfinClient.isSafeId(g.id)) continue
             val bytes = runCatching { client.boxArt(g.id, g.imageTag!!) }.getOrNull() ?: continue
-            if (runCatching { AtomicFile.write(f, bytes) }.isSuccess) {
+            if (!keepGoing()) break // logged out meanwhile: no more of the old user's art
+            if (runCatching { AtomicFile.writeDirect(f, bytes) }.isSuccess) { // a picture: no .tmp rename (antivirus, D225)
                 got = true
                 existing.filter { it.name.startsWith("${g.id}-") && it != f }.forEach { it.delete() } // the old picture
             }

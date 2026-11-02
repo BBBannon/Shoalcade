@@ -197,11 +197,21 @@ data class StartRequest(
     val cheatsAllowed: Boolean? = null,
     /** 3DS screen layout (PROTOCOL.md `layout`): the phone's N3dsLayout key and Flip. */
     val n3dsLayout: N3dsLayoutStart? = null,
+    /** DS screen layout (PROTOCOL.md `layout`): the phone's DsLayout key and Swap. */
+    val dsLayout: DsLayoutStart? = null,
     /** The 3DS check (PROTOCOL.md `start.check`): seconds of warm-up, then seconds measured. */
     val check: Check? = null,
+    /** Wii (PROTOCOL.md `controllers`): each port's controller, port 0 first; empty = the player's default. */
+    val controllers: List<String> = emptyList(),
+    /** PS2 (P4b, PROTOCOL.md `controls.pressureCross`): the right trigger also presses Cross with its real level. */
+    val pressureCross: Boolean? = null,
+    /** PROTOCOL.md `controls` `{keyboard, hotkeys, gamepads}`: the buttons changed in the game menu ([ControlsStore]). */
+    val controls: JSONObject? = null,
 ) {
     data class N3dsLayoutStart(val layout: String, val flip: Boolean)
-    data class Check(val warmUp: Int, val measure: Int)
+    data class DsLayoutStart(val layout: String, val swap: Boolean)
+    /** [targetFps]: the scene's own frame rate (GameCube / Wii check), echoed in `checkResult`; null = the core's. */
+    data class Check(val warmUp: Int, val measure: Int, val targetFps: Int? = null)
     /** [token] is a one-time word for the local link stream only (never the Jellyfin token). */
     data class LinkStart(val port: Int, val host: Boolean, val token: String, val cable: Boolean, val dsMac: String?, val peer: String)
     data class CheatItem(val id: String, val name: String, val code: String, val enabled: Boolean)
@@ -241,7 +251,12 @@ data class StartRequest(
         saveIntervalSeconds?.let { put("saveIntervalSeconds", it) }
         cheatsAllowed?.let { put("cheatsAllowed", it) }
         n3dsLayout?.let { put("layout", JSONObject().put("n3ds", it.layout).put("flip", it.flip)) }
-        check?.let { put("check", JSONObject().put("warmUp", it.warmUp).put("measure", it.measure)) }
+        dsLayout?.let { put("layout", JSONObject().put("ds", it.layout).put("swap", it.swap)) }
+        check?.let { put("check", JSONObject().put("warmUp", it.warmUp).put("measure", it.measure).apply { it.targetFps?.let { t -> put("targetFps", t) } }) }
+        if (controllers.isNotEmpty()) put("controllers", JSONArray(controllers))
+        if (controls != null || pressureCross != null) put("controls", JSONObject(controls?.toString() ?: "{}").apply {
+            pressureCross?.let { put("pressureCross", it) }
+        })
         link?.let { l ->
             put("link", JSONObject().put("port", l.port).put("role", if (l.host) "host" else "join").put("token", l.token)
                 .put("cable", l.cable).put("peer", l.peer).apply { l.dsMac?.let { put("dsMac", it) } })

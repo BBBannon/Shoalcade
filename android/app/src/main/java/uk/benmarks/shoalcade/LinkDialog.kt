@@ -2,6 +2,7 @@ package uk.benmarks.shoalcade
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -9,7 +10,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -56,7 +60,7 @@ fun LinkDialog(game: Game, userId: String, relay: RelayHttp? = null, onDismiss: 
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Link play") },
+        title = { DialogTitle("Link play") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (problem != null) { Text(problem); return@Column }
@@ -65,14 +69,20 @@ fun LinkDialog(game: Game, userId: String, relay: RelayHttp? = null, onDismiss: 
                         Text("Both phones must be on the same Wi-Fi, or one phone's hotspot. Open this game's Link play on both, then:")
                         Text("• One phone taps Host and shows a PIN\n• The other taps Join and types the PIN", Modifier.padding(vertical = 8.dp))
                         if (console == Console.GBA) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(cable, { cable = it })
+                            // The whole row is the checkbox, so TalkBack reads its words with it and the label is tappable too.
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .toggleable(value = cable, role = Role.Checkbox, onValueChange = { cable = it }),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(cable, onCheckedChange = null)
                                 Text("Link cable mode: Ruby/Sapphire with Emerald/FireRed/LeafGreen, and Emerald hacks like Monomyth (host decides)")
                             }
                         }
                         if (console == Console.NDS) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(dsMac, { dsMac = it; LinkPrefs.setDsMacEnabled(ctx, it) })
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .toggleable(value = dsMac, role = Role.Checkbox,
+                                    onValueChange = { dsMac = it; LinkPrefs.setDsMacEnabled(ctx, it) }),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(dsMac, onCheckedChange = null)
                                 Text("Use a different DS wireless ID on this phone")
                             }
                             Text(
@@ -222,7 +232,8 @@ fun LinkDialog(game: Game, userId: String, relay: RelayHttp? = null, onDismiss: 
                         Text("Connecting to ${st.to}…", Modifier.padding(start = 12.dp))
                     }
                     is LobbyState.Connected -> Text("Connected. Starting the game…")
-                    is LobbyState.Failed -> Text(st.reason, color = MaterialTheme.colorScheme.error)
+                    is LobbyState.Failed -> Text(st.reason, color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 }
             }
         },

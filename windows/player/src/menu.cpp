@@ -4,6 +4,8 @@
  */
 #include "menu.h"
 
+#include "console.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -50,8 +52,16 @@ Section game_section(const Context &c) {
     Section s{"game", GAME, {}};
     s.items.push_back(action(ID_RESUME, RESUME));
     s.items.push_back(action(ID_SCREENSHOT, SCREENSHOT));
+    // The browser's Restart (two presses). Not in link play: the other side wouldn't follow.
+    if (c.can_restart) s.items.push_back(action(ID_RESTART, RESTART, c.armed == ID_RESTART ? RESTART_AGAIN : ""));
     s.items.push_back(action(ID_CLOSE, CLOSE));
     if (c.can_upload) s.items.push_back(action(ID_CLOSE_UPLOAD, CLOSE_UPLOAD));
+    if (c.discs.size() > 1) {
+        // P12: a game on more than one disc (.m3u): the game asks for the next disc, the person picks it here.
+        s.items.push_back(heading("disc", CHANGE_DISC));
+        for (size_t i = 0; i < c.discs.size(); i++)
+            s.items.push_back(choice(DISC_PREFIX + std::to_string(i), c.discs[i], (int)i == c.disc));
+    }
     return s;
 }
 
@@ -94,6 +104,7 @@ Section speed_section(const Context &c) {
         for (int n = 2; n <= std::min(4, c.max_ff); n++) s.items.push_back(choice(speed_id(n), speed_label(n), c.ff_speed == n));
     }
     if (c.rewind_possible) s.items.push_back(toggle(ID_REWIND, REWIND, c.rewind_on, c.rewind_key.empty() ? "" : "When on, hold " + c.rewind_key + " to go back"));
+    else if (!c.rewind_off_why.empty()) s.items.push_back(note("speed.rewind.off", c.rewind_off_why));
     return s;
 }
 
@@ -138,18 +149,41 @@ Section display_section(const Context &c) {
 
 Section controls_section(const Context &c) {
     Section s{"controls", CONTROLS, {}};
-    auto line = [](const std::string &id, const ControlLine &l) {
+    // Each line: the button, then what presses it now; picked = waiting for the new key or button (its hint says so).
+    auto line = [&](const std::string &id, const ControlLine &l, bool keys_only) {
         Item i;
-        i.kind = Kind::Info, i.id = id, i.label = l.what;
-        if (!l.keys.empty()) i.hint = "Keyboard: " + l.keys;
-        if (!l.pad.empty()) i.hint += (i.hint.empty() ? "" : "\n") + std::string("Controller: ") + l.pad;
+        i.kind = l.fixed ? Kind::Info : Kind::Bind, i.id = id, i.label = l.what;
+        i.hint = "Keyboard: " + (l.keys.empty() ? std::string(NOT_SET) : l.keys);
+        if (!l.pad.empty()) i.hint += "\nController: " + l.pad;
+        else if (!keys_only && !c.pad_name.empty()) i.hint += "\nController: " + std::string(NOT_SET);
+        if (c.listening == id) i.hint = keys_only ? LISTEN_KEY : LISTEN, i.on = true;
         return i;
     };
-    if (!c.controls.empty()) s.items.push_back(heading("controls.game", "Game buttons"));
-    for (size_t k = 0; k < c.controls.size(); k++) s.items.push_back(line("control." + std::to_string(k), c.controls[k]));
-    if (!c.shortcuts.empty()) s.items.push_back(heading("controls.shortcuts", "Shortcuts"));
-    for (size_t k = 0; k < c.shortcuts.size(); k++) s.items.push_back(line("shortcut." + std::to_string(k), c.shortcuts[k]));
-    s.items.push_back(note("controls.later", "Changing the buttons comes in a later version."));
+    if (c.console == "wii") {
+        // P5: which Wii controller player 1 holds (the game may want the Nunchuk or the Classic Controller).
+        s.items.push_back(heading("wii.ctrl", WII_CONTROLLER));
+        for (const auto &w : wii_controllers())
+            s.items.push_back(choice(std::string(WII_CONTROLLER_PREFIX) + w.key, w.label, c.wii_controller == w.key));
+        s.items.push_back(note("wii.ctrl.note", "The pointer is the mouse. Shake: right trigger."));
+    }
+    if (!c.controls.empty()) {
+        s.items.push_back(heading("controls.game", GAME_BUTTONS));
+        s.items.push_back(note("controls.fine", CONTROLS_FINE));
+        // The phone's words for which controller is being changed (ControlsWords.forGames / NO_CONTROLLER).
+        s.items.push_back(note("controls.pad", c.pad_name.empty()
+                                                   ? std::string(NO_CONTROLLER) + ". " + NO_CONTROLLER_HELP
+                                                   : "Controller: " + c.pad_name + ". Buttons for " + c.console_name +
+                                                         " games, saved on this PC just for this controller model."));
+        for (const auto &l : c.controls) s.items.push_back(line(CONTROL_PREFIX + l.name, l, false));
+        s.items.push_back(action(ID_RESET_KEYS, "Reset " + c.console_name + " keys to defaults"));
+        if (!c.pad_name.empty()) s.items.push_back(action(ID_RESET_PAD, RESET_PAD));
+    }
+    if (!c.shortcuts.empty()) {
+        s.items.push_back(heading("controls.shortcuts", SHORTCUTS));
+        s.items.push_back(note("controls.shortcuts.fine", SHORTCUTS_FINE));
+        for (const auto &l : c.shortcuts) s.items.push_back(line(SHORTCUT_PREFIX + l.name, l, true));
+        s.items.push_back(action(ID_RESET_SHORTCUTS, "Reset " + c.console_name + " shortcuts to defaults"));
+    }
     return s;
 }
 } // namespace
@@ -182,6 +216,7 @@ const std::vector<Layout> &n3ds_layouts() {
 }
 
 bool needs_confirm(const Context &c, const std::string &id) {
+    if (id == ID_RESTART) return true; // play since the last save would be lost (the browser asks twice too)
     if (id.rfind("snap.load.", 0) == 0) return true;
     if (id.rfind("snap.save.", 0) == 0) {
         const SlotInfo *s = slot_of(c, id.substr(10));

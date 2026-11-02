@@ -43,6 +43,33 @@ class N3dsDisplay(ctx: Context) {
 }
 
 /**
+ * The DS screens chosen on this PC, kept for the next game as the 3DS's are ([N3dsDisplay]). The phone keeps them per
+ * way up in its `display` store (DisplayPrefs.kt: `ds.land` / `ds.port`, `swap.land` / `swap.port`); the PC has its
+ * own pair there (`ds.pc`, `swap.pc`, swap as "1" like the phone's). Default: Stacked, the player's own start.
+ */
+class DsDisplay(ctx: Context) {
+    private val prefs = ctx.getSharedPreferences("display", Context.MODE_PRIVATE)
+
+    /** The phone's DsLayout keys (side, stack, big). */
+    val layout: String get() = runCatching { prefs.getString(LAYOUT, null) }.getOrNull()?.takeIf { uk.benmarks.shoalcade.DsLayout.fromKey(it) != null } ?: DEFAULT
+    val swap: Boolean get() = runCatching { prefs.getString(SWAP, null) }.getOrNull() == "1"
+
+    /** The player's `layoutChanged` (menu or the shell): kept for the next game. Unknown names are ignored. */
+    fun keep(layout: String?, swap: Boolean?) {
+        val e = prefs.edit()
+        layout?.takeIf { uk.benmarks.shoalcade.DsLayout.fromKey(it) != null }?.let { e.putString(LAYOUT, it) }
+        swap?.let { if (it) e.putString(SWAP, "1") else e.remove(SWAP) }
+        e.apply()
+    }
+
+    companion object {
+        const val DEFAULT = "stack"
+        private const val LAYOUT = "ds.pc"
+        private const val SWAP = "swap.pc"
+    }
+}
+
+/**
  * The 3DS check on Windows: **advisory only** (plan Q6): it runs the phone's test scene and shows how fast this PC
  * ran it, but 3DS games always download and play. The rules (what counts as Pass / Borderline / Too slow, the speed
  * line, the saved result and "run it again after an update") are the phone's own N3dsCheck.kt, compiled unchanged;

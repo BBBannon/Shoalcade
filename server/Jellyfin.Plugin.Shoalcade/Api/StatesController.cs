@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,6 +28,9 @@ public class StatesController : ShoalcadeControllerBase
     {
     }
 
+    /// <summary>Gets the biggest snapshot taken (the admin's MaxSnapshotMegabytes, 1-1024 MB).</summary>
+    private static long MaxSnapshotBytes => Math.Clamp(ShoalcadeServices.Config.MaxSnapshotMegabytes, 1, 1024) * 1024L * 1024L;
+
     /// <summary>Lists filled snapshot slots and whether snapshots are on for this console.</summary>
     /// <param name="id">Item id.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -41,7 +45,7 @@ public class StatesController : ShoalcadeControllerBase
         }
 
         // A removed game can't be played, so new snapshots are "off" for it.
-        return new StateListDto(Services.States.List(user.Id, id), rom is not null && await SnapshotsEnabledAsync(user, rom, cancellationToken).ConfigureAwait(false));
+        return new StateListDto(Services.States.List(user.Id, id), rom is not null && await SnapshotsEnabledAsync(user, rom, cancellationToken).ConfigureAwait(false), MaxSnapshotBytes);
     }
 
     /// <summary>Downloads a snapshot.</summary>
@@ -84,8 +88,15 @@ public class StatesController : ShoalcadeControllerBase
             return Fail(StatusCodes.Status403Forbidden, "snapshots_off", "Snapshots are switched off for " + rom!.Console.DisplayName + " in your settings.");
         }
 
+        // D221: a snapshot from the old Game Boy engine (gambatte, D81) can't be loaded any more, but it is never
+        // replaced: only deleted on purpose (or downloaded).
+        if (Services.States.List(user.Id, rom!.Id).FirstOrDefault(s => s.Slot == slot) is { } held && StateStore.IsOldEngine(held))
+        {
+            return Fail(StatusCodes.Status409Conflict, "old_engine", "This slot holds a snapshot from the old Game Boy emulator. It's kept until you delete it, so use another slot.");
+        }
+
         var cfg = ShoalcadeServices.Config;
-        var (uploadSlot, busy) = await BeginUploadAsync(user.Id, Math.Clamp(cfg.MaxSnapshotMegabytes, 1, 1024) * 1024L * 1024L, cancellationToken).ConfigureAwait(false);
+        var (uploadSlot, busy) = await BeginUploadAsync(user.Id, MaxSnapshotBytes, cancellationToken).ConfigureAwait(false);
         if (busy is not null)
         {
             return busy;
@@ -97,7 +108,7 @@ public class StatesController : ShoalcadeControllerBase
             var tmp = Services.States.NewUploadPath();
             try
             {
-                var (length, sha, bodyFail) = await ReadBodyToFileAsync(tmp, Math.Clamp(cfg.MaxSnapshotMegabytes, 1, 1024) * 1024L * 1024L, cancellationToken).ConfigureAwait(false);
+                var (length, sha, bodyFail) = await ReadBodyToFileAsync(tmp, MaxSnapshotBytes, cancellationToken).ConfigureAwait(false);
                 if (bodyFail is not null)
                 {
                     return bodyFail;
@@ -284,10 +295,15 @@ public class StatesController : ShoalcadeControllerBase
             return Fail(StatusCodes.Status400BadRequest, "bad_slot", "Slot must be 1, 2, 3 or auto.");
         }
 
-        if (Library.GetRom(id, user) is RomItem r)
+        if (Library.GetRom(id, user, out var cantReadNow) is RomItem r)
         {
             rom = r;
             return r.Console.BrowserCore is null ? GameNotFound() : null;
+        }
+
+        if (cantReadNow)
+        {
+            return CantReadGame(); // S4
         }
 
         // Removed from the library (not just hidden from this user), and this user has snapshots of it.

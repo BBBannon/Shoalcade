@@ -159,7 +159,8 @@ void Saves::flush(Core &core, const char *reason) {
 bool Saves::poke(Core &core, size_t offset, const std::vector<uint8_t> &bytes) {
     size_t size = core.get_memory_size(RETRO_MEMORY_SAVE_RAM);
     uint8_t *mem = static_cast<uint8_t *>(core.get_memory_data(RETRO_MEMORY_SAVE_RAM));
-    if (!mem || offset + bytes.size() > size) return false;
+    // Written so a huge offset can't wrap the sum round to a small number (security review 02/11 P-L2).
+    if (!mem || offset > size || bytes.size() > size - offset) return false;
     memcpy(mem + offset, bytes.data(), bytes.size());
     return true;
 }

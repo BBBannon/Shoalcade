@@ -22,6 +22,9 @@ public static class LibretroNames
         ["3ds"] = "Nintendo - Nintendo 3DS",
         ["psp"] = "Sony - PlayStation Portable",
         ["psx"] = "Sony - PlayStation",
+        ["gc"] = "Nintendo - GameCube",
+        ["wii"] = "Nintendo - Wii",
+        ["ps2"] = "Sony - PlayStation 2",
     };
 
     private static readonly string[] Articles = ["The", "A", "An"];

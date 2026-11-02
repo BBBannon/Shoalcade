@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #pragma once
+#include <array>
 #include <cstdint>
+#include <future>
 #include <map>
 #include <string>
 #include <vector>
@@ -68,9 +70,17 @@ private:
     void apply_layout(const json &msg, const char *by = "shell");
     void set_ds_layout(const std::string &ds, bool swap, const char *by);
     void set_n3ds_layout(const std::string &key, bool flip, const char *by);
+    /** P5: a Wii controller type on a port (Dolphin's device id); reports `controllerChanged`. */
+    bool set_wii_controller(unsigned port, const std::string &type, const char *by);
+    /** P12: the core's discs (disk control interface): names, and which is in the drive (-1 = none). */
+    std::vector<std::string> disc_names() const;
+    int disc_index() const;
+    /** P12: put disc `index` in the drive (eject, swap, close); reports `discChanged`. */
+    bool set_disc(int index, const char *by);
     void after_present();
     void check_tick();
     void stop_check(const char *reason);
+    std::string check_name() const;
     bool can_snapshot() const;
 
     // The pause menu (menu.h / menu_ui.h).
@@ -86,6 +96,16 @@ private:
     void draw_overlay();
     void send_menu_state();
     void toast(const std::string &text, double seconds = 2.5);
+    /** Restart (the browser's): the save is written first, then the core is reset (retro_reset). */
+    bool restart_game(const char *by);
+    // Changing the buttons (Controls): waiting for the press, and what it does.
+    void start_listening(const std::string &id);
+    void stop_listening();
+    /** Handles e while a Controls row waits for a press. */
+    void listen_event(const SDL_Event &e);
+    void bind_done(const Input::Change &c, bool pad);
+    /** Tells the shell what changed (`controlsChanged`), so it keeps it for this console. */
+    void send_controls(bool keyboard, bool hotkeys, const std::string &pad_model);
     /** Link play: the corner line (the phone's watchLink words), "" outside a link session. */
     std::string link_corner() const;
     void load_slots(const json &list);
@@ -94,6 +114,14 @@ private:
     void set_fullscreen(bool on, const char *by);
     void report_display(const char *by);
     void set_rewind_enabled(bool on, const char *by);
+    void configure_rewind();
+    /** P10: waits for the step being packed (before anything else touches the rewind ring). */
+    void rewind_wait();
+    void note_rewind_capture(double ms, double core_ms);
+    json rewind_capture_json() const {
+        return {{"steps", rewind_capture_n_}, {"average", rewind_capture_n_ ? rewind_capture_total_ms_ / rewind_capture_n_ : 0.0},
+                {"most", rewind_capture_max_ms_}};
+    }
     void set_ff(bool on, int speed, const char *by);
     void set_mute(bool on, const char *by);
     void set_volume(float level, const char *by);
@@ -165,14 +193,29 @@ private:
     bool can_upload_ = true, snapshots_allowed_ = true, speed_allowed_ = true, cheats_allowed_ = true;
     bool rewind_allowed_ = true, auto_snapshot_on_close_ = false;
     size_t rewind_mb_ = 64;
+    // P10: how long saving a coarse rewind step takes (the hitch), and why rewind went off ("" = it didn't).
+    uint64_t rewind_capture_n_ = 0, rewind_shown_ = 0;
+    double rewind_capture_total_ms_ = 0, rewind_capture_max_ms_ = 0, rewind_first_ms_ = 0;
+    double rewind_max_hitch_ms_ = 0;
+    // P10: the step being packed on another thread, from rewind_job_buf_ into rewind_. Declared AFTER both, so it is
+    // destroyed first: a std::async future waits for its job there, before the buffer and ring are freed (review #12).
+    std::vector<uint8_t> rewind_job_buf_;
+    std::future<void> rewind_job_;
+    std::string rewind_off_why_;
     std::string ds_layout_ = "stack";
     bool ds_swap_ = false;
     std::string n3ds_layout_ = "stacked";
     bool n3ds_flip_ = false;
+    // P5: each port's Wii controller type (console.cpp wii_controllers keys). The shell remembers it per game.
+    std::vector<std::string> wii_controller_ = std::vector<std::string>(4, "remote");
+    // P12: the core's disk control interface (the extended one, or the basic one with the extra calls null).
+    retro_disk_control_ext_callback disk_{};
+    bool have_disk_ = false;
     // The 3DS check (D151; advisory on Windows, D-Q6): `start.check`. Frames shown each wall-clock second, after a
     // warm-up, reported to the shell, which works out the result with the phone's N3dsCheck rules.
     bool check_ = false;
     int check_warm_ = 10, check_measure_ = 30, check_second_ = 0;
+    double check_target_fps_ = 0;
     double check_next_ = 0;
     uint64_t check_frames_at_ = 0;
     std::vector<int> check_fps_;
@@ -185,5 +228,16 @@ private:
     double pad_repeat_at_ = 0;
     MenuUi::Out ui_out_;
     SDL_Joystick *test_pad_ = nullptr; // debug.pad
+    // Changing a button (Controls): the row waiting for a press, since when, and where each controller's axes rested
+    // then (a trigger resting pushed in isn't a new press: the phone's BindListener).
+    std::string listen_id_;
+    double listen_at_ = 0;
+    std::map<SDL_JoystickID, std::array<float, SDL_GAMEPAD_AXIS_COUNT>> listen_rest_;
+    std::string listen_cancelled_;     // a mouse click cancelled this row's wait (a click on the row itself mustn't
+    double listen_cancelled_at_ = 0;   // start it again)
+    // The ☰ button (mouse-only use, as the browser's toolbar rail): shown for 2.5 s after the mouse moves.
+    double mouse_moved_at_ = -1e9;
+    bool menu_button_shown() const;
+    bool menu_button_rect(float out[4]) const;
 };
 } // namespace sc

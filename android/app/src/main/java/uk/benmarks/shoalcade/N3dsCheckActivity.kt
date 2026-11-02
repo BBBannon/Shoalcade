@@ -112,7 +112,7 @@ private fun CheckScreen(onClose: () -> Unit) {
 
     if (askAnyway) AlertDialog(
         onDismissRequest = { askAnyway = false },
-        title = { Text(N3dsCheck.ANYWAY + "?") },
+        title = { DialogTitle(N3dsCheck.ANYWAY + "?") },
         text = { Text(N3dsCheck.ANYWAY_WARNING) },
         confirmButton = { TextButton(onClick = {
             N3dsCheck.unlockAnyway(store); saved = N3dsCheck.read(store); askAnyway = false

@@ -1,0 +1,18 @@
+Shoalcade build fix for the Windows (MinGW GCC, CMake) libretro core. No effect on any other build.
+The multi-ISA tiers picked MSVC's /arch:AVX and /arch:AVX2 for every WIN32 build, so GCC on Windows was handed
+MSVC flags (26 compile failures). Test the compiler, not the OS: MSVC keeps /arch, MinGW GCC takes the GCC branch
+(-msse4.1 -mavx ...), exactly as on Linux.
+
+diff --git a/pcsx2/CMakeLists.txt b/pcsx2/CMakeLists.txt
+index 6a1f82b..3d197b1 100644
+--- a/pcsx2/CMakeLists.txt
++++ b/pcsx2/CMakeLists.txt
+@@ -572,7 +572,7 @@ if(DISABLE_ADVANCE_SIMD AND _M_X86)
+ 	if(USE_GCC)
+ 		target_link_options(PCSX2_FLAGS INTERFACE -Wno-odr)
+ 	endif()
+-	if(WIN32)
++	if(MSVC)
+ 		set(compile_options_avx2 /arch:AVX2)
+ 		set(compile_options_avx  /arch:AVX)
+ 	elseif(USE_GCC)

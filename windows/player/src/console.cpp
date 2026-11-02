@@ -20,10 +20,39 @@ static const ConsoleInfo kConsoles[] = {
     {"psx", "PS1", 131072, false, true, 1, false, false, 4},
     {"n64", "N64", 296960, false, false, 4, true, false, 4},
     {"3ds", "3DS", 0, true, false, 1, true, false, 4},
+    // Windows only (D218; plan-windows-gc-wii-ps2.md P1): folder saves (Dolphin's User folder; the PS2 memory card
+    // in the save folder), coarse rewind (P10, D-8 kept: 90-110 MB states, one a second), four players, sticks,
+    // analogue triggers, newest GL, unload before the GL context goes.
+    //  key    name        save  folder rewind pl stick  clock  maxFF  abtn  newGL  unload rstick packed coarse-rewind click
+    {"gc", "GameCube", 0, true, true, 4, true, false, 4, true, true, true, true, true, 60, 0.9f},
+    {"wii", "Wii", 0, true, true, 4, true, false, 4, true, true, true, true, true, 60, 0.9f},
+    {"ps2", "PS2", 0, true, true, 4, true, false, 4, true, true, true, true, true, 60},
 };
 
 const ConsoleInfo *find_console(const std::string &key) {
     for (const auto &c : kConsoles)
+        if (key == c.key) return &c;
+    return nullptr;
+}
+
+unsigned rewind_every(const ConsoleInfo &c) {
+    if (c.coarse_rewind_frames > 0) return (unsigned)c.coarse_rewind_frames;
+    return std::string(c.key) == "psx" ? 2 : 1;
+}
+
+const std::vector<WiiController> &wii_controllers() {
+    // Dolphin libretro Input.cpp: RETRO_DEVICE_WIIMOTE = JOYPAD, _SW = (2 << 8), _NC = (3 << 8), _CC = (4 << 8).
+    static const std::vector<WiiController> l = {
+        {"remote", "Wii Remote", 1},
+        {"sideways", "Wii Remote, sideways", (2u << 8) | 1},
+        {"nunchuk", "Wii Remote + Nunchuk", (3u << 8) | 1},
+        {"classic", "Classic Controller", (4u << 8) | 1},
+    };
+    return l;
+}
+
+const WiiController *wii_controller(const std::string &key) {
+    for (const auto &c : wii_controllers())
         if (key == c.key) return &c;
     return nullptr;
 }

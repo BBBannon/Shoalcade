@@ -9,8 +9,8 @@
 # the uninstall entry, or a running Shoalcade.exe. Then:
 #  1. a pretend save in the data folder BEFORE installing (install, reinstall and uninstall must all leave it alone)
 #  2. Setup.exe --silent: files, Desktop + Start menu shortcuts, uninstall entry, core DLLs = cores.lock
-#  3. the INSTALLED Shoalcade.exe starts (log line, window shown, alive ~20 s, Java in-process), PPSSPP files copied
-#     to the data folder; then it is closed
+#  3. the INSTALLED Shoalcade.exe starts (log line, window shown, alive ~20 s, Java in-process), PPSSPP files, Dolphin's
+#     Sys and PCEE2's resources copied to the data folder (a pretend user PS2 BIOS + card there untouched); then closed
 #  4. Setup.exe again over itself: still installed, the pretend save + settings byte-identical
 #  5. Update.exe uninstall --silent (its message about the kept data folder closes itself after 60 s, or click OK):
 #     install folder, shortcuts and uninstall entry gone; data folder + pretend save untouched (SHA-256)
@@ -69,6 +69,13 @@ SAVE_SHA=$(sha256sum "$SAVE" | cut -d' ' -f1)
 printf 'smoke-test settings\n' > "$DATAD/smoketest-settings.txt"
 data_sum() { (cd "$DATAD" && find library smoketest-settings.txt -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1); }
 DATA_SHA=$(data_sum)
+# The user's own PS2 BIOS + memory card in the system folder the launcher copies PCEE2's resources into: never touched.
+mkdir -p "$DATAD/system/pcsx2/bios" "$DATAD/system/pcsx2/memcards"
+echo 'pretend user BIOS' > "$DATAD/system/pcsx2/bios/user-bios.bin"
+echo 'pretend user card' > "$DATAD/system/pcsx2/memcards/Mcd001.ps2"
+user_sys_sum() { (cd "$DATAD/system/pcsx2" && find bios memcards -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1); }
+USER_SYS_SHA=$(user_sys_sum)
+NCORES=$(grep -v '^#' "$ROOT/windows/cores/cores.lock" | awk -F'\t' '$2=="win"' | wc -l)
 
 echo "== 2. install (Setup.exe --silent)"
 t0=$(date +%s)
@@ -76,8 +83,11 @@ t0=$(date +%s)
 echo "   took $(( $(date +%s) - t0 )) s"
 check "installed into %LOCALAPPDATA%\\$PACK (not the data folder)" "[ -f '$CUR/Shoalcade.exe' ] && [ -f '$INST/Update.exe' ]"
 check "Java runtime, jars, launcher.cfg" "[ -f '$CUR/runtime/bin/server/jvm.dll' ] && [ -f '$CUR/app/launcher.cfg' ] && [ -f '$CUR/app/skiko-windows-x64.dll' ]"
-check "player + SDL3 + 7 cores" "[ -f '$CUR/app/player/ShoalcadePlayer.exe' ] && [ -f '$CUR/app/player/SDL3.dll' ] && [ \$(ls '$CUR/app/cores/'*_libretro.dll | wc -l) = 7 ]"
+check "player + SDL3 + $NCORES cores (cores.lock)" "[ -f '$CUR/app/player/ShoalcadePlayer.exe' ] && [ -f '$CUR/app/player/SDL3.dll' ] && [ \$(ls '$CUR/app/cores/'*_libretro.dll | wc -l) = $NCORES ]"
 check "PPSSPP files + stamp" "[ -f '$CUR/app/system/PPSSPP/LICENSE.TXT' ] && [ -s '$CUR/app/system/PPSSPP.stamp' ]"
+check "Dolphin Sys + stamp (only Sys\)" "[ -f '$CUR/app/system/dolphin-emu/Sys/codehandler.bin' ] && [ -s '$CUR/app/system/dolphin-emu.stamp' ] && [ \"\$(ls -A '$CUR/app/system/dolphin-emu')\" = Sys ]"
+check "PCEE2 resources + stamp (only resources\)" "[ -f '$CUR/app/system/pcsx2/resources/GameIndex.yaml' ] && [ -s '$CUR/app/system/pcsx2.stamp' ] && [ \"\$(ls -A '$CUR/app/system/pcsx2')\" = resources ]"
+check "no BIOS, memory card or key file installed" "[ -z \"\$(find '$CUR' \( -type d \( -iname bios -o -iname memcards \) \) -o -iname '*.ps2' -o -iname IPL.bin -o -iname 'scph*' -o -iname '*keys*.txt')\" ]"
 check "licences + SOURCE.txt" "[ -f '$CUR/LICENSE.txt' ] && [ -f '$CUR/SOURCE.txt' ] && [ -f '$CUR/licences/README.txt' ]"
 check "core DLLs identical to cores.lock" "(cd '$CUR/app/cores' && grep -v '^#' '$ROOT/windows/cores/cores.lock' | awk -F'\t' '\$2==\"win\"{print \$8\"  \"\$6}' | sha256sum -c --quiet)"
 check "launcher.cfg passes the source commit (About link)" "grep -qE '^opt=-Dshoalcade.source.commit=[0-9a-f]{40}\$' '$CUR/app/launcher.cfg'"
@@ -105,6 +115,9 @@ KIDS=$(psh "Get-CimInstance Win32_Process -Filter 'ParentProcessId=$APID' | ForE
 check "Java in-process (no java/javaw child of Shoalcade.exe)" "! grep -qiE '^javaw?[.]exe\$' <<<\"\$KIDS\""
 check "no exception from the app" "! grep -q 'Exception in thread' '$LOG'"
 check "PPSSPP files copied to the data folder" "[ -f '$DATAD/system/PPSSPP/LICENSE.TXT' ] && cmp -s '$DATAD/system/PPSSPP.stamp' '$CUR/app/system/PPSSPP.stamp'"
+check "Dolphin Sys copied to the data folder" "[ -f '$DATAD/system/dolphin-emu/Sys/codehandler.bin' ] && cmp -s '$DATAD/system/dolphin-emu.stamp' '$CUR/app/system/dolphin-emu.stamp' && diff -rq '$CUR/app/system/dolphin-emu/Sys' '$DATAD/system/dolphin-emu/Sys' >/dev/null"
+check "PCEE2 resources copied to the data folder" "[ -f '$DATAD/system/pcsx2/resources/GameIndex.yaml' ] && cmp -s '$DATAD/system/pcsx2.stamp' '$CUR/app/system/pcsx2.stamp' && diff -rq '$CUR/app/system/pcsx2/resources' '$DATAD/system/pcsx2/resources' >/dev/null"
+check "user's PS2 BIOS + memory card untouched by the copy" "[ \"\$(user_sys_sum)\" = '$USER_SYS_SHA' ] && [ \$(find '$DATAD/system/pcsx2/bios' '$DATAD/system/pcsx2/memcards' -type f | wc -l) = 2 ]"
 psh "\$p = Get-Process -Id $APID -ErrorAction SilentlyContinue; if (\$p) { [void]\$p.CloseMainWindow(); if (-not \$p.WaitForExit(15000)) { Stop-Process -Id $APID -Force } }" >/dev/null
 check "app closed" "! psh 'Get-Process -Id $APID -ErrorAction SilentlyContinue' | grep -q ."
 

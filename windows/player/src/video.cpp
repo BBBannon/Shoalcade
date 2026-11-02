@@ -59,7 +59,7 @@ GLuint compile(GLenum kind, const char *src, std::string &err) {
 } // namespace
 
 bool Video::create(const std::string &title, const retro_game_geometry &geom, const retro_hw_render_callback *hw,
-                   bool headless, std::string &err) {
+                   bool headless, std::string &err, bool newest_gl) {
     headless_ = headless;
     geom_ = geom;
     is_hw_ = hw != nullptr;
@@ -104,7 +104,25 @@ bool Video::create(const std::string &title, const retro_game_geometry &geom, co
         err = std::string("couldn't open the window: ") + SDL_GetError();
         return false;
     }
-    ctx_ = SDL_GL_CreateContext(window_);
+    if (newest_gl && core_profile) {
+        // P2: the newest core profile the driver has, down to what the core asked for (then that, below).
+        static const int kVersions[][2] = {{4, 6}, {4, 5}, {4, 4}, {4, 3}, {4, 2}, {4, 1}, {4, 0}};
+        for (const auto &v : kVersions) {
+            if (v[0] * 10 + v[1] <= major * 10 + minor) break;
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, v[0]);
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, v[1]);
+            ctx_ = SDL_GL_CreateContext(window_);
+            if (ctx_) {
+                major = v[0], minor = v[1];
+                break;
+            }
+        }
+        if (!ctx_) {
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, major);
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minor);
+        }
+    }
+    if (!ctx_) ctx_ = SDL_GL_CreateContext(window_);
     if (!ctx_) {
         err = std::string("couldn't start OpenGL ") + std::to_string(major) + "." + std::to_string(minor) +
               (core_profile ? " core" : " compatibility") + ": " + SDL_GetError();

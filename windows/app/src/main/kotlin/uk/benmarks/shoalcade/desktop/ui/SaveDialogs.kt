@@ -20,16 +20,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -75,7 +69,7 @@ import uk.benmarks.shoalcade.sizeLabel
 fun ConflictDialog(vm: AppModel, ask: AppModel.ConflictAsk) {
     val g = ask.game
     val pc = remember(g.id) { vm.pcSaveTime(g) }
-    AlertDialog(
+    PocketDialog(
         onDismissRequest = { vm.conflictPrompt = null },
         title = { Text("Which save should be in use?") },
         text = {
@@ -89,10 +83,10 @@ fun ConflictDialog(vm: AppModel, ask: AppModel.ConflictAsk) {
             }
         },
         confirmButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                TextButton(onClick = { vm.resolveConflict(g, keepPc = true) }) { Text(PcWords.of("Keep the phone's")) }
-                TextButton(enabled = ask.server != null, onClick = { vm.resolveConflict(g, keepPc = false) }) { Text("Keep Jellyfin's") }
-                TextButton(onClick = { vm.conflictPrompt = null }) { Text("Decide later") }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                PocketButton(onClick = { vm.resolveConflict(g, keepPc = true) }) { Text(PcWords.of("Keep the phone's")) }
+                PocketButton(enabled = ask.server != null, onClick = { vm.resolveConflict(g, keepPc = false) }) { Text("Keep Jellyfin's") }
+                PocketButton(onClick = { vm.conflictPrompt = null }) { Text("Decide later") }
             }
         },
     )
@@ -111,7 +105,7 @@ fun GetSaveDialog(vm: AppModel, game: Game, onDismiss: () -> Unit) {
         checking = false
     }
     val newer = SavePlan.newer(pc, server?.createdMillis)
-    AlertDialog(
+    PocketDialog(
         onDismissRequest = onDismiss,
         title = { Text("Get save from Jellyfin?") },
         text = {
@@ -122,8 +116,8 @@ fun GetSaveDialog(vm: AppModel, game: Game, onDismiss: () -> Unit) {
                 Text("This replaces the save on this PC. This PC's copy is backed up first, and if Jellyfin hasn't seen it, it's also kept in Jellyfin's history.")
             }
         },
-        confirmButton = { TextButton(enabled = !checking && server != null, onClick = { vm.getSave(game); onDismiss() }) { Text(if (checking) "Checking…" else "Get save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { PocketButton(enabled = !checking && server != null, onClick = { vm.getSave(game); onDismiss() }) { Text(if (checking) "Checking…" else "Get save") } },
+        dismissButton = { PocketButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 
@@ -140,7 +134,7 @@ fun PlayAskDialog(vm: AppModel, ask: AppModel.PlayAsk) {
             val conflict = r is SyncResult.Conflict
             val server = (r as? SyncResult.NeedsConfirm)?.server ?: (r as? SyncResult.Conflict)?.server
             val (pcLine, jfLine) = SavePlan.dateLines(vm.pcSaveTime(g), server)
-            AlertDialog(
+            PocketDialog(
                 onDismissRequest = {},
                 title = { Text(if (conflict) "Which save should be in use?" else "Jellyfin's save changed") },
                 text = {
@@ -154,33 +148,33 @@ fun PlayAskDialog(vm: AppModel, ask: AppModel.PlayAsk) {
                     }
                 },
                 confirmButton = {
-                    Column(horizontalAlignment = Alignment.End) {
-                        if (conflict) TextButton(onClick = { vm.answerBefore(ask, SyncAll.Choice.KEEP_PHONE) }) { Text(PcWords.of("Keep the phone's")) }
-                        TextButton(enabled = server != null, onClick = { vm.answerBefore(ask, SyncAll.Choice.KEEP_SERVER) }) { Text("Keep Jellyfin's") }
-                        TextButton(onClick = { vm.answerBefore(ask, SyncAll.Choice.LATER) }) { Text("Decide later") }
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (conflict) PocketButton(onClick = { vm.answerBefore(ask, SyncAll.Choice.KEEP_PHONE) }) { Text(PcWords.of("Keep the phone's")) }
+                        PocketButton(enabled = server != null, onClick = { vm.answerBefore(ask, SyncAll.Choice.KEEP_SERVER) }) { Text("Keep Jellyfin's") }
+                        PocketButton(onClick = { vm.answerBefore(ask, SyncAll.Choice.LATER) }) { Text("Decide later") }
                     }
                 },
             )
         }
-        is AppModel.PlayAsk.AfterNewer -> AlertDialog(
+        is AppModel.PlayAsk.AfterNewer -> PocketDialog(
             onDismissRequest = {},
             title = { Text("Replace a newer save?") },
             text = { Text(PcWords.of(ask.result.message)) },
-            confirmButton = { TextButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.KEEP_PHONE) }) { Text("Upload anyway") } },
-            dismissButton = { TextButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.LATER) }) { Text("Don't upload") } },
+            confirmButton = { PocketButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.KEEP_PHONE) }) { Text("Upload anyway") } },
+            dismissButton = { PocketButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.LATER) }) { Text("Don't upload") } },
         )
         is AppModel.PlayAsk.AfterBoth -> {
             val (pcLine, jfLine) = SavePlan.dateLines(vm.pcSaveTime(g), ask.result.server)
-            AlertDialog(
+            PocketDialog(
                 onDismissRequest = {},
                 title = { Text("Which save should be in use?") },
                 text = { Text(PcWords.of("${g.name} has a different save on this phone and on Jellyfin (maybe from the browser or another phone).\n\n" +
                     "$pcLine\n$jfLine\n\nNothing is lost either way: the other save is kept in Jellyfin's history and in the phone's backups.")) },
                 confirmButton = {
-                    Column(horizontalAlignment = Alignment.End) {
-                        TextButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.KEEP_PHONE) }) { Text(PcWords.of("Keep the phone's")) }
-                        if (ask.result.server != null) TextButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.KEEP_SERVER) }) { Text("Keep Jellyfin's") }
-                        TextButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.LATER) }) { Text("Decide later") }
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PocketButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.KEEP_PHONE) }) { Text(PcWords.of("Keep the phone's")) }
+                        if (ask.result.server != null) PocketButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.KEEP_SERVER) }) { Text("Keep Jellyfin's") }
+                        PocketButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.LATER) }) { Text("Decide later") }
                     }
                 },
             )
@@ -194,13 +188,13 @@ fun PlayAskDialog(vm: AppModel, ask: AppModel.PlayAsk) {
  */
 @Composable
 fun LaunchChoiceDialog(vm: AppModel, l: AppModel.Launch) {
-    AlertDialog(
+    PocketDialog(
         onDismissRequest = { vm.launch = null },
         modifier = Modifier.widthIn(min = 460.dp),
         title = { Text(l.game.name) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Button(onClick = { vm.start(l.game, null, l.enabled, l.snapshots) }, modifier = Modifier.fillMaxWidth()) { Text("Continue from save") }
+                PocketButton(primary = true, onClick = { vm.start(l.game, null, l.enabled, l.snapshots) }, modifier = Modifier.fillMaxWidth()) { Text("Continue from save") }
                 Spacer(Modifier.height(16.dp))
                 Text("Or load a snapshot", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(8.dp))
@@ -210,7 +204,7 @@ fun LaunchChoiceDialog(vm: AppModel, l: AppModel.Launch) {
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = { vm.launch = null }) { Text("Cancel") } },
+        dismissButton = { PocketButton(onClick = { vm.launch = null }) { Text("Cancel") } },
     )
 }
 
@@ -219,7 +213,7 @@ private fun SnapshotButton(e: SnapshotStore.Entry, onPick: () -> Unit) {
     val picture: ImageBitmap? = remember(e.picture, e.time) {
         runCatching { e.picture?.readBytes()?.let { org.jetbrains.skia.Image.makeFromEncoded(it).toComposeImageBitmap() } }.getOrNull()
     }
-    OutlinedButton(onClick = onPick, enabled = e.here, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(8.dp)) {
+    PocketButton(onClick = onPick, enabled = e.here, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             val box = Modifier.size(width = 96.dp, height = 64.dp).background(Color.Black)
             if (picture != null) Image(picture, null, box, contentScale = ContentScale.Fit, filterQuality = FilterQuality.None)
@@ -245,7 +239,7 @@ fun SyncAllProgress(vm: AppModel) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(if (vm.batchStopping) "Stopping after ${b.game}…" else "${b.way.word}: ${b.index + 1} of ${b.total}, ${b.game}",
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-            TextButton(onClick = { vm.stopBatch() }, enabled = !vm.batchStopping) { Text("Stop") }
+            PocketButton(onClick = { vm.stopBatch() }, enabled = !vm.batchStopping) { Text("Stop") }
         }
     }
 }
@@ -254,7 +248,7 @@ fun SyncAllProgress(vm: AppModel) {
 @Composable
 fun SyncAllDialog(vm: AppModel, report: SyncAll.Report) {
     val close = { vm.batchReport = null; vm.batchAsks.clear(); vm.batchSettled.clear() }
-    AlertDialog(
+    PocketDialog(
         onDismissRequest = { if (vm.settling == null) close() },
         title = { Text("${report.way.word} finished") },
         text = {
@@ -269,7 +263,7 @@ fun SyncAllDialog(vm: AppModel, report: SyncAll.Report) {
                 vm.batchAsks.forEach { ask -> AskCard(vm, ask) }
             }
         },
-        confirmButton = { TextButton(onClick = close, enabled = vm.settling == null) { Text("Done") } },
+        confirmButton = { PocketButton(onClick = close, enabled = vm.settling == null) { Text("Done") } },
     )
 }
 
@@ -277,7 +271,7 @@ fun SyncAllDialog(vm: AppModel, report: SyncAll.Report) {
 private fun AskCard(vm: AppModel, ask: SyncAll.Ask) {
     val (pc, jf) = SavePlan.dateLines(ask.phoneTime, ask.server)
     val result = vm.batchSettled[ask.game.id]
-    OutlinedCard(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+    PocketBox(raised = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Column(Modifier.padding(10.dp)) {
             Text(ask.game.name, fontWeight = FontWeight.Bold)
             Text(if (ask.conflict) PcWords.of("⚠️ Changed on the phone and on Jellyfin") else "This would replace a newer save",
@@ -290,9 +284,9 @@ private fun AskCard(vm: AppModel, ask: SyncAll.Ask) {
                 vm.settling == ask.game.id -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
                 else -> Column(horizontalAlignment = Alignment.End, modifier = Modifier.fillMaxWidth()) {
                     val busy = vm.settling != null
-                    TextButton(onClick = { vm.settleAsk(ask, SyncAll.Choice.KEEP_PHONE) }, enabled = !busy) { Text(PcWords.of("Keep the phone's")) }
-                    TextButton(onClick = { vm.settleAsk(ask, SyncAll.Choice.KEEP_SERVER) }, enabled = !busy && ask.server != null) { Text("Keep Jellyfin's") }
-                    TextButton(onClick = { vm.settleAsk(ask, SyncAll.Choice.LATER) }, enabled = !busy) { Text("Decide later") }
+                    PocketButton(onClick = { vm.settleAsk(ask, SyncAll.Choice.KEEP_PHONE) }, enabled = !busy) { Text(PcWords.of("Keep the phone's")) }
+                    PocketButton(onClick = { vm.settleAsk(ask, SyncAll.Choice.KEEP_SERVER) }, enabled = !busy && ask.server != null) { Text("Keep Jellyfin's") }
+                    PocketButton(onClick = { vm.settleAsk(ask, SyncAll.Choice.LATER) }, enabled = !busy) { Text("Decide later") }
                 }
             }
         }
@@ -301,50 +295,43 @@ private fun AskCard(vm: AppModel, ask: SyncAll.Ask) {
 
 /**
  * Settings → Saves (the phone's section, D132): Push all / Pull all, "Upload saves automatically", Not in your
- * library, and the browser's "Download all my saves".
+ * library, and the browser's "Download all my saves". The Settings panel's Saves tab; [onDismiss] closes the panel
+ * (Push all / Pull all close it, as the dialog did).
  */
 @Composable
-fun SavesSettingsDialog(vm: AppModel, onOpenSaves: (Game, Boolean) -> Unit, onDismiss: () -> Unit) {
+fun SavesSettingsContent(vm: AppModel, onOpenSaves: (Game, Boolean) -> Unit, onDismiss: () -> Unit) {
     var orphans by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        modifier = Modifier.widthIn(min = 520.dp),
-        title = { Text("Saves") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val enabled = vm.settling == null && !vm.loading && vm.batch == null
-                    OutlinedButton(onClick = { vm.syncAll(SyncAll.Way.PUSH); onDismiss() }, enabled = enabled, modifier = Modifier.weight(1f)) { Text(SyncAll.Way.PUSH.word) }
-                    OutlinedButton(onClick = { vm.syncAll(SyncAll.Way.PULL); onDismiss() }, enabled = enabled, modifier = Modifier.weight(1f)) { Text(SyncAll.Way.PULL.word) }
-                }
-                Text("Changing PCs? Push all first, then log in on the new PC.", style = MaterialTheme.typography.bodySmall)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Upload saves automatically")
-                        Text(PcWords.of("When the phone is back online, saves made offline go up to your Jellyfin by themselves.") +
-                            " While Shoalcade is open, a save made in a game also goes up a few seconds later. Anything that needs a choice is never settled by itself.",
-                            style = MaterialTheme.typography.bodySmall)
-                    }
-                    Switch(vm.autoUploadOn, { vm.setAutoUpload(it) })
-                }
-                HorizontalDivider()
-                OutlinedButton(onClick = { orphans = true }, modifier = Modifier.fillMaxWidth()) { Text("Not in your library") }
-                OutlinedButton(onClick = {
-                    val f = FilePick.save("Download all my saves", "Shoalcade saves ${java.time.LocalDate.now()}.zip") ?: return@OutlinedButton
-                    status = "Downloading all your saves…"
-                    scope.launch {
-                        status = try { vm.tools()?.downloadAll(f) ?: "Not logged in." }
-                            catch (e: CancellationException) { throw e } catch (e: Exception) { "Couldn't download your saves: ${e.message}" }
-                    }
-                }, enabled = !vm.offline, modifier = Modifier.fillMaxWidth()) { Text("Download all my saves") }
-                Text("“Download all my saves” gives one zip with the save in use for every game: a copy to keep somewhere safe.", style = MaterialTheme.typography.bodySmall)
-                status?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val enabled = vm.settling == null && !vm.loading && vm.batch == null
+            PocketButton(onClick = { vm.syncAll(SyncAll.Way.PUSH); onDismiss() }, enabled = enabled, modifier = Modifier.weight(1f)) { Text(SyncAll.Way.PUSH.word) }
+            PocketButton(onClick = { vm.syncAll(SyncAll.Way.PULL); onDismiss() }, enabled = enabled, modifier = Modifier.weight(1f)) { Text(SyncAll.Way.PULL.word) }
+        }
+        Text("Changing PCs? Push all first, then log in on the new PC.", style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Upload saves automatically")
+                Text(PcWords.of("When the phone is back online, saves made offline go up to your Jellyfin by themselves.") +
+                    " While Shoalcade is open, a save made in a game also goes up a few seconds later. Anything that needs a choice is never settled by itself.",
+                    style = MaterialTheme.typography.bodySmall)
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-    )
+            PocketSwitch(vm.autoUploadOn, { vm.setAutoUpload(it) })
+        }
+        HorizontalDivider()
+        PocketButton(onClick = { orphans = true }, modifier = Modifier.fillMaxWidth()) { Text("Not in your library") }
+        PocketButton(onClick = {
+            val f = FilePick.save("Download all my saves", "Shoalcade saves ${java.time.LocalDate.now()}.zip") ?: return@PocketButton
+            status = "Downloading all your saves…"
+            scope.launch {
+                status = try { vm.tools()?.downloadAll(f) ?: "Not logged in." }
+                    catch (e: CancellationException) { throw e } catch (e: Exception) { "Couldn't download your saves: ${e.message}" }
+            }
+        }, enabled = !vm.offline, modifier = Modifier.fillMaxWidth()) { Text("Download all my saves") }
+        Text("“Download all my saves” gives one zip with the save in use for every game: a copy to keep somewhere safe.", style = MaterialTheme.typography.bodySmall)
+        status?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+    }
     if (orphans) NotInLibraryDialog(vm, onOpenSaves) { orphans = false }
 }
 
@@ -367,7 +354,7 @@ fun NotInLibraryDialog(vm: AppModel, onOpenSaves: (Game, Boolean) -> Unit, onDis
         try { server = vm.api()?.savesList()?.filter { it.status == "removed" }; serverError = null }
         catch (e: CancellationException) { throw e } catch (e: Exception) { serverError = e.message }
     }
-    AlertDialog(
+    PocketDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.widthIn(min = 560.dp),
         title = { Text("Not in your library") },
@@ -388,8 +375,8 @@ fun NotInLibraryDialog(vm: AppModel, onOpenSaves: (Game, Boolean) -> Unit, onDis
                                 when { !o.hasSave -> "No save"; o.blank -> "Empty (the game never saved)"; o.onJellyfin -> "A copy is on Jellyfin too"; else -> "Only on this PC" })
                                 .joinToString(" · "), style = MaterialTheme.typography.bodySmall)
                             Row {
-                                if (o.hasSave) TextButton(onClick = {
-                                    val f = FilePick.save("Save a copy to a file…", "${o.title}.${if (o.folder) "zip" else "sav"}") ?: return@TextButton
+                                if (o.hasSave) PocketButton(onClick = {
+                                    val f = FilePick.save("Save a copy to a file…", "${o.title}.${if (o.folder) "zip" else "sav"}") ?: return@PocketButton
                                     scope.launch {
                                         status = try {
                                             val bytes = withContext(Dispatchers.IO) { vm.core()?.orphanBytes(o) } ?: throw java.io.IOException("the save has gone from this PC.")
@@ -398,7 +385,7 @@ fun NotInLibraryDialog(vm: AppModel, onOpenSaves: (Game, Boolean) -> Unit, onDis
                                         } catch (e: Exception) { "Couldn't save the copy: ${e.message}" }
                                     }
                                 }) { Text("Save a copy to a file…") }
-                                if (o.hasSave && !o.blank) TextButton(onClick = { picking = o }) { Text("Upload to another game…") }
+                                if (o.hasSave && !o.blank) PocketButton(onClick = { picking = o }) { Text("Upload to another game…") }
                             }
                         }
                         HorizontalDivider()
@@ -423,11 +410,11 @@ fun NotInLibraryDialog(vm: AppModel, onOpenSaves: (Game, Boolean) -> Unit, onDis
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { PocketButton(onClick = onDismiss) { Text("Close") } },
     )
     picking?.let { o ->
         val targets = remember(o, vm.games) { OrphanSave.targets(o, vm.games) }
-        AlertDialog(
+        PocketDialog(
             onDismissRequest = { picking = null },
             title = { Text("Upload to which game?") },
             text = {
@@ -442,7 +429,7 @@ fun NotInLibraryDialog(vm: AppModel, onOpenSaves: (Game, Boolean) -> Unit, onDis
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { picking = null }) { Text("Cancel") } },
+            confirmButton = { PocketButton(onClick = { picking = null }) { Text("Cancel") } },
         )
     }
 }

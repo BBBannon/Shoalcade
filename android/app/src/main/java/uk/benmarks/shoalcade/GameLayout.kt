@@ -77,7 +77,7 @@ data class GameLayout(
             Console.NDS -> ds.aspect
             Console.GBA -> 1.5f
             Console.PSP -> 480f / 272f
-            Console.PSX, Console.N64 -> 4f / 3f
+            Console.PSX, Console.N64, Console.GC, Console.WII, Console.PS2 -> 4f / 3f
             else -> 160f / 144f
         }
 

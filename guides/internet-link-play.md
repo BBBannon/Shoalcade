@@ -9,7 +9,8 @@
 ## What you need
 
 - Both phones logged in to the **same Jellyfin** (two users, or one user on two phones)
-- A Shoalcade plugin that says it can do it (the app checks: no setting to turn on)
+- A Shoalcade plugin that says it can do it (the app checks: no setting to turn on). It's on by default; an admin can switch it off with **Allow link play over the internet** in the plugin's settings
+- Each player able to see a **Game Boy Advance game** on the server
 - Each Jellyfin user allowed **remote access** (Dashboard → Users → the user → *Allow remote connections to this server*)
 - The usual GBA link rules: a 128 KB save (Pokémon Gen 3 is fine)
 

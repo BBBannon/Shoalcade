@@ -74,13 +74,64 @@ static const std::map<std::string, std::vector<ForcedOption>> kTable = {
          {"citra_layout_option", "default", false},
          {"citra_swap_screen", "Top", false},
      }},
+    // GameCube and Wii: Dolphin libretro (Windows only, D218; plan-windows-gc-wii-ps2.md P3). Locked:
+    //  - OSD off: Dolphin draws its messages ("Video Info: ...") into the game's picture.
+    //  - Hardware renderer (OpenGL, the only hardware context this player gives) and no GameCube BIOS (none bundled).
+    //  - Cheats: "Internal Cheats" on, so Shoalcade's cheats patch (tools/dolphin-patches/0001) applies the codes the
+    //    player hands over; "Import cheats" off, so the core never writes a .cht file beside the system folder and
+    //    only the person's own codes run.
+    //  - Wii: the pointer is the mouse (ir mode 2 = RETRO_DEVICE_POINTER, P6), and each port's Wii controller type is
+    //    the one the player sets (P5, "frontend"), not the core's option.
+    {"gc",
+     {
+         {"dolphin_osd_enabled", "disabled", true},
+         {"dolphin_renderer", "Hardware", true},
+         {"dolphin_skip_gc_bios", "enabled", true},
+         {"dolphin_cheats_enabled", "enabled", true},
+         {"dolphin_cheats_import", "disabled", true},
+     }},
+    {"wii",
+     {
+         {"dolphin_osd_enabled", "disabled", true},
+         {"dolphin_renderer", "Hardware", true},
+         {"dolphin_skip_gc_bios", "enabled", true},
+         {"dolphin_cheats_enabled", "enabled", true},
+         {"dolphin_cheats_import", "disabled", true},
+         {"dolphin_ir_mode", "2", true},
+         {"dolphin_wiimote_default_device", "frontend", true},
+     }},
+    // PS2: the per-core rules are in kCoreTable below (the two cores' option values differ).
     // GB / GBC / GBA (mGBA): Console.kt sets nothing; core defaults. gpSP (GBA link, GameActivity.kt) gets
     // gpsp_bios=builtin and gpsp_serial from the link settings: link play isn't in the player yet.
+};
+
+// Rules for one core of a console, by {console, the core's library_name}. PS2 (D222 D-3: the person picks the core):
+//  - LRPS2 ("ParaLLEl PS2"): the game's own memory card in the save folder (<saveFolder>\<game>.ps2), never the
+//    shared cards in the system folder (one card for every game and every person); OpenGL renderer.
+//  - PCEE2: OpenGL renderer (the player gives no Vulkan; its other APIs copy every frame back). Its card is always
+//    the game's own in the save folder (tools/pcee2-patches/0001), so there is no option to lock.
+static const std::map<std::pair<std::string, std::string>, std::vector<ForcedOption>> kCoreTable = {
+    {{"ps2", "ParaLLEl PS2"},
+     {
+         {"pcsx2_shared_memory_cards", "disabled", true},
+         {"pcsx2_renderer", "OpenGL", true},
+     }},
+    {{"ps2", "PCEE2"},
+     {
+         {"pcsx2_renderer", "opengl", true},
+     }},
 };
 
 const std::vector<ForcedOption> &forced_options(const std::string &console_key) {
     static const std::vector<ForcedOption> none;
     auto it = kTable.find(console_key);
     return it == kTable.end() ? none : it->second;
+}
+
+std::vector<ForcedOption> forced_options(const std::string &console_key, const std::string &core_name) {
+    std::vector<ForcedOption> out = forced_options(console_key);
+    auto it = kCoreTable.find({console_key, core_name});
+    if (it != kCoreTable.end()) out.insert(out.end(), it->second.begin(), it->second.end());
+    return out;
 }
 } // namespace sc

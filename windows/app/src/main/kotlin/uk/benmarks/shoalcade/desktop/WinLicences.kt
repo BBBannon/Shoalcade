@@ -42,6 +42,13 @@ object WinLicences {
             "https://github.com/hrydgard/ppsspp/tree/902e5ccd8c1400b4387b73942491cded655e5f9c (fix: tools/ppsspp-patches in Shoalcade's source)"),
         Part("Azahar 2126.2 (commit 219d743) + Shoalcade patches", "Nintendo 3DS", "GPL-3.0-or-later (some parts GPL-2.0-or-later)",
             "https://github.com/azahar-emu/azahar/tree/219d743a1e698101fe1ab8bef43e6563126c3c27 (patches: tools/azahar-patches in Shoalcade's source)"),
+        Part("Dolphin (commit b93001e)", "GameCube and Wii", "GPL-2.0-or-later",
+            "https://github.com/libretro/dolphin/tree/b93001ed50c8b34e6ead4eed713c2005a80386e4"),
+        Part("LRPS2 (commit 083de59) + Windows build fixes", "PlayStation 2", "GPL-3.0",
+            "https://github.com/libretro/parallel-ps2/tree/083de59f52159ce4dd2f63a63f74fa9f0e936ee3 (fixes: tools/lrps2-patches in Shoalcade's source)"),
+        Part("PCEE2 (commit 5719627) + Shoalcade patches", "PlayStation 2 (second choice)",
+            "GPL-3.0-or-later (libraries compiled in: see its THIRD_PARTY_LICENSES)",
+            "https://github.com/WizzardSK/pcee2-libretro/tree/5719627731beb90e379ff1be1223391b7f563b3b (patches: tools/pcee2-patches in Shoalcade's source)"),
     )
 
     val player = listOf(
@@ -55,6 +62,10 @@ object WinLicences {
         // Phase 6: packed in the app for the 3DS check (the phone's About.kt line).
         Part("3DS check scene", "The 3DS check's test scene", "GPL-3.0-or-later; based on devkitPro 3ds-examples (Public Domain); libctru and citro3d (zlib)",
             "https://github.com/devkitPro/3ds-examples (scene: tools/n3ds-check in Shoalcade's source)"),
+        // D-7: packed in the app for the GameCube and Wii check.
+        Part("GameCube and Wii check scenes", "The GameCube and Wii check's test scenes",
+            "GPL-3.0-or-later; built with devkitPro libogc (zlib-style licence)",
+            "https://github.com/devkitPro/libogc (scenes: tools/gc-check in Shoalcade's source)"),
         Part("Atkinson Hyperlegible 1.006", "Pause menu font", "SIL Open Font License 1.1",
             "https://github.com/googlefonts/atkinson-hyperlegible/tree/1cb311624b2ddf88e9e37873999d165a8cd28b46"),
         Part("MinGW-w64 runtime (GCC 14.2, mingw-w64 12.0)", "Built into the player, launcher and cores",

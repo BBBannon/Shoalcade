@@ -22,14 +22,14 @@
 
   const api = window.SC.api;
   const $ = id => document.getElementById(id);
-  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP" };
+  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP", gc: "GC", wii: "Wii", ps2: "PS2" };
   const RECENT_MAX = 6;
   /** The "★ Starred" filter (a pseudo console in ?c=, so Back from the player returns to it). */
   const STARRED = "starred";
   const SORTS = ["name", "year", "platform", "played"];
   const DEFAULT_SORT = "played";
-  /** Platform order (same as the app): the Game Boy family oldest first, then N64, DS, 3DS, PS1, PSP. Unknown consoles last. */
-  const PLATFORM_ORDER = ["gb", "gbc", "gba", "n64", "nds", "3ds", "psx", "psp"];
+  /** Platform order (same as the app's GameSort.kt): Game Boy family, N64, GameCube, DS, Wii, 3DS, PS1, PS2, PSP. Unknown consoles last. */
+  const PLATFORM_ORDER = ["gb", "gbc", "gba", "n64", "gc", "nds", "wii", "3ds", "psx", "ps2", "psp"];
   const collator = new Intl.Collator("en-GB", { sensitivity: "base" });
 
   const S = { info: null, games: [], byId: new Map(), cards: new Map(), con: "all", q: "", sort: DEFAULT_SORT, openedHere: false, edit: null,
@@ -89,6 +89,9 @@
 
   /** Why Play is not offered for a game, or null if it can be played here. */
   function cantPlay(g) {
+    // GameCube, Wii, PS2 (D218): only the Windows app plays them; saves are managed here as usual.
+    const con = (S.info.consoles || []).find(x => x.key === g.console);
+    if (con && con.windowsOnly) return "Plays in the Windows app.";
     if (!S.info.browserPlayer) return "The browser player is switched off on this server.";
     if (!g.browserPlayable) return consoleName(g.console) + " games can't be played in the browser. Use the Shoalcade app.";
     if (!S.info.user.canDownload) return "Your Jellyfin account isn't allowed to download, so games can't be played here. Ask the server admin.";
@@ -183,7 +186,7 @@
   }
 
   function card(g) {
-    return h("button", { type: "button", class: "card", "data-open": g.id, "aria-label": g.name + ", " + consoleName(g.console) + (g.favourite ? ", starred" : "") }, [
+    return h("button", { type: "button", class: "card", "data-open": g.id, "aria-label": g.name + (lastActivity(g) ? ", " + cardMeta(g) : "") + ", " + consoleName(g.console) + (g.favourite ? ", starred" : "") }, [
       art(g, 400),
       h("span", { class: "card-t", text: (g.favourite ? "★ " : "") + g.name }),
       h("span", { class: "card-m", text: cardMeta(g) }),
@@ -396,6 +399,7 @@
     $("sheet-why").textContent = why || "";
     $("sheet-why").hidden = !why;
     $("sheet-saves").href = savesLink(g.id);
+    fillSheetSnaps(g);
     $("sheet-edit").hidden = !(S.info.user && S.info.user.isAdmin);
     const star = $("sheet-star");
     star.hidden = !(S.info.features || []).includes("favourites");
@@ -413,6 +417,25 @@
       ["Save", saveText(g.save) || "None on the server yet"],
     ].filter(([, v]) => v !== null && v !== undefined && v !== "");
     $("sheet-facts").replaceChildren(...facts.flatMap(([k, v]) => [h("dt", { text: k }), h("dd", { text: String(v) })]));
+  }
+
+  /** "Snapshots (n)" on the sheet, only when the game has some: opens them on its Saves page. */
+  let snapSeq = 0;
+  async function fillSheetSnaps(g) {
+    const b = $("sheet-snaps");
+    const seq = ++snapSeq;
+    if (b.dataset.game !== g.id) b.hidden = true; // never show another game's count while this one loads
+    b.dataset.game = g.id;
+    b.href = savesLink(g.id) + "#snaps";
+    let n = 0;
+    try {
+      n = ((await api.snapshots(g.id)).snapshots || []).length;
+    } catch (e) {
+      n = 0; // the button just stays hidden; Saves still reaches them
+    }
+    if (seq !== snapSeq) return;
+    $("sheet-snaps-t").textContent = "Snapshots (" + n + ")";
+    b.hidden = !n;
   }
 
   /** Stars or unstars the open game; the card, the Starred chip and the grid follow. */
@@ -666,7 +689,15 @@
 
   function onSheetClosed() {
     closeEditor();
-    if (!hashGame()) return;
+    const g = hashGame();
+    if (g) {
+      setTimeout(() => {
+        if (document.activeElement && document.activeElement !== document.body) return;
+        const c = $("grid").querySelector('[data-open="' + g.id + '"]');
+        if (c) c.focus({ preventScroll: true });
+      }, 0);
+    }
+    if (!g) return;
     // Closed with Esc or the X: drop the #game from the address too.
     if (S.openedHere) { S.openedHere = false; history.back(); }
     else history.replaceState(history.state, "", location.pathname + location.search);
@@ -744,7 +775,7 @@
     });
     $("sheet-edit").addEventListener("click", () => (S.edit ? closeEditor() : openEditor()));
     $("sheet-star").addEventListener("click", toggleStar);
-    $("ed-done").addEventListener("click", closeEditor);
+    $("ed-done").addEventListener("click", () => { closeEditor(); $("sheet-edit").focus(); });
     $("ed-name-form").addEventListener("submit", saveName);
     $("ed-upload").addEventListener("click", () => $("ed-file").click());
     $("ed-file").addEventListener("change", uploadPicked);

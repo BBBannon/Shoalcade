@@ -39,7 +39,7 @@ fun LaunchChoiceDialog(game: Game, userId: String, onStart: (snapshot: Boolean) 
     val focus = remember { FocusRequester() }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(game.name) },
+        title = { DialogTitle(game.name) },
         text = {
             Column {
                 Button(onClick = { onStart(false) }, modifier = Modifier.fillMaxWidth().focusRequester(focus)) {

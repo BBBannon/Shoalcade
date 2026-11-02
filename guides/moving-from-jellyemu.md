@@ -21,18 +21,29 @@ Your ROM files are never touched. JellyEMU's save files are only read.
 
 ## Games that will disappear
 
-Shoalcade shows **GB, GBC, GBA, N64, DS, PS1, PSP and 3DS** only.
-**PS1:** only one `.chd` or `.pbp` file per game stays. PS1 games as `.bin/.cue`, `.iso`, archives or disc folders leave the list (files untouched).
+Shoalcade shows **GB, GBC, GBA, N64, DS, PS1, PSP and 3DS**, plus **GameCube, Wii and PS2** (new: they play in the **Windows app** only; the phone and browser list them).
+**PS1:** one `.chd` or `.pbp` file per game, or a game on more than one disc (a folder of `(Disc 1)`, `(Disc 2)` files or a `.m3u`), stays. PS1 games as `.bin/.cue`, `.iso` or archives leave the list (files untouched).
+**PS2:** `.bin/.cue` games leave the list (make one `.chd` of the disc instead). GameCube, Wii and PS2 games in `.zip` / `.7z` archives leave it too.
 Games for **every other console JellyEMU listed** leave the library. **Their files stay on your server.**
 
 | Group | Consoles that disappear |
 |---|---|
-| Nintendo | NES, SNES, Virtual Boy, GameCube, Wii, Wii U, Switch |
+| Nintendo | NES, SNES, Virtual Boy, Wii U, Switch |
 | Sega | Master System, Game Gear, Genesis / Mega Drive, Sega CD, 32X, Saturn, Dreamcast |
-| Sony | PlayStation 2, PlayStation 3, PS Vita (and PS1 games that aren't `.chd`/`.pbp`) |
+| Sony | PlayStation 3, PS Vita (and PS1 or PS2 games in file types Shoalcade doesn't take) |
 | Atari | 2600, 5200, 7800, Jaguar, Lynx |
 | Other | Arcade / MAME 2003, TurboGrafx-16, PC-FX, Neo Geo Pocket, WonderSwan, ColecoVision, 3DO, Commodore 64, Amiga, DOS, PICO-8, Xbox, Xbox 360 |
 | Computer apps | Windows, macOS, Linux, Android |
+
+**What happens to those games, exactly:**
+
+| | What happens |
+|---|---|
+| **Game files** | **Never moved, changed or deleted.** They stay in your folders. |
+| **Listed?** | **No.** Shoalcade's scanner skips files of consoles it doesn't play (and file types it doesn't know), so they don't show in Shoalcade's library, the browser player or the apps. Jellyfin's log names each one and why, e.g. `Scanner skipped snes/Game.sfc: SNES games are not played by Shoalcade` (Dashboard → Logs). |
+| **Library entries** | JellyEMU's entries for them go at the scan (step 6), with anything Jellyfin kept on those entries (favourite, played). |
+| **JellyEMU browser saves** | **Not imported** (step 3 only takes saves of games Shoalcade lists; its log counts the others as "skipped"). They stay in JellyEMU's save folder, `<Jellyfin data>/jellyemu-saves/`, which Shoalcade only reads and never deletes. Keep your backup from step 1. |
+| **Later** | If a later Shoalcade version adds one of these consoles, a scan picks those files up again. |
 
 **Need one of these?** Stay on JellyEMU for now. (While JellyEMU is installed, Shoalcade's own scanner stays off.)
 

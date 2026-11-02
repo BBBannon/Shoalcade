@@ -42,6 +42,14 @@ public class WebController : ControllerBase
     /// </summary>
     public const string NonHtmlContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'; sandbox";
 
+    /// <summary>
+    /// Content Security Policy for the player frame (security review M3, docs/plan-player-sandbox.md): the page policy
+    /// plus <c>sandbox allow-scripts</c>, so the frame runs with an opaque origin even if it is opened on its own. It can
+    /// run EmulatorJS but can never read the Jellyfin login (storage, cookies), call the API, open windows or move the
+    /// page: it asks the player page (the shell) for this one game's routes instead.
+    /// </summary>
+    public const string FrameContentSecurityPolicy = "sandbox allow-scripts; " + ContentSecurityPolicy;
+
     /// <summary>The only files served with <see cref="EvalWorkerContentSecurityPolicy"/>.</summary>
     public static readonly FrozenSet<string> EvalWorkers = new[] { "compression/extract7z.js", "compression/extractzip.js" }
         .ToFrozenSet(StringComparer.Ordinal);
@@ -70,6 +78,11 @@ public class WebController : ControllerBase
     /// <returns>HTML.</returns>
     [HttpGet("play")]
     public ActionResult Play() => Page("play.html", true);
+
+    /// <summary>The player frame (M3): the game and its controls, sandboxed inside the player page.</summary>
+    /// <returns>HTML.</returns>
+    [HttpGet("play-frame")]
+    public ActionResult PlayFrame() => Page("play-frame.html", true, true);
 
     /// <summary>The save manager page.</summary>
     /// <returns>HTML.</returns>
@@ -103,7 +116,8 @@ public class WebController : ControllerBase
             return NotFound();
         }
 
-        return Send(a, "no-cache", false, false);
+        // Loaded by the sandboxed player frame too (an opaque origin counts as another site): public program files only.
+        return Send(a, "no-cache", false, false, forFrame: true);
     }
 
     /// <summary>EmulatorJS files (pinned v4.2.3).</summary>
@@ -118,10 +132,13 @@ public class WebController : ControllerBase
         }
 
         var a = _assets.FindEmulatorFile(path);
-        return a is null ? NotFound() : Send(a, "public, max-age=86400", false, true, EvalWorkers.Contains(path));
+        // The frame's EmulatorJS also fetches its cores (CORS), so these may be read from any origin: they are the same
+        // public files for everyone. The two eval workers are only ever started by the player page itself: kept same-origin.
+        var worker = EvalWorkers.Contains(path);
+        return a is null ? NotFound() : Send(a, "public, max-age=86400", false, true, worker, forFrame: !worker, anyOrigin: !worker);
     }
 
-    private ActionResult Page(string name, bool isolated)
+    private ActionResult Page(string name, bool isolated, bool sandboxed = false)
     {
         if (!ShoalcadeServices.Config.EnableBrowserPlayer)
         {
@@ -129,25 +146,35 @@ public class WebController : ControllerBase
         }
 
         var a = _assets.FindPage(name);
-        return a is null ? NotFound() : Send(a, "no-cache", isolated, false);
+        return a is null ? NotFound() : Send(a, "no-cache", isolated, false, sandboxed: sandboxed);
     }
 
     /// <summary>The security headers for a served file (kept separate so the policy can be tested).</summary>
     /// <param name="contentType">MIME type.</param>
     /// <param name="isolated">Cross-origin isolate the page (the player).</param>
     /// <param name="evalWorker">One of the <see cref="EvalWorkers"/>.</param>
+    /// <param name="forFrame">A program file (web/*, ejs/*) the sandboxed player frame loads: <c>Cross-Origin-Resource-Policy:
+    /// cross-origin</c>, as the frame's opaque origin is another site to the browser (never for pages).</param>
+    /// <param name="anyOrigin">EmulatorJS files the frame fetches (cores): <c>Access-Control-Allow-Origin: *</c> (never for pages).</param>
+    /// <param name="sandboxed">The player frame page: <see cref="FrameContentSecurityPolicy"/>.</param>
     /// <returns>Header name to value.</returns>
-    internal static Dictionary<string, string> SecurityHeaders(string contentType, bool isolated, bool evalWorker)
+    internal static Dictionary<string, string> SecurityHeaders(string contentType, bool isolated, bool evalWorker, bool forFrame = false, bool anyOrigin = false, bool sandboxed = false)
     {
+        var isHtml = contentType.StartsWith("text/html", StringComparison.Ordinal);
         var h = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["X-Content-Type-Options"] = "nosniff",
-            ["Cross-Origin-Resource-Policy"] = "same-origin",
+            ["Cross-Origin-Resource-Policy"] = forFrame && !isHtml && !evalWorker ? "cross-origin" : "same-origin",
             ["Referrer-Policy"] = "no-referrer",
         };
-        if (contentType.StartsWith("text/html", StringComparison.Ordinal))
+        if (anyOrigin && !isHtml && !evalWorker)
         {
-            h["Content-Security-Policy"] = ContentSecurityPolicy;
+            h["Access-Control-Allow-Origin"] = "*";
+        }
+
+        if (isHtml)
+        {
+            h["Content-Security-Policy"] = sandboxed ? FrameContentSecurityPolicy : ContentSecurityPolicy;
             h["X-Frame-Options"] = "SAMEORIGIN";
             h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
 
@@ -173,9 +200,9 @@ public class WebController : ControllerBase
         return h;
     }
 
-    private FileStreamResult Send(WebAsset a, string cacheControl, bool isolated, bool rangeable, bool evalWorker = false)
+    private FileStreamResult Send(WebAsset a, string cacheControl, bool isolated, bool rangeable, bool evalWorker = false, bool forFrame = false, bool anyOrigin = false, bool sandboxed = false)
     {
-        foreach (var (name, value) in SecurityHeaders(a.ContentType, isolated, evalWorker))
+        foreach (var (name, value) in SecurityHeaders(a.ContentType, isolated, evalWorker, forFrame, anyOrigin, sandboxed))
         {
             Response.Headers[name] = value;
         }

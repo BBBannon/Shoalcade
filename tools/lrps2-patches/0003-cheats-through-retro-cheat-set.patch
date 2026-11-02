@@ -1,0 +1,204 @@
+Shoalcade: cheats through retro_cheat_set / retro_cheat_reset for the LRPS2 libretro core (PS2).
+Upstream's retro_cheat_set and retro_cheat_reset were empty. With this patch a code is one or more lines joined
+by '+' (or new lines); each line is a pnach line ("patch=1,EE,2XXXXXXX,extended,YYYYYYYY") or a raw decrypted
+code ("XXXXXXXX YYYYYYYY", turned into patch=1,EE,XXXXXXXX,extended,YYYYYYYY: applied every vsync, as PCSX2's
+own cheats). A code with an unreadable line is skipped whole (logged). Encrypted codes (CodeBreaker, GameShark,
+Action Replay MAX) are not read. The cheats sit in PCSX2's patch list beside the game's own patches (marked, so
+a reset removes only them), are only changed on the emulation thread at the next vsync, and are put back after
+the patch list is reloaded. Nothing is written to the cheats folder, the memory cards or the system folder.
+
+diff --git a/libretro/main.cpp b/libretro/main.cpp
+index 78d0f307ae..3b4e9aec41 100644
+--- a/libretro/main.cpp
++++ b/libretro/main.cpp
+@@ -15,6 +15,8 @@
+ #include <streams/file_stream.h>
+ #include <vfs/vfs_hybrid.h>
+ #include <compat/strl.h>
++#include <cctype>
++#include <map>
+ #include <string>
+ #include <vector>
+ #include <type_traits>
+@@ -3384,9 +3386,86 @@ void* retro_get_memory_data(unsigned id)
+ 	return 0;
+ }
+ 
+-void retro_cheat_reset(void) { }
++// Shoalcade (tools/lrps2-patches/0003): cheats through retro_cheat_set. A code is one or more lines
++// joined by '+' (or new lines). Each line is either a pnach line ("patch=1,EE,2XXXXXXX,extended,YYYYYYYY")
++// or a raw decrypted code ("XXXXXXXX YYYYYYYY"), which becomes patch=1,EE,XXXXXXXX,extended,YYYYYYYY
++// (applied every vsync, as PCSX2's own cheats). A code with an unreadable line is skipped whole.
++static std::map<unsigned, std::vector<std::string>> s_sc_cheat_codes;
+ 
+-void retro_cheat_set(unsigned index, bool enabled, const char* code) { }
++static void sc_cheats_publish(void)
++{
++	std::vector<std::string> all;
++	for (const auto& kv : s_sc_cheat_codes)
++		all.insert(all.end(), kv.second.begin(), kv.second.end());
++	ShoalcadeCheats_Set(all);
++}
++
++static bool sc_is_hex(const std::string& s)
++{
++	if (s.empty())
++		return false;
++	for (char c : s)
++		if (!isxdigit(static_cast<unsigned char>(c)))
++			return false;
++	return true;
++}
++
++void retro_cheat_reset(void)
++{
++	s_sc_cheat_codes.clear();
++	sc_cheats_publish();
++}
++
++void retro_cheat_set(unsigned index, bool enabled, const char* code)
++{
++	s_sc_cheat_codes.erase(index);
++	if (enabled && code)
++	{
++		std::vector<std::string> lines;
++		std::string text(code), piece;
++		for (size_t i = 0; i <= text.size(); i++)
++		{
++			const char ch = i < text.size() ? text[i] : '+';
++			if (ch != '+' && ch != '\n' && ch != '\r')
++			{
++				piece += ch;
++				continue;
++			}
++			// trim, and fold runs of blanks to one space
++			std::string line;
++			bool space = false;
++			for (char c : piece)
++			{
++				if (c == ' ' || c == '\t') { space = !line.empty(); continue; }
++				if (space) line += ' ';
++				space = false;
++				line += c;
++			}
++			piece.clear();
++			if (line.empty())
++				continue;
++			if (line.compare(0, 6, "patch=") == 0)
++				lines.push_back(line);
++			else
++			{
++				std::string a, b;
++				const size_t sp = line.find(' ');
++				if (sp != std::string::npos) { a = line.substr(0, sp); b = line.substr(sp + 1); }
++				else if (line.size() == 16) { a = line.substr(0, 8); b = line.substr(8); }
++				if (a.size() != 8 || b.size() != 8 || !sc_is_hex(a) || !sc_is_hex(b))
++				{
++					log_cb(RETRO_LOG_WARN, "Shoalcade: cheat %u skipped, unreadable line: %s\n", index, line.c_str());
++					lines.clear();
++					break;
++				}
++				lines.push_back("patch=1,EE," + a + ",extended," + b);
++			}
++		}
++		if (!lines.empty())
++			s_sc_cheat_codes[index] = std::move(lines);
++	}
++	sc_cheats_publish();
++}
+ 
+ std::optional<std::vector<u8>> Host::ReadResourceFile(const char* filename)
+ {
+diff --git a/pcsx2/Counters.cpp b/pcsx2/Counters.cpp
+index 9441138083..054b93e6dc 100644
+--- a/pcsx2/Counters.cpp
++++ b/pcsx2/Counters.cpp
+@@ -582,6 +582,7 @@ static __fi void rcntStartGate(bool isVblank, u64 sCycle)
+ static __fi void VSyncStart(u64 sCycle)
+ {
+ 	int i;
++	ShoalcadeCheats_Sync(); // Shoalcade (tools/lrps2-patches/0003): frontend cheats, on this thread
+ 	for (i = 0; static_cast<size_t>(i) < Patch.size(); i++)
+ 	{
+ 		int _place = Patch[i].placetopatch;
+diff --git a/pcsx2/Patch.cpp b/pcsx2/Patch.cpp
+index dfda5e180a..59579e4ba1 100644
+--- a/pcsx2/Patch.cpp
++++ b/pcsx2/Patch.cpp
+@@ -28,6 +28,9 @@
+ 
+ #include <memory>
+ #include <sstream>
++#include <algorithm>
++#include <atomic>
++#include <mutex>
+ #include <vector>
+ 
+ #include <file/file_path.h>
+@@ -831,10 +834,52 @@ int LoadPatchesFromString(const char* patches)
+ 	return static_cast<int>(Patch.size() - before);
+ }
+ 
++// Shoalcade (tools/lrps2-patches/0003): the frontend's cheats live in Patch beside the game's own
++// patches, marked with enabled == SC_FRONTEND_CHEAT (still "on" for _ApplyPatch). They are put back
++// after every reload of the patch list (ForgetLoadedPatches marks them for the next sync).
++#define SC_FRONTEND_CHEAT 2
++static std::mutex                s_sc_cheats_lock;
++static std::vector<std::string>  s_sc_cheats;
++static std::atomic<bool>         s_sc_cheats_dirty{false};
++
++void ShoalcadeCheats_Set(const std::vector<std::string>& pnach_lines)
++{
++	std::lock_guard<std::mutex> lk(s_sc_cheats_lock);
++	s_sc_cheats = pnach_lines;
++	s_sc_cheats_dirty = true;
++}
++
++void ShoalcadeCheats_Sync(void)
++{
++	if (!s_sc_cheats_dirty.exchange(false))
++		return;
++	std::vector<std::string> lines;
++	{
++		std::lock_guard<std::mutex> lk(s_sc_cheats_lock);
++		lines = s_sc_cheats;
++	}
++	Patch.erase(std::remove_if(Patch.begin(), Patch.end(),
++		[](const IniPatch& p) { return p.enabled == SC_FRONTEND_CHEAT; }), Patch.end());
++	for (const std::string& line : lines)
++	{
++		const size_t before = Patch.size();
++		LoadPatchesFromString(line.c_str());
++		for (size_t i = before; i < Patch.size(); i++)
++		{
++			Patch[i].enabled = SC_FRONTEND_CHEAT;
++			// "once" lines can't wait for the next boot: apply them now, once.
++			if (Patch[i].placetopatch == PPT_ONCE_ON_LOAD || Patch[i].placetopatch == PPT_COMBINED_0_1)
++				_ApplyPatch(&Patch[i]);
++		}
++	}
++	log_cb(RETRO_LOG_INFO, "Shoalcade: %zu cheat line(s) active\n", lines.size());
++}
++
+ void ForgetLoadedPatches(void)
+ {
+ 	Patch.clear();
+ 	DynaPatch.clear();
++	s_sc_cheats_dirty = true; // Shoalcade: put the frontend's cheats back at the next sync
+ }
+ 
+ // This routine loads patches from a zip file
+diff --git a/pcsx2/Patch.h b/pcsx2/Patch.h
+index c421398be1..cbd684ea5d 100644
+--- a/pcsx2/Patch.h
++++ b/pcsx2/Patch.h
+@@ -122,3 +122,9 @@ extern void ApplyDynamicPatches(u32 pc);
+ extern void ForgetLoadedPatches(void);
+ 
+ extern void _ApplyPatch(IniPatch* p);
++
++// Shoalcade (tools/lrps2-patches/0003): cheats from the frontend (retro_cheat_set), as pnach lines.
++// ShoalcadeCheats_Set may be called from any thread; the patch list itself is only changed on the
++// emulation thread, by ShoalcadeCheats_Sync (each vsync, before the patches run).
++extern void ShoalcadeCheats_Set(const std::vector<std::string>& pnach_lines);
++extern void ShoalcadeCheats_Sync(void);

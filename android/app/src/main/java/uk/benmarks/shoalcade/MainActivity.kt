@@ -27,8 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -80,7 +83,8 @@ private fun LoginScreen(vm: AppViewModel) {
         Modifier.fillMaxSize().systemBarsPadding().padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("Shoalcade", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("Shoalcade", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold,
+            modifier = Modifier.semantics { heading() })
         Text("Log in with your Jellyfin account", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(server, { server = it }, label = { Text("Server (e.g. jellyfin.example.com)") },
@@ -91,8 +95,10 @@ private fun LoginScreen(vm: AppViewModel) {
         if (code != null) {
             Spacer(Modifier.height(24.dp))
             Text("Your Quick Connect code", style = MaterialTheme.typography.titleMedium)
+            // TalkBack reads the code digit by digit (as the link PINs), not as one big number.
             Text(code, style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold,
-                letterSpacing = MaterialTheme.typography.displayMedium.fontSize * 0.15f)
+                letterSpacing = MaterialTheme.typography.displayMedium.fontSize * 0.15f,
+                modifier = Modifier.semantics { contentDescription = code.toList().joinToString(" ") })
             Text("On a device already signed in to Jellyfin: open your profile → Quick Connect → enter this code.",
                 style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(12.dp))
@@ -105,7 +111,9 @@ private fun LoginScreen(vm: AppViewModel) {
             return@Column
         }
 
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
+        // Live region: TalkBack reads a login error out as soon as it appears (focus stays on the button).
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }) }
         if (!usePassword) {
             Spacer(Modifier.height(16.dp))
             Button(
@@ -132,7 +140,8 @@ private fun LoginScreen(vm: AppViewModel) {
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth())
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }) }
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = { error = null; vm.login(server, user, pw) { error = it } },
@@ -348,7 +357,7 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
 
     if (locked3ds) AlertDialog(
         onDismissRequest = { locked3ds = false },
-        title = { Text(N3dsCheck.LOCKED_TITLE) },
+        title = { DialogTitle(N3dsCheck.LOCKED_TITLE) },
         text = { Text(N3dsCheck.LOCKED_TEXT) },
         confirmButton = { TextButton(onClick = {
             locked3ds = false; ctx.startActivity(android.content.Intent(ctx, N3dsCheckActivity::class.java))
@@ -417,6 +426,9 @@ private fun SortButton(sort: GameSort, onChoose: (GameSort) -> Unit) {
     }
 }
 
+/** GameCube, Wii and PS2 games (D218): the Windows app plays them; the phone lists them and keeps their saves. */
+internal const val PLAYS_ON_WINDOWS = "Plays on Windows"
+
 @Composable
 private fun GameRow(
     g: Game, vm: AppViewModel, onDownload: () -> Unit, onPlay: () -> Unit,
@@ -442,6 +454,7 @@ private fun GameRow(
                 Text(
                     listOfNotNull(
                         g.console?.shortName ?: "Unknown console",
+                        if (g.console?.isWindowsOnly == true) PLAYS_ON_WINDOWS else null,
                         if (downloaded) "On phone" else null,
                         if (!downloaded) lock3ds else null,
                         played,
@@ -464,13 +477,18 @@ private fun GameRow(
                         Icon(Icons.Default.Close, "Cancel download", Modifier.size(16.dp))
                     }
                     downloaded -> Button(onClick = onPlay) { Text("Play") }
+                    // GameCube, Wii, PS2 (D218): the Windows app plays them; here only their saves (menu).
+                    g.console?.isWindowsOnly == true -> Text(
+                        PLAYS_ON_WINDOWS, style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     else -> OutlinedButton(
                         onClick = onDownload,
                         enabled = !vm.offline && vm.serverProblem == null && g.canDownload && g.console?.core != null,
                     ) { Text("Download") }
                 }
                 Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, moreLabel(g)) }
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem({ Text("Saves on Jellyfin…") }, { menu = false; onSavesPanel() })
                         if (vm.hasFavourites && !vm.offline) {
@@ -517,7 +535,7 @@ private fun GetSaveDialog(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Get save from Jellyfin?") },
+        title = { DialogTitle("Get save from Jellyfin?") },
         text = {
             Column {
                 Text("Phone save: ${phone?.let { formatTime(it) } ?: "none"}" + (if (newer == "phone") " (newer)" else ""))
@@ -542,7 +560,7 @@ private fun ConflictDialog(vm: AppViewModel, game: Game, server: SaveVersion?) {
     val phone = remember(game.id) { vm.saves.localSaveTime(game) }
     AlertDialog(
         onDismissRequest = { vm.conflictPrompt = null },
-        title = { Text("Which save should be in use?") },
+        title = { DialogTitle("Which save should be in use?") },
         text = {
             Column {
                 Text("${game.name} has a different save on this phone and on Jellyfin (maybe from the browser or another phone).")

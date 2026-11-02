@@ -1,0 +1,25 @@
+Shoalcade: the PCEE2 libretro core refuses to load with no PS2 BIOS, as LRPS2 does.
+Upstream returned success from retro_load_game and only found out on its CPU thread, where VMManager::Initialize()
+failed: the frontend then showed a black screen with no error. Now retro_load_game checks for a BIOS first
+(PCSX2's own IsBIOSAvailable: the configured file, or any BIOS image in <system>/pcsx2/bios) and returns false,
+with "Could not find any valid PS2 BIOS file" in the log. Nothing else changes.
+
+diff --git a/pcee2-libretro/Libretro.cpp b/pcee2-libretro/Libretro.cpp
+index a1ae01cd4..3881bdceb 100644
+--- a/pcee2-libretro/Libretro.cpp
++++ b/pcee2-libretro/Libretro.cpp
+@@ -2559,6 +2559,14 @@ bool retro_load_game(const struct retro_game_info* game)
+ 	SettingsOverride();
+ 	VMManager::Internal::UpdateEmuFolders(); // Shoalcade: picks up the card folder set above
+ 
++	// Shoalcade (tools/pcee2-patches/0003): no BIOS = refuse the load, as LRPS2 does, instead of a load that
++	// "succeeds" and then shows a black screen when VMManager::Initialize() fails on the CPU thread.
++	if (!IsBIOSAvailable(Path::Combine(EmuFolders::Bios, s_settings_interface.GetStringValue("Filenames", "BIOS"))))
++	{
++		Console.ErrorFmt("Could not find any valid PS2 BIOS file in '{}'.", EmuFolders::Bios);
++		return false;
++	}
++
+ 	SPU2::CustomOutputStreamFactory = &CreateLibretroAudioStream;
+ 	InputManager::SetPadVibrationCallback(&PadVibrationCallback);
+ 	for (auto& r : s_pad_rumble)

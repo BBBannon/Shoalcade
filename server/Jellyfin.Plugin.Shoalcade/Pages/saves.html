@@ -84,6 +84,11 @@
         </div>
 
         <div id="movebox" class="movebox" hidden>
+          <div id="move-con-box" hidden>
+            <label for="move-con">Which console is this save for?</label>
+            <p class="fine" id="move-con-why">Shoalcade didn't record it for this game. Pick the console the game was on, then the game to move it to.</p>
+            <div class="movebox-row"><select id="move-con" aria-describedby="move-con-why"></select></div>
+          </div>
           <label for="move-to">Move all of this save's versions to</label>
           <div class="movebox-row">
             <select id="move-to"></select>
@@ -98,8 +103,9 @@
         <ul id="versions" class="svs"></ul>
         <p id="empty" class="empty" hidden></p>
         <div id="snaps" hidden>
-          <h3 class="set-h3">Browser snapshots</h3>
-          <ul id="snap-list" class="svs"></ul>
+          <h3 class="set-h3" id="snaps-h" tabindex="-1">Snapshots</h3>
+          <p id="snap-note" class="fine" hidden></p>
+          <ul id="snap-list" class="svs" aria-labelledby="snaps-h"></ul>
         </div>
       </div>
       <p id="keep" class="fine"></p>

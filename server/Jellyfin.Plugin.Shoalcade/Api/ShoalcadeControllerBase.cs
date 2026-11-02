@@ -90,18 +90,19 @@ public abstract class ShoalcadeControllerBase : ControllerBase
         return null;
     }
 
-    /// <summary>The ROM if the user can see it, else a 404 (same answer for "doesn't exist", "hidden" and "not a ROM").</summary>
+    /// <summary>The ROM if the user can see it, else a 404 (same answer for "doesn't exist", "hidden" and "not a ROM"),
+    /// or a 503 when its files can't be read right now (S4: try again, the game isn't gone).</summary>
     /// <param name="itemId">Item id.</param>
     /// <param name="user">User.</param>
     /// <param name="rom">The ROM.</param>
-    /// <returns>Null if OK, else the 404.</returns>
+    /// <returns>Null if OK, else the 404 or 503.</returns>
     protected ActionResult? RequireRom(Guid itemId, User user, out RomItem rom)
     {
         rom = null!;
-        var r = Library.GetRom(itemId, user);
+        var r = Library.GetRom(itemId, user, out var cantReadNow);
         if (r is null)
         {
-            return GameNotFound();
+            return cantReadNow ? CantReadGame() : GameNotFound();
         }
 
         rom = r;
@@ -111,6 +112,15 @@ public abstract class ShoalcadeControllerBase : ControllerBase
     /// <summary>The standard "game not found" 404.</summary>
     /// <returns>The result.</returns>
     protected ObjectResult GameNotFound() => Fail(StatusCodes.Status404NotFound, "not_found", "Game not found.");
+
+    /// <summary>The "can't read this game right now" 503 (S4): the game's files (a sleeping NAS) couldn't be read and never
+    /// were. Apps take a 503 as "try again later", so a save waiting to go up keeps waiting instead of being refused.</summary>
+    /// <returns>The result.</returns>
+    protected ObjectResult CantReadGame()
+    {
+        Response.Headers.RetryAfter = "30";
+        return Fail(StatusCodes.Status503ServiceUnavailable, "cant_read", "Jellyfin can't read this game's files right now (is the drive asleep?). Try again in a moment.");
+    }
 
     /// <summary>A JSON error.</summary>
     /// <param name="status">HTTP status.</param>

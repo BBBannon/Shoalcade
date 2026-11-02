@@ -74,18 +74,25 @@ class SaveTools(
 
     // ---- The browser saves manager's tools ----
 
-    /** Games [game]'s save can move to (the browser's moveTargets): same save format, not itself, by name. */
-    fun moveTargets(game: Game, games: List<Game>): List<Game> {
-        val f = saveFormat(game.console) ?: return emptyList()
+    /**
+     * Games [game]'s save can move to (the browser's moveTargets): same save format, not itself, by name. [picked] = the
+     * console the person chose for a removed game whose console wasn't recorded (F7 gap 2); a recorded one always wins.
+     */
+    fun moveTargets(game: Game, games: List<Game>, picked: Console? = null): List<Game> {
+        val f = saveFormat(game.console ?: picked) ?: return emptyList()
         return games.filter { it.id != game.id && saveFormat(it.console) == f }.sortedBy { it.name.lowercase() }
     }
 
-    /** Moves every version (and Jellyfin's snapshots and cheats of the game) to [to]. Returns the browser's message. */
-    suspend fun move(game: Game, to: Game, hadVersions: Boolean): String {
-        require(saveFormat(game.console) != null && saveFormat(game.console) == saveFormat(to.console) && to.id != game.id) {
+    /**
+     * Moves every version (and Jellyfin's snapshots and cheats of the game) to [to]. Returns the browser's message.
+     * [picked] is sent as `fromConsole` only when the save's console wasn't recorded (the browser's saves.js rule).
+     */
+    suspend fun move(game: Game, to: Game, hadVersions: Boolean, picked: Console? = null): String {
+        val from = game.console ?: picked
+        require(saveFormat(from) != null && saveFormat(from) == saveFormat(to.console) && to.id != game.id) {
             "Saves only move to a game with the same save format."
         }
-        val notes = api.move(game.id, to.id)
+        val notes = api.move(game.id, to.id, if (game.console == null) picked?.key else null)
         val what = if (hadVersions) "Save" else "Snapshots"
         return (listOf("$what moved to “${to.name}” from “${game.name}”.") + notes).joinToString(" ")
     }
@@ -106,25 +113,36 @@ class SaveTools(
      */
     suspend fun startFresh(game: Game, base: SaveVersion): String {
         api.startFresh(game.id, base.version)
-        val note = withContext(Dispatchers.IO) {
-            if (Storage.readSave(core.userId, game) == null) return@withContext ""
+        // Review #6: this PC forgets its last sync only once its save is really off (or there was none). If the backup
+        // or the removal fails, the save stays whole (removal is all or nothing) and the PC keeps its sync mark.
+        val (note, off) = withContext(Dispatchers.IO) {
             try {
+                if (Storage.readSave(core.userId, game) == null) return@withContext "" to true
                 Storage.backupSave(core.userId, game)
-                removePcSave(game)
-                " The save on this PC was backed up and taken off, so this PC starts from the beginning too."
             } catch (e: IOException) {
-                " The save on this PC couldn't be backed up (${e.message}), so it was left as it is."
+                return@withContext " The save on this PC couldn't be backed up (${e.message}), so it was left as it is." to false
+            }
+            try {
+                removePcSave(game)
+                " The save on this PC was backed up and taken off, so this PC starts from the beginning too." to true
+            } catch (e: Storage.SavePartlyRemovedException) {
+                // Review S6: the rollback failed too. Said as it is; its uploads are held until a whole save is back.
+                Log.w("Start fresh: the PC save was only partly put back", e)
+                " The save on this PC was backed up, but taking it off failed part way. ${PcWords.of(e.message ?: "")}" to false
+            } catch (e: IOException) {
+                Log.w("Start fresh: the PC save couldn't be taken off", e)
+                " The save on this PC was backed up, but a file of it is in use, so it was left as it is (all of it)." to false
             }
         }
-        SyncMarks.forget(syncStore, core.userId, game.id)
+        if (off) SyncMarks.forget(syncStore, core.userId, game.id)
         return "Started fresh. Version ${base.version} is kept in the list.$note"
     }
 
     private fun removePcSave(game: Game) {
         if (game.console?.hasFolderSaves == true) {
-            // Only the save folder the phone's Storage reads (PSP/SAVEDATA), never the rest of the memory stick.
-            val dir = File(Storage.memstickDir(core.userId, game), "PSP/SAVEDATA")
-            if (dir.exists() && !dir.deleteRecursively()) throw IOException("Couldn't take the save off.")
+            // Only the save files the phone's Storage reads (PSP/SAVEDATA, the 3DS SD card's Nintendo 3DS folder, the
+            // Wii data folders, the GameCube cards, the PS2 card), never the rest of the folder (an installed Wii game).
+            Storage.removeFolderSave(core.userId, game)
         } else {
             val f = Storage.saveFile(core.userId, game)
             if (f.exists() && !f.delete()) throw IOException("Couldn't take the save off.")
@@ -163,6 +181,9 @@ class SaveTools(
             Console.GBC -> Console.GB.key
             else -> c.key
         }
+
+        /** The browser's formatNames (saves.js): every console sharing [c]'s save format, "Game Boy or Game Boy Color". */
+        fun formatNames(c: Console): String = Console.entries.filter { saveFormat(it) == saveFormat(c) }.joinToString(" or ") { it.tag }
 
         /** The browser's sameName (saves.js): same text, ignoring case and extra spaces; never empty. */
         fun sameName(a: String?, b: String?): Boolean {

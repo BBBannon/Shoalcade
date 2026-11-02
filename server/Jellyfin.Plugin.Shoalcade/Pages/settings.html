@@ -39,6 +39,7 @@
       <nav class="strip set-nav" aria-label="Settings sections">
         <a class="chip" href="#saves-s">Saves</a>
         <a class="chip" href="#app-s">Phone app</a>
+        <a class="chip" href="#win-s" id="win-chip" hidden>Windows app</a>
         <a class="chip" href="#player-s">Browser player</a>
         <a class="chip" href="#patch-s">Patch a game</a>
       </nav>
@@ -53,7 +54,7 @@
         <button type="button" id="saves-export" class="btn" hidden>
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Download all my saves</span>
         </button>
-        <p class="fine">See every version of each save, use an older one, upload a save file or move a save to another game. Your saves live on your Jellyfin server and follow you to the phone app.</p>
+        <p class="fine">See every version of each save, use an older one, upload a save file or move a save to another game. Your saves live on your Jellyfin server and follow you to the phone and Windows apps.</p>
         <p class="fine">“Download all my saves” gives one zip with the save in use for every game: a copy to keep somewhere safe.</p>
       </section>
 
@@ -91,6 +92,25 @@
           </div>
           <p class="fine">Your phone must be able to reach this address. If you opened this page as “localhost” or “127.0.0.1”, open it with your server's network address instead.</p>
         </div>
+      </section>
+
+      <!-- Windows app (S3, D181): the installer is on this release's GitHub page, never inside the plugin. -->
+      <section id="win-s" class="set-box" aria-labelledby="win-h" hidden>
+        <h2 id="win-h" class="sec">Windows app</h2>
+        <p class="fine app-lead">Shoalcade for Windows: the same library, saves and snapshots on a Windows 10 or 11 PC. Its installer is about 160 MB, too big to come inside the plugin, so it is on Shoalcade's release page on GitHub.</p>
+        <div class="app-dl-row">
+          <a id="win-get" class="btn primary" href="#" target="_blank" rel="noopener noreferrer">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Get the Windows app</span><span class="sr"> (opens GitHub in a new tab)</span>
+          </a>
+          <span id="win-ver" class="app-ver"></span>
+        </div>
+        <h3 class="set-h3">How to install</h3>
+        <ol class="app-steps">
+          <li>On the release page, download <strong>ShoalcadeApp-win-Setup.exe</strong> and open it.</li>
+          <li>If Windows says it protected your PC, choose <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+          <li>Open Shoalcade and log in with your Jellyfin address and your Jellyfin username and password.</li>
+        </ol>
+        <p class="fine">Your Jellyfin address: <span id="win-addr" class="app-addr"></span></p>
       </section>
 
       <!-- Browser player settings per console: the same settings the player's Settings panel changes (prefs/{console}). -->

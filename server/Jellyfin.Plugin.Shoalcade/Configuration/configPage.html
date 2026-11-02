@@ -60,6 +60,20 @@
                     </div>
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
+                            <input id="OfferWindowsApp" name="OfferWindowsApp" type="checkbox" is="emby-checkbox" />
+                            <span>Show the Windows app link</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Shoalcade Settings shows a Windows app section with a link to this release's page on GitHub, where the installer is. The installer is too big to come inside the plugin; the link only opens GitHub when someone clicks it.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableLinkRelay" name="EnableLinkRelay" type="checkbox" is="emby-checkbox" />
+                            <span>Allow link play over the internet</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Two people signed in to this server can link Game Boy Advance games through it when they aren't on the same Wi-Fi. Each needs a Game Boy Advance game they can see here. The link data passes straight through and is never stored. Link play on the same Wi-Fi works either way.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
                             <input id="KeepGamesOffHomePage" name="KeepGamesOffHomePage" type="checkbox" is="emby-checkbox" />
                             <span>Keep games off Jellyfin's home page</span>
                         </label>
@@ -140,7 +154,7 @@
         <script type="text/javascript">
             (function () {
                 var pluginId = '5a8b0f1e-7c3d-4e2a-9b6f-1d4c8e9a2f70';
-                var bools = ['EnableBrowserPlayer', 'ShowInJellyfin', 'OfferPhoneApp', 'KeepGamesOffHomePage', 'ImportJellyEmuSaves'];
+                var bools = ['EnableBrowserPlayer', 'ShowInJellyfin', 'OfferPhoneApp', 'OfferWindowsApp', 'EnableLinkRelay', 'KeepGamesOffHomePage', 'ImportJellyEmuSaves'];
                 var nums = ['KeepRecentVersions', 'KeepDailyDays', 'SaveQuotaMegabytes', 'SnapshotQuotaMegabytes', 'MaxSnapshotMegabytes'];
                 var page = document.querySelector('#shoalcadeConfigPage');
                 function el(tag, text, style) { var e = document.createElement(tag); if (text) { e.textContent = text; } if (style) { e.style.cssText = style; } return e; }

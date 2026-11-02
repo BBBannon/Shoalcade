@@ -80,6 +80,9 @@
           <a id="sheet-saves" class="btn" href="saves-manager">
             <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4"/></svg><span>Saves</span>
           </a>
+          <a id="sheet-snaps" class="btn" href="saves-manager" hidden>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="sheet-snaps-t">Snapshots</span>
+          </a>
           <button type="button" id="sheet-star" class="btn" aria-pressed="false" hidden>
             <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg><span id="sheet-star-t">Star</span>
           </button>
@@ -89,7 +92,7 @@
         </div>
         <p id="sheet-why" class="note" hidden></p>
         <dl id="sheet-facts" class="facts"></dl>
-        <p class="fine">Your save lives on your Jellyfin server and follows you to the phone app.</p>
+        <p class="fine">Your save lives on your Jellyfin server and follows you to the phone and Windows apps.</p>
       </div>
     </div>
     <section id="editor" class="editor" aria-labelledby="editor-h" hidden>
@@ -118,9 +121,9 @@
           <button type="submit" class="btn">Search</button>
         </div>
         <p id="ed-find-help" class="fine">Searches the libretro game list for this console. Type the main title, e.g. “HeartGold”.</p>
-        <div id="ed-results" class="ed-results" aria-label="Covers found"></div>
+        <div id="ed-results" class="ed-results" role="group" aria-label="Covers found"></div>
       </form>
-      <p id="ed-status" class="note" role="status" aria-live="polite" hidden></p>
+      <div role="status" aria-live="polite"><p id="ed-status" class="note" hidden></p></div>
       <div class="ed-foot">
         <button type="button" id="ed-reset" class="btn danger">Reset to automatic</button>
         <button type="button" id="ed-done" class="btn">Done</button>

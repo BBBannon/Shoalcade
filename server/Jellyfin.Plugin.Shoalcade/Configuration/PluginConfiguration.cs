@@ -15,6 +15,15 @@ public class PluginConfiguration : BasePluginConfiguration
     /// (Shoalcade Settings, Phone app, D134). Off: the download links and the app info answer 404.</summary>
     public bool OfferPhoneApp { get; set; } = true;
 
+    /// <summary>Gets or sets a value indicating whether Shoalcade Settings shows the Windows app section, with a link to
+    /// this release's page on GitHub (S3, D181; the installer is not inside the plugin). Off: <c>app/info?platform=windows</c> answers 404.</summary>
+    public bool OfferWindowsApp { get; set; } = true;
+
+    /// <summary>Gets or sets a value indicating whether two people signed in to this server can link GBA games over the
+    /// internet through it (link relay, security review R-L1). Off: every <c>link/*</c> route answers 404 <c>link_off</c>;
+    /// link play on the same Wi-Fi still works (it never touches the server).</summary>
+    public bool EnableLinkRelay { get; set; } = true;
+
     /// <summary>Gets or sets a value indicating whether games libraries are kept off everyone's Jellyfin home page (D109).
     /// Games stay in search, the Shoalcade pages and the app.</summary>
     public bool KeepGamesOffHomePage { get; set; } = true;

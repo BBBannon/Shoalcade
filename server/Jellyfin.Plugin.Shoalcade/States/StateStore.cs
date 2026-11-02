@@ -548,6 +548,15 @@ public sealed class StateStore
         }
     }
 
+    /// <summary>
+    /// A snapshot made by the gambatte core, dropped in D81 (Game Boy now plays on mGBA): it can't be loaded any more,
+    /// so it is kept and never replaced (D221).
+    /// </summary>
+    /// <param name="s">The snapshot.</param>
+    /// <returns>True for an old-engine snapshot.</returns>
+    public static bool IsOldEngine(StateInfo s) =>
+        s?.Core is { } core && core.StartsWith("gambatte", StringComparison.OrdinalIgnoreCase);
+
     private static string QuotaKey(Guid user) => "quota:" + user.ToString("N");
 
     private static string? CleanCore(string? core)

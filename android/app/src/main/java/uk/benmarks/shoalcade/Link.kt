@@ -218,9 +218,13 @@ object LinkHandshake {
     fun host(
         input: InputStream, output: OutputStream, guard: PinGuard, console: Console, gameName: String,
         deviceName: String, cableMode: Boolean, nonce: String = LinkRules.newNonce(),
+        handshakeMs: Long = LinkLobby.HANDSHAKE_MS,
     ): HostResult {
         send(output, LinkRules.hello(console, gameName, deviceName, cableMode, nonce))
-        val theirs = try { JSONObject(readLine(input)) } catch (e: Exception) { return HostResult.Dropped(e.message ?: "no hello") }
+        // A time limit on the whole hello, not just each read: a joiner trickling one byte at a time would otherwise
+        // hold the only handshake slot for hours, so the real friend could never join (security review 02/11 W-L3).
+        val deadline = System.nanoTime() + handshakeMs * 1_000_000
+        val theirs = try { JSONObject(readLine(input, deadline)) } catch (e: Exception) { return HostResult.Dropped(e.message ?: "no hello") }
         LinkRules.checkHello(theirs, console)?.let { return HostResult.Dropped(it) }
         val joinNonce = theirs.optString("nonce")
         return when (guard.check(console, nonce, joinNonce, theirs.optString("proof"))) {
@@ -285,8 +289,11 @@ object LinkHandshake {
         output.flush()
     }
 
-    /** Reads one line byte by byte, so nothing after it is swallowed into a buffer. */
-    fun readLine(input: InputStream): String {
+    /**
+     * Reads one line byte by byte, so nothing after it is swallowed into a buffer. With a [deadline] (System.nanoTime),
+     * gives up once it has passed; a read that blocks still ends at the socket's own read timeout.
+     */
+    fun readLine(input: InputStream, deadline: Long? = null): String {
         val buf = java.io.ByteArrayOutputStream()
         while (true) {
             val b = input.read()
@@ -294,6 +301,7 @@ object LinkHandshake {
             if (b == '\n'.code) break
             buf.write(b)
             if (buf.size() > 4096) throw IOException("unexpected data")
+            if (deadline != null && System.nanoTime() - deadline > 0) throw IOException("too slow")
         }
         return buf.toString(Charsets.UTF_8.name())
     }

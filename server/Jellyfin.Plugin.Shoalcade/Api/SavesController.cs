@@ -305,6 +305,7 @@ public class SavesController : ShoalcadeControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult> PutSave(
         [FromRoute] Guid id,
         [FromQuery] string? channel,
@@ -524,11 +525,15 @@ public class SavesController : ShoalcadeControllerBase
     /// <param name="to">Target item.</param>
     /// <param name="channel">Old clients only (see the class notes).</param>
     /// <param name="toChannel">Old clients only (see the class notes).</param>
+    /// <param name="fromConsole">
+    /// F7 gap 2: for a removed game whose console isn't recorded, the console the owner says the save is for. Never
+    /// overrides a recorded console (422 <c>console_known</c> if it differs), and every version must fit it (422 <c>console_size</c>).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Result for the target.</returns>
     [HttpPost("save/{id:guid}/move")]
     [ProducesResponseType(StatusCodes.Status201Created)]
-    public async Task<ActionResult> Move([FromRoute] Guid id, [FromQuery] Guid to, [FromQuery] string? channel, [FromQuery] string? toChannel, CancellationToken cancellationToken)
+    public async Task<ActionResult> Move([FromRoute] Guid id, [FromQuery] Guid to, [FromQuery] string? channel, [FromQuery] string? toChannel, [FromQuery] string? fromConsole, CancellationToken cancellationToken)
     {
         var (src, fail) = await ResolveAsync(id, channel, false, cancellationToken).ConfigureAwait(false);
         if (fail is not null)
@@ -542,9 +547,51 @@ public class SavesController : ShoalcadeControllerBase
             return fail2;
         }
 
+        if (!string.IsNullOrEmpty(fromConsole))
+        {
+            var picked = GameConsole.FromKey(fromConsole);
+            if (picked is null)
+            {
+                return Fail(StatusCodes.Status400BadRequest, "bad_console", "Unknown console.");
+            }
+
+            if (src.Console is not null)
+            {
+                if (src.Console != picked)
+                {
+                    return Fail(StatusCodes.Status422UnprocessableEntity, "console_known", "This save is already known to be for " + src.Console.DisplayName + ".");
+                }
+            }
+            else
+            {
+                var versions = (await Services.Saves.GetHistoryAsync(src.User.Id, id, cancellationToken).ConfigureAwait(false)).Versions;
+                if (versions.Any(v => v.Size > picked.MaxSaveBytes))
+                {
+                    return Fail(StatusCodes.Status422UnprocessableEntity, "console_size", "This save is too big to be a " + picked.DisplayName + " save, so it wasn't moved. Pick another console, or download it instead.");
+                }
+
+                // Review #3: a pick must pass the same format rules as an upload (e.g. a PS2 save is one memory card
+                // in a zip), so a wrong pick can never become the target's current save. A pick the target can't
+                // take at all is left to the move's own "console" refusal.
+                if (dst.Console is null || picked.SharesSaveFormatWith(dst.Console))
+                {
+                    foreach (var v in versions)
+                    {
+                        var problem = await PickedFormatProblemAsync(src.User.Id, id, v.Version, picked, cancellationToken).ConfigureAwait(false);
+                        if (problem is not null)
+                        {
+                            return Fail(StatusCodes.Status422UnprocessableEntity, "console_format", "This save isn't a " + picked.DisplayName + " save (version " + v.Version.ToString(CultureInfo.InvariantCulture) + ": " + problem + "), so it wasn't moved. Pick another console, or download it instead.");
+                        }
+                    }
+                }
+
+                src = src with { Console = picked };
+            }
+        }
+
         if (src.Console is null)
         {
-            return Fail(StatusCodes.Status422UnprocessableEntity, "console_unknown", "Can't tell which console this save is for, so it can't be moved. Download it instead.");
+            return Fail(StatusCodes.Status422UnprocessableEntity, "console_unknown", "Can't tell which console this save is for. Pick its console to move it, or download it instead.");
         }
 
         if (src.Access == Access.Removed && (await Services.Saves.GetHistoryAsync(src.User.Id, id, cancellationToken).ConfigureAwait(false)).Versions.Count == 0)
@@ -562,6 +609,32 @@ public class SavesController : ShoalcadeControllerBase
         }
 
         return ToResult(r);
+    }
+
+    /// <summary>Checks one stored version against a picked console's save rules (blank allowed: it was stored once).</summary>
+    /// <param name="user">User id.</param>
+    /// <param name="item">Item the save is under.</param>
+    /// <param name="version">Version number.</param>
+    /// <param name="picked">The console the owner picked.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Null if it fits, else the reason.</returns>
+    private async Task<string?> PickedFormatProblemAsync(Guid user, Guid item, int version, GameConsole picked, CancellationToken cancellationToken)
+    {
+        var opened = await Services.Saves.OpenAsync(user, item, version, cancellationToken).ConfigureAwait(false);
+        if (opened is not { } o)
+        {
+            return "it couldn't be read";
+        }
+
+        byte[] bytes;
+        await using (o.Data.ConfigureAwait(false))
+        {
+            using var ms = new MemoryStream();
+            await o.Data.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
+            bytes = ms.ToArray();
+        }
+
+        return SaveRules.Check(picked, bytes, allowBlank: true, [], out _);
     }
 
     /// <summary>Plain-English notes about a snapshot move, for the move's warnings (empty if there were no snapshots).</summary>
@@ -711,7 +784,12 @@ public class SavesController : ShoalcadeControllerBase
             return (default!, Fail(StatusCodes.Status400BadRequest, "bad_channel", "channel must be main or browser."));
         }
 
-        var rom = Library.GetRom(id, user);
+        var rom = Library.GetRom(id, user, out var cantReadNow);
+        if (cantReadNow)
+        {
+            return (default!, CantReadGame()); // S4: never "not found" for a game whose files are only asleep
+        }
+
         if (rom is not null)
         {
             await Services.JellyEmu.SyncAsync(user.Id, rom.Id, rom.Console, rom.Name, cancellationToken).ConfigureAwait(false);

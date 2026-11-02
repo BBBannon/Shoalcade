@@ -201,4 +201,69 @@ bool write_file_atomic(const std::string &path, const void *data, size_t size, s
     return true;
 #endif
 }
+
+bool write_file_direct(const std::string &path, const void *data, size_t size, std::string *err) {
+    // See files.h (D225): delete + create a new file + flush; a failed write never leaves a part-file behind.
+#ifdef _WIN32
+    std::wstring wpath = widen(path);
+    if (!DeleteFileW(wpath.c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND) {
+        if (err) *err = "can't replace " + path + ": " + last_error_text();
+        return false;
+    }
+    HANDLE h = CreateFileW(wpath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        if (err) *err = "can't create " + path + ": " + last_error_text();
+        return false;
+    }
+    const uint8_t *p = static_cast<const uint8_t *>(data);
+    size_t left = size;
+    bool ok = true;
+    while (left > 0 && ok) {
+        DWORD chunk = left > (1u << 30) ? (1u << 30) : (DWORD)left, wrote = 0;
+        ok = WriteFile(h, p, chunk, &wrote, nullptr) && wrote == chunk;
+        p += wrote;
+        left -= wrote;
+    }
+    if (ok) ok = FlushFileBuffers(h);
+    std::string why = ok ? "" : last_error_text();
+    CloseHandle(h);
+    if (!ok) {
+        DeleteFileW(wpath.c_str());
+        if (err) *err = why;
+    }
+    return ok;
+#else
+    if (unlink(path.c_str()) != 0 && errno != ENOENT) {
+        if (err) *err = "can't replace " + path + ": " + strerror(errno);
+        return false;
+    }
+    int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+    if (fd < 0) {
+        if (err) *err = "can't create " + path + ": " + strerror(errno);
+        return false;
+    }
+    const uint8_t *p = static_cast<const uint8_t *>(data);
+    size_t left = size;
+    while (left > 0) {
+        ssize_t w = write(fd, p, left);
+        if (w < 0 && errno == EINTR) continue;
+        if (w <= 0) {
+            if (err) *err = std::string("write failed: ") + strerror(errno);
+            close(fd);
+            unlink(path.c_str());
+            return false;
+        }
+        p += w;
+        left -= (size_t)w;
+    }
+    if (fsync(fd) != 0) {
+        if (err) *err = std::string("fsync failed: ") + strerror(errno);
+        close(fd);
+        unlink(path.c_str());
+        return false;
+    }
+    close(fd);
+    return true;
+#endif
+}
 } // namespace sc

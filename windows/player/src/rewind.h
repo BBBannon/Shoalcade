@@ -10,17 +10,23 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <future>
+#include <string>
 #include <vector>
 
 namespace sc {
 class Rewind {
 public:
-    void configure(size_t cap_bytes) { cap_ = cap_bytes; }
+    void configure(size_t cap_bytes, size_t max_steps = 0) { cap_ = cap_bytes, max_steps_ = max_steps; }
     /** A new state (the newest). */
     void push(const std::vector<uint8_t> &state);
     /** Steps back one state; false if there is nothing older. `out` = the older state. */
     bool step_back(std::vector<uint8_t> &out);
     void clear();
+    /** P10: waits for a push() run on another thread. "" if it worked; if it threw (e.g. out of memory with ~100 MB
+     *  states) the ring is emptied, since it may hold a change without the state it belongs to, and the error is
+     *  returned. A job that isn't running is "". */
+    std::string finish_push(std::future<void> &job);
     size_t bytes() const { return used_; }
     size_t steps() const { return deltas_.size(); }
 
@@ -28,6 +34,7 @@ private:
     static void encode(const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, std::vector<uint8_t> &out);
     static bool apply(const std::vector<uint8_t> &delta, std::vector<uint8_t> &state);
     size_t cap_ = 64u << 20;
+    size_t max_steps_ = 0; // 0 = as many as fit (P10 coarse rewind: ~30 one-second steps)
     std::vector<uint8_t> current_;
     std::deque<std::vector<uint8_t>> deltas_; // deltas_.back() turns current_ into the one before it
     size_t used_ = 0;

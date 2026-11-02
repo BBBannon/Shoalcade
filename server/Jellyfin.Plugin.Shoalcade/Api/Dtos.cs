@@ -89,18 +89,20 @@ public sealed record UserDto(
 /// <param name="BrowserSaves">none/shared/separate.</param>
 /// <param name="SaveFormat">Save format family: saves move only between consoles with the same value (gb and gbc share "gb").</param>
 /// <param name="Maker">Maker the library's console bar groups it under ("Nintendo", "Sony"), or null (its own button).</param>
+/// <param name="WindowsOnly">Played by the Windows app only (GameCube, Wii, PS2: D218): pages say "Plays in the Windows app".</param>
 public sealed record ConsoleDto(
     [property: JsonPropertyName("key")] string Key,
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("browserCore")] string? BrowserCore,
     [property: JsonPropertyName("browserSaves")] string BrowserSaves,
     [property: JsonPropertyName("saveFormat")] string SaveFormat,
-    [property: JsonPropertyName("maker")] string? Maker)
+    [property: JsonPropertyName("maker")] string? Maker,
+    [property: JsonPropertyName("windowsOnly")] bool WindowsOnly)
 {
     /// <summary>Creates the DTO.</summary>
     /// <param name="c">Console.</param>
     /// <returns>The DTO.</returns>
-    public static ConsoleDto From(GameConsole c) => new(c.Key, c.DisplayName, c.BrowserCore, c.BrowserSaves.ToString().ToLowerInvariant(), c.SaveFormat, c.Maker);
+    public static ConsoleDto From(GameConsole c) => new(c.Key, c.DisplayName, c.BrowserCore, c.BrowserSaves.ToString().ToLowerInvariant(), c.SaveFormat, c.Maker, c.WindowsOnly);
 }
 
 /// <summary>A save version.</summary>
@@ -193,6 +195,7 @@ public sealed record SaveWriteDto(
 /// <param name="Save">Current save, if any.</param>
 /// <param name="Favourite">Starred by this user (Jellyfin favourites).</param>
 /// <param name="PlaySeconds">This user's total play time on the game, from every device (seconds; 0 = none).</param>
+/// <param name="Discs">How many discs a disc-set game has (D-8: get them with /games/{id}/discs); 0 for a one-file game.</param>
 public sealed record GameDto(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("name")] string Name,
@@ -206,7 +209,24 @@ public sealed record GameDto(
     [property: JsonPropertyName("browserPlayable")] bool BrowserPlayable,
     [property: JsonPropertyName("save")] SaveVersionDto? Save,
     [property: JsonPropertyName("favourite")] bool Favourite = false,
-    [property: JsonPropertyName("playSeconds")] long PlaySeconds = 0);
+    [property: JsonPropertyName("playSeconds")] long PlaySeconds = 0,
+    [property: JsonPropertyName("discs")] int Discs = 0);
+
+/// <summary>One disc of a disc-set game (D-8).</summary>
+/// <param name="Index">Play order, from 0 (the download route takes it).</param>
+/// <param name="Name">File name to save it as (unique within the set).</param>
+/// <param name="Size">Size in bytes.</param>
+public sealed record DiscDto(
+    [property: JsonPropertyName("index")] int Index,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("size")] long Size);
+
+/// <summary>A disc-set game's discs (D-8): download each with /games/{id}/discs/{index}, then play the .m3u.</summary>
+/// <param name="Discs">The discs, in play order.</param>
+/// <param name="M3u">A .m3u naming them (one file name per line), to save next to them.</param>
+public sealed record DiscSetDto(
+    [property: JsonPropertyName("discs")] IReadOnlyList<DiscDto> Discs,
+    [property: JsonPropertyName("m3u")] string M3u);
 
 /// <summary>Body of "add play time": finished sessions, several at once (a phone that was offline).</summary>
 /// <param name="Sessions">Sessions.</param>
@@ -279,9 +299,12 @@ public sealed class VersionUpdateDto
 /// <summary>Snapshot list.</summary>
 /// <param name="Snapshots">Filled slots.</param>
 /// <param name="Enabled">Whether snapshots are on for this console (D38).</param>
+/// <param name="MaxBytes">The biggest snapshot the server takes (the admin's limit): a client that was refused one
+/// (413) sends it again only once this is big enough (review #11).</param>
 public sealed record StateListDto(
     [property: JsonPropertyName("snapshots")] IReadOnlyList<StateInfo> Snapshots,
-    [property: JsonPropertyName("enabled")] bool Enabled);
+    [property: JsonPropertyName("enabled")] bool Enabled,
+    [property: JsonPropertyName("maxBytes")] long MaxBytes);
 
 /// <summary>What the Jellyfin web side menu needs (D67).</summary>
 /// <param name="HasGames">Whether the user can see at least one game (so the Shoalcade link is shown).</param>

@@ -4,6 +4,7 @@
  */
 #include "rewind.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace sc {
@@ -35,6 +36,15 @@ void Rewind::encode(const std::vector<uint8_t> &newer, const std::vector<uint8_t
     auto x = [&](size_t k) -> uint8_t { return (uint8_t)(older[k] ^ (k < newer.size() ? newer[k] : 0)); };
     while (i < n) {
         size_t z = i;
+        // Equal stretches 8 bytes at a time (a 100 MB state is mostly unchanged between two steps: P10).
+        const size_t m = std::min(n, newer.size());
+        while (z + 8 <= m) {
+            uint64_t a, b;
+            memcpy(&a, older.data() + z, 8);
+            memcpy(&b, newer.data() + z, 8);
+            if (a != b) break;
+            z += 8;
+        }
         while (z < n && x(z) == 0) z++;
         size_t lit = z;
         // A literal ends at the next run of 8+ zero bytes (short runs are cheaper to keep inline).
@@ -85,7 +95,7 @@ void Rewind::push(const std::vector<uint8_t> &state) {
         encode(state, current_, d);
         used_ += d.size();
         deltas_.push_back(std::move(d));
-        while (used_ + state.size() > cap_ && !deltas_.empty()) {
+        while (((used_ + state.size() > cap_) || (max_steps_ && deltas_.size() > max_steps_)) && !deltas_.empty()) {
             used_ -= deltas_.front().size();
             deltas_.pop_front();
         }
@@ -110,5 +120,19 @@ void Rewind::clear() {
     deltas_.clear();
     current_.clear();
     used_ = 0;
+}
+
+std::string Rewind::finish_push(std::future<void> &job) {
+    if (!job.valid()) return "";
+    try {
+        job.get();
+        return "";
+    } catch (const std::exception &e) {
+        clear();
+        return e.what()[0] ? e.what() : "unknown error";
+    } catch (...) {
+        clear();
+        return "unknown error";
+    }
 }
 } // namespace sc

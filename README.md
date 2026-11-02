@@ -28,7 +28,7 @@
 - 🎮 **One library, every screen:** play on your **Android phone**, your **Windows PC** (new) or in **any browser** that can reach your Jellyfin, and pick up exactly where you left off on another
 - ✈️ **Truly offline on the phone and PC:** games download and run **natively**, not streamed. Plane, car, no signal: it still plays
 - 💾 **Saves you can't lose:** every save is kept on your server with **full history**. **Pin** the ones that matter. If the phone and the server disagree, Shoalcade **asks you**; it never quietly picks a winner
-- 📂 **Drop in, scan, play:** put your games in folders, press **Scan**, and they appear with **official names and box art**. From **Game Boy to PS1, N64, DS, PSP and 3DS**
+- 📂 **Drop in, scan, play:** put your games in folders, press **Scan**, and they appear with **official names and box art**. From **Game Boy to PS1, N64, DS, PSP and 3DS**, plus **GameCube, Wii and PS2** in the Windows app (new)
 - 👨‍👩‍👧 **Uses your Jellyfin as it is:** the same logins, users and libraries. Each person has their own saves, and a child only sees the libraries you give them
 - 🤝 **Play together:** link phones and PCs on the same Wi-Fi for **Pokémon trades and battles** (GBA and DS), trade over the **internet through your own Jellyfin** (GBA), or use up to **four controllers** on N64
 - 🧩 **The extras you'd expect:** snapshots, cheats, **fast-forward**, **screenshots**, **play time**, a built-in **patcher** for fan translations and hacks, Bluetooth controllers and button remapping
@@ -45,6 +45,7 @@
 - [What it is](#what-it-is)
 - [Your own games only](#your-own-games-only)
 - [Supported consoles](#supported-consoles)
+  - [GameCube, Wii and PS2 (Windows app, new)](#gamecube-wii-and-ps2-windows-app-new)
 - [Screenshots](#screenshots)
 - [Features](#features)
 - [Requirements](#requirements)
@@ -97,14 +98,72 @@
 | **PlayStation (PS1)** | ✅ PCSX ReARMed | ✅ PCSX ReARMed | ✅ PCSX ReARMed | ❌ |
 | **PSP** | ✅ PPSSPP (landscape) | ✅ PPSSPP | ❌ not yet | ❌ |
 | **Nintendo 3DS** | ✅ Azahar (after a one-minute **3DS check**) | ✅ Azahar | ❌ (games and saves listed only) | ❌ |
+| **GameCube** (new) | ➖ listed: **Plays on Windows** | ✅ Dolphin | ➖ listed: **Plays in the Windows app** | ❌ (the game's own LAN / online play: **Network adapter**) |
+| **Wii** (new) | ➖ listed: **Plays on Windows** | ✅ Dolphin | ➖ listed: **Plays in the Windows app** | ❌ |
+| **PlayStation 2** (new) | ➖ listed: **Plays on Windows** | ✅ LRPS2 or PCEE2 (**your own BIOS**) | ➖ listed: **Plays in the Windows app** | ❌ (the game's own LAN / online play: **Network adapter**, LRPS2 only) |
 
 - **Same emulators, same versions** on the phone and the PC, so a save made on one plays on the other.
 - **Link play works phone ↔ phone, PC ↔ PC and phone ↔ PC.**
+- **GameCube, Wii and PS2 play in the Windows app only.** The phone and the browser list them, and their saves can be managed there as usual. Details: [GameCube, Wii and PS2](#gamecube-wii-and-ps2-windows-app-new).
 
-- **PS1:** one `.chd` or `.pbp` file per game. **No BIOS needed** (a built-in stand-in is used; some games may need a real BIOS, not supported yet). Save = one **memory card**, shared by the phone and the browser.
+- **PS1:** one `.chd` or `.pbp` file per game, or a game on more than one disc (see [Games on more than one disc](#games-on-more-than-one-disc)). **No BIOS needed** (a built-in stand-in is used; some games may need a real BIOS, not supported yet). Save = one **memory card**, shared by the phone and the browser.
 - **N64:** `.z64`, `.n64` or `.v64` files (or a `.zip`/`.7z` holding one). Save = the cartridge save plus **Controller Pak 1**, shared by the phone and the browser.
 - **3DS:** decrypted `.3ds`, `.cci`, `.cxi` or `.3dsx` files (or the compressed `.zcci`, `.zcxi`, `.z3dsx`). **No keys or system files needed**, and none are included. `.cia` installer files are listed but can't be played: convert them to `.cci` first. Before the first download, the app runs a **3DS check** (Settings → 3DS check, about a minute) to make sure your phone is fast enough; if it isn't, 3DS stays locked, with **Unlock anyway** if you want to try. On **Windows** the 3DS check is optional advice and **never locks** anything. Save = the game's save folder, zipped, shared with Jellyfin. **No cheats on 3DS.**
-- **Other consoles are not shown.** Their files stay on your server, untouched.
+- **Other consoles are not shown** (SNES, Wii U and the rest). Their files stay on your server, untouched.
+
+### GameCube, Wii and PS2 (Windows app, new)
+
+> **New and lightly tested.** They run our own test programs (homebrew) on our test PCs. **How well real games run hasn't been tested yet.** Please report what you find on [Discord][discord].
+
+**What you need**
+- A **fast PC**: a recent processor and decent graphics. These consoles are much heavier than the others
+- **GameCube and Wii check** (⚙ Settings → **3DS check** tab): plays a short test scene and tells you how well this PC keeps up. **Advice only**: the games always play
+- **PS2 only:** a **PS2 BIOS file you copied from your own PlayStation 2** (see [PS2 BIOS](#ps2-bios))
+
+**File types**
+
+| Console | Plays | Skipped (Jellyfin's log says why) |
+|---|---|---|
+| **GameCube** | `.iso` `.gcm` `.rvz` `.wia` `.gcz` `.ciso` `.tgc`, homebrew `.dol` `.elf` | `.zip` / `.7z` (discs are too big to unpack) |
+| **Wii** | `.iso` `.wbfs` `.rvz` `.wia` `.gcz` `.ciso`, `.wad` (WiiWare, Virtual Console), homebrew `.dol` `.elf` | `.zip` / `.7z`, split `.wbfs` (`.wbf1`…). **Wii U is not supported** |
+| **PS2** | `.iso` `.chd` `.cso` `.zso` `.gz` `.ciso`, homebrew `.elf` | **`.bin` + `.cue`: make one `.chd` of the disc instead**, `.zip` / `.7z` |
+
+- **One file per game** (or a game on more than one disc, below). Put each console in its own folder (`GameCube` or `gc`, `Wii`, `PS2`), as `.iso` files are shared by several consoles. A disc with no console in its name or folder is recognised from the disc itself.
+- **No GameCube or Wii BIOS, menu or system files needed**, and none are included.
+
+#### Games on more than one disc
+
+- **PS1, PS2, GameCube and Wii:** put a game's discs in **their own folder**, named `… (Disc 1)`, `… (Disc 2)` and so on, **or** list them in a `.m3u` file. It shows as **one game with one save**.
+- Every disc must be one of that console's own file types (no `.cue` / `.bin`), inside the game's folder.
+- The **phone and the Windows app download every disc**. Change disc in the menu: **Windows → Game → Change disc** (it remembers which disc was in); **phone → side menu → Discs** (PS1).
+- The **browser plays disc 1 only**, and says so.
+- **Updating from an older version?** Discs that used to show as **separate games** (e.g. `Final Fantasy VII (Disc 1)`) are now **one new game**. **Their saves on Jellyfin move across by themselves** after the next library scan: the newest becomes the game's save, the others stay in its history. Nothing is lost:
+  - This only happens while the combined game has **no save of its own**. Otherwise, open the old game in **Saves** → **Move to another game** (the combined game is offered first).
+  - **Saves only on the phone** (never uploaded): **Settings → Saves → Not in your library** → **Upload to another game…**
+
+#### PS2 BIOS
+
+- PS2 games need a **BIOS file copied from your own PlayStation 2**. **Shoalcade never includes one, never downloads one and never sends it anywhere.** It is **not** stored on your Jellyfin.
+- Pick it **once per PC**: **⚙ Settings → PS2 → PS2 BIOS file…**. The app checks the file and shows what it found (e.g. "Found: PS2 BIOS, Europe, v2.00"), then keeps a copy on this PC.
+- Until then, a PS2 game says **"This PS2 game needs a BIOS file. Choose one in Settings → PS2 BIOS file…"** instead of starting.
+
+#### The two PS2 emulators
+
+- **⚙ Settings → PS2 → PS2 emulator:** **LRPS2** (the default) or **PCEE2 (newer PCSX2)**. Try the other one if a game doesn't work.
+- **One memory card works in both**, so switching never moves or changes your save.
+- **Snapshots only load in the emulator that made them.**
+- **Right trigger as pressure ✕** (same tab, off by default): for the few games that need a light press of ✕.
+
+#### Controls, snapshots and the rest
+
+- **GameCube:** the pad's analogue triggers work on a controller's triggers; right stick = C-stick. Up to **four players**.
+- **Wii:** **Controls → Wii controller**: **Wii Remote**, **Wii Remote, sideways**, **Wii Remote + Nunchuk** or **Classic Controller**, remembered per game. **The mouse is the pointer.** Shake: right trigger.
+- **Snapshots:** packed small. Kept on your Jellyfin if they fit its snapshot limit, **otherwise kept on this PC**.
+- **Rewind** (1-second steps) only where the PC is fast enough. On a slower PC it **turns itself off** for that game, and the menu says why.
+- **Fast-forward** works, as fast as your PC allows.
+- **Cheats:** see [Cheats](#-cheats).
+- **Network adapter** (the game's page, **off** unless you switch it on for that game): for **GameCube** and **PS2** games that play over a LAN or online **in their own way**. Most games don't need it. **PS2: LRPS2 only.** Shoalcade's link play isn't used for these consoles.
+- **Saves** sync like PSP saves: only the real save files go up (never an installed Wii game or an empty PS2 memory card), a few seconds after the game saves.
 
 ---
 
@@ -151,6 +210,8 @@
 - **A file that isn't a game** (empty, cut short or the wrong type) is refused with a message instead of crashing the app
 - **Update banner:** "Shoalcade x is ready on your Jellyfin" when your server carries a newer app
 - **Remove from phone (keeps save)**
+- **GameCube, Wii and PS2 games** are listed with **Plays on Windows** (they play in the Windows app)
+- **Works with TalkBack:** tick boxes, messages and the Quick Connect code are read out
 
 **Playing**
 - **Loading bar** while a game starts
@@ -165,7 +226,7 @@
 - **PSP:** landscape, see-through controls with an **analogue stick**; each game gets its own memory stick
 - **3DS:** upright, both screens stacked with the buttons below (circle pad, D-pad, A B X Y, L ZL ZR R). Sideways, **one screen at a time, full size**, with a **⇅ Flip** button to swap to the touch screen; other layouts in the menu. On a controller: left stick = circle pad, right stick = C-stick, triggers = ZL/ZR
 - **N64:** landscape, with an **analogue stick** and the four **C buttons**. On a controller: left stick = N64 stick, right stick = C buttons, trigger = **Z**. **Players 2–4:** each extra controller is the next player, in the order you connect them
-- **PS1:** △ ○ ✕ □ with **L1 L2 R1 R2**; controller triggers work as L2/R2. Buttons match **by position**, so a controller's **A** (bottom on Xbox pads) is **○** — swap it in **Controls** if you prefer ✕
+- **PS1:** △ ○ ✕ □ with **L1 L2 R1 R2**; controller triggers work as L2/R2. Buttons match **by position**, so a controller's **A** (bottom on Xbox pads) is **○** — swap it in **Controls** if you prefer ✕. A game on more than one disc: side menu → **Discs**
 - **Game Boy cartridge clock** kept with the save and backed up (e.g. Pokémon Gold, Silver, Crystal)
 - **Cheats** — side menu → **Cheats**: **Add a cheat…**, switch each one on or off, **Edit cheats…**. Shared with the browser player, and they work offline. See [Cheats](#-cheats)
 - **Fast-forward** — tap **⏩** (2×, 3× or 4×, set in side menu → **Speed**). GBA goes up to 3×. Not on Game Boy / Game Boy Color
@@ -179,6 +240,7 @@
 - **Same Wi-Fi:** two phones (or a phone and a PC running the Windows app) on the **same Wi-Fi or a phone hotspot** link directly — **no server needed**
 - **GBA** and **DS**, e.g. Pokémon trades and battles. One side taps **Host**, the other **Join**
 - The host shows a **4-digit PIN**; the other side types it, so no one else on the Wi-Fi can join
+- Made for **Wi-Fi you trust** (home): on a shared network, pick your friend's device by its name, as someone pretending to be the host could learn the PIN
 - **Over the internet (GBA):** **Host over the internet** gives a **Room code** and PIN; the other side taps **Join over the internet**. It goes **through your own Jellyfin**, so both must log in to the same server. Guide: [Internet link play](guides/internet-link-play.md)
 - **Celio Link (GBA, off unless you switch it on):** **Settings → Link play → Celio Link (trade with PC players)**, then **Trade with a PC player (Celio Link)** → **Make a room** or **Join a room**. For trading with people on a PC using Celio Link. ⚠️ It uses an **outside server** not run by Shoalcade or your Jellyfin (see [Privacy](guides/privacy.md))
 - Optional per-phone **DS wireless ID** switch
@@ -204,28 +266,36 @@
 > **First release.** It passes our automated tests (including on Windows code run under Wine), but it has **not yet been widely tested on real Windows PCs**. Please report problems on [Discord][discord].
 
 **Getting in and your library**
+- **Looks like the plugin's browser pages** (new): the same colours, console strip, game tiles and game sheet
 - **Log in** with your username and password, or **Use Quick Connect instead**. **HTTPS only**
 - Your login token is protected by **Windows** for your Windows account only, and never logged
 - Box art grid, **Find a game**, console bar, **Sort**, **★ Favourites only**, **⬇ On this PC only** and **play time**, as on the phone
 - **Download** with progress and **Cancel**. Downloaded games play **offline**
+- **⚙ Settings** opens as a **panel down the right-hand side**, with tabs: **Account**, **Saves**, **Display**, **PS2**, **Link play**, **3DS check**, **About**
+- **Update banner:** "Shoalcade x for Windows is ready." with **Get it**, when your Jellyfin says there's a newer Windows app
 
 **Playing**
 - Each game opens **in its own window**. **Keyboard** and **game controllers**
 - **Pause menu** with the phone's sections: **Game**, **Snapshots**, **Speed**, **Cheats**, **Sound**, **Display**, **Controls**
-- **Fast-forward** 2×, 3× or 4× on **every console**, and **Rewind** on GB, GBC, GBA and PS1
+- **GameCube, Wii and PS2** (new): see [GameCube, Wii and PS2](#gamecube-wii-and-ps2-windows-app-new)
+- **Fast-forward** 2×, 3× or 4× on **every console**, and **Rewind** on GB, GBC, GBA and PS1 (and GameCube, Wii and PS2 where the PC is fast enough)
 - **Screenshot** — saved as a picture in your **Pictures** folder
 - **Display:** in a window or full screen, **Whole-number scale**, **Smooth picture**
-- **DS:** the phone's screen layouts with swap; the **mouse is the touch screen**
+- **Picture size** (⚙ Settings → **Display**): **1×–4×** per console for N64, PSP, 3DS, GameCube, Wii and PS2. Bigger is sharper in a big window but needs a faster PC
+- **Change disc** (menu → **Game**) for a game on more than one disc
+- **DS:** the phone's screen layouts with swap, **remembered between games**; the **mouse is the touch screen**
 - **3DS:** four screen layouts plus **Flip**; the mouse is the touch screen. **3DS check** (⚙ → **3DS check**) only gives advice, it never locks
-- **Controls:** the menu lists every key and controller button. **Changing the buttons comes in a later version**
+- **Controls:** change any **key**, **controller button** or **shortcut key** in the menu: pick the button, then press the new one. Saved on the PC **per console** (and per **controller model**, as on the phone), with **Reset** back to the defaults
+- **Restart** the game from the menu (press it twice). The save is written first
+- **No keyboard?** Move the mouse and a **☰** button shows in the top-left corner: click it for the menu
 
 **Saves** (the phone's own rules, the same code)
 - **A backup before every game.** If the PC and Jellyfin both changed, it **asks**
 - Saves go up **a few seconds after you save in the game**, or **once you're back online** (**Upload saves automatically**)
 - **Close Game** / **Close Game (and Upload)**, **Push all** / **Pull all** (⚙ → **Saves**)
 - The full saves list with the browser's tools: **Use this save**, **Pin**, **Name**, **Move to another game**, **Start fresh**, **Download all my saves**
-- **Snapshots:** **Slot 1–3** plus **Automatic**, kept on your Jellyfin so they follow you between PCs (PSP and 3DS snapshots stay on the PC)
-- **Cheats** you added on the phone or in the browser can be switched on and off in the pause menu (not 3DS)
+- **Snapshots:** **Slot 1–3** plus **Automatic**, kept on your Jellyfin so they follow you between PCs (PSP and 3DS snapshots stay on the PC; GameCube, Wii and PS2 ones too, if they're bigger than your Jellyfin's snapshot limit)
+- **Cheats** (not 3DS): game card → **Cheats…**, or the **Cheats** button beside the stage while a game is open: **add**, **edit**, **delete** and switch codes on and off, the same list as the phone and browser. The pause menu switches them too
 - ⚠️ **Needs plugin 0.10.0.0 or newer** to upload saves. With an older plugin, the save **stays on the PC** and waits to go up
 
 **Link play**
@@ -251,7 +321,7 @@
 - **Backups before every overwrite:** the replaced save goes to Jellyfin's history and the phone's backups first. If that fails, nothing is replaced
 - **Snapshots are kept separate:** loading a snapshot **never changes your save** — only saving in the game does. A save made after loading one is marked **Saved after loading a snapshot**
 - **Saves made with cheats on** are marked **Made with cheats on**, and your last save from before cheats is **pinned as "Before cheats"** so it's never cleared out
-- **DS and PS1 save sizes checked** — wrong-sized files are refused, so a save can't be quietly damaged
+- **DS and PS1 save sizes checked** — wrong-sized files are refused, so a save can't be quietly damaged. GameCube, Wii and PS2 saves are checked too
 - **Empty PS1 memory cards** are never saved over a real save (unless you say so)
 - **Damaged files are moved aside, never deleted**
 - **Storage limits** per person: saves **2 GB** and snapshots **4 GB** by default, admin-adjustable
@@ -267,7 +337,9 @@
 - **Console bar:** **All**, **Nintendo ▾** and **Sony ▾** — the menus list each console that has games
 - **Sort** by **Name**, **Year**, **Platform** or **Last played** — remembered per person, on any browser
 - **Play** and **Saves** buttons on each game's own Jellyfin page
-- **⚙ Settings:** **Manage saves**, **Download all my saves** (one zip, the save in use for each game), **Phone app** (QR code or download link for the app), per-console **Browser player** settings with **Reset to defaults**, and **Patch a game**
+- **Snapshots** button on a game's sheet (when it has some): opens them on the game's Saves page, to download or delete
+- **GameCube, Wii and PS2 games** are listed with **Plays in the Windows app** (no Play button); their saves work in the Saves manager as usual
+- **⚙ Settings:** **Manage saves**, **Download all my saves** (one zip, the save in use for each game), **Phone app** (QR code or download link for the app), **Windows app** (a link to this release's download page), per-console **Browser player** settings with **Reset to defaults**, and **Patch a game**
 
 **Playing** (powered by **EmulatorJS**)
 - **Loading bar** while a game starts
@@ -275,6 +347,8 @@
 - Change your own controls **per console and per controller**, stored on the server
 - Toolbar that hides itself: **pause**, **restart**, **fast-forward**, **volume**, **full screen**, **screenshot**
 - **Quick snapshot** (F2) and **Load snapshot** (F4); snapshot slots kept on the server; **Snapshots** switch in settings
+- **Old Game Boy snapshots** (made before the browser player changed its Game Boy emulator) show in their slot with a note that they **can't be loaded**, and are kept until you delete them
+- **A game on more than one disc** plays **disc 1 only** here, with a note; change discs in the Windows or phone app
 - **Cheats** tab in the player's settings: add, switch on and off, edit and delete codes (see [Cheats](#-cheats))
 - **DS:** three **screen layouts** (plus swap), changeable while playing; **touch screen works with mouse and finger**
 - **Sideways phone:** touch buttons sit in columns **beside the game**, not over it
@@ -286,14 +360,14 @@
 
 **Saves manager**
 - Every version of a game's save: **Use this save**, **Pin**, **Name**, **Download**, **Upload a save file**, **Delete**, **Start fresh**
-- **Move to another game** — e.g. after a ROM was renamed (Game Boy ↔ Game Boy Color allowed; otherwise same console only)
+- **Move to another game** — e.g. after a ROM was renamed (Game Boy ↔ Game Boy Color allowed; otherwise same console only). If Shoalcade never recorded a removed game's console, you **pick the console first**, then the game (browser and Windows app)
 - Saves for games **Not in your library** stay reachable and movable, or **Delete all saves for this game** (only for a game no longer in your library; asks twice and you type its name). The server keeps a hidden copy for **7 days** so the admin can undo a mistake
 - Asks first before anything that could lose data
 
 ### 🎯 Cheats
 
 - **Your own codes**, per game: GameShark, Game Genie, CodeBreaker, Action Replay or CWCheat, depending on the console
-- **Several at once**, each switched on or off by itself — in the **browser player** and the **phone app**, kept in step through Jellyfin
+- **Several at once**, each switched on or off by itself — in the **browser player**, the **phone app** and the **Windows app**, kept in step through Jellyfin
 - **Snapshots remember which cheats were on.** Loading one turns those back on
 - **Saves stay safe:** saves made with cheats on are marked, and your save from before cheats is kept (see [Saves](#-saves))
 - Switching a cheat off **doesn't undo** what it already changed in the game
@@ -305,9 +379,14 @@
 | **GB / GBC** | GameShark, Game Genie |
 | **GBA** | CodeBreaker, GameShark, Action Replay |
 | **N64** | GameShark (`8XXXXXXX YYYY`) |
-| **DS** | Action Replay (cheat sites often call these "GameShark DS": same codes) |
+| **DS** | Action Replay (cheat sites often call these "GameShark DS": same codes). **CodeBreaker DS codes don't work**: Shoalcade says so when you add one (use the Action Replay version) |
 | **PS1** | GameShark |
 | **PSP** (app) | CWCheat |
+| **GameCube** (Windows app) | **Gecko** (`04xxxxxx yyyyyyyy`). Action Replay: encrypted codes (`XXXX-XXXX-XXXXX`) as written; put **`AR:`** in front of unencrypted ones |
+| **Wii** (Windows app) | **Gecko** (also called Ocarina) |
+| **PS2** (Windows app) | Unencrypted codes (`2xxxxxxx yyyyyyyy`) or **pnach** lines (`patch=1,EE,…`). **Encrypted CodeBreaker, GameShark and Action Replay MAX codes don't work** |
+
+- **GameCube, Wii and PS2:** add and edit these codes in the **Windows app** (game card → **Cheats…**), as the phone and browser don't open these games. A pasted pnach line is kept as its two blocks of 8 (`patch=1,EE,2xxxxxxx,extended,yyyyyyyy` → `2xxxxxxx yyyyyyyy`), which works the same.
 
 ### 🩹 Patch a game
 
@@ -319,8 +398,9 @@
 
 ### 🗂️ Server and library
 
-- **Own game scanner** — finds GB, GBC, GBA, N64, DS, PS1, PSP and 3DS games, including zipped games and multi-disc sets (not PS1)
+- **Own game scanner** — finds GB, GBC, GBA, N64, DS, PS1, PSP, 3DS, GameCube, Wii and PS2 games, including zipped games and [games on more than one disc](#games-on-more-than-one-disc)
 - A file is only listed if its type fits its folder's console (e.g. a `.gba` in a `PSP` folder is skipped)
+- **Never silent:** Jellyfin's log names every file and folder the scanner leaves out, and why
 - **Official names, year, developer, publisher and genre** from **libretro-database** (downloaded by your server, checked weekly, works from its own copy)
 - **Box art** from libretro — your own pictures next to the ROMs and `.nfo` files still come first
 - Box art switches itself on for games libraries (**Shoalcade box art (libretro)**; untick it any time)
@@ -336,6 +416,8 @@
 - **Find a cover** searches libretro's list for that console and shows a preview before you pick
 - **Storage view:** each person's saves, snapshots and settings against their limits, server totals and a per-game breakdown — **sizes only, never anyone's save contents**
 - **Settings:** browser player on/off, menu link and Play/Saves buttons on/off, keep games off the home page, versions and days kept, storage limits
+- **Allow link play over the internet** (on by default): untick it to stop GBA link play through your server. Wi-Fi link play works either way
+- **Show the Windows app link**: the Windows app section in Shoalcade's Settings, linking to this release's page on GitHub
 - **Import JellyEMU saves** scheduled task — copies saves **read-only**; JellyEMU's files are never changed
 - Shoalcade's scanner **stays off while JellyEMU is installed**, so the two never fight. Guide: [Moving from JellyEMU](guides/moving-from-jellyemu.md)
 
@@ -350,9 +432,10 @@
 - **Upload limits:** a few at once per person, size caps, snapshots streamed to disk
 - **Picture uploads** checked by their actual bytes and size
 - Browser pages: strict security policy (they can only talk to your server), no HTML built from game names
+- **Browser player sandbox:** the emulator runs walled off from your Jellyfin sign-in, so even a faulty emulator file could only reach the game you're playing
 - **App:** HTTPS only, token encrypted with the **Android Keystore**, never logged, never in a web address
 - **Windows app:** HTTPS only, token protected by Windows for your account (DPAPI), never logged. The game player never sees the token
-- **Internet link play:** only your Jellyfin users can open or join a room, the PIN never leaves the devices, and link data is never stored or logged
+- **Internet link play:** only your Jellyfin users who can see a GBA game can open or join a room, the PIN never leaves the devices, and link data is never stored or logged. Admins can switch it off
 
 ### 🕶️ Privacy
 
@@ -361,6 +444,8 @@
 - The phone and Windows apps talk **only to your Jellyfin server** (and to the other player during link play)
 - **One opt-in exception: Celio Link.** It's **off** until you switch it on. When used, link data and your IP address go to the **Celio Link server**, which is not run by Shoalcade or your Jellyfin
 - The **patcher** never sends your files anywhere: it runs in your browser
+- **Network adapter** (Windows app, GameCube and PS2, **off** unless you switch it on for a game): the game itself can then use the network in its own way (LAN or online), as on the real console. Wii games have the Wii's own network built in
+- **Your PS2 BIOS** stays on your PC: never uploaded, never sent anywhere
 - Full detail: [Privacy](guides/privacy.md)
 
 ---
@@ -371,7 +456,8 @@
 |---|---|
 | **Server** | **Jellyfin 12.3 or newer** (tested on 12.3 and 12.4), an admin account, and an **HTTPS** address (the app won't use plain HTTP) |
 | **Phone app** | **Android 11+** on a **64-bit ARM** phone (almost every phone from the last few years) |
-| **Windows app** (new) | **Windows 10 or 11, 64-bit** (x64), about **240 MB** of disk space plus your games. Saves from Windows need plugin **0.10.0.0 or newer** |
+| **Windows app** (new) | **Windows 10 or 11, 64-bit** (x64), about **350 MB** of disk space plus your games (the installer is about 195 MB). Saves from Windows need plugin **0.10.0.0 or newer** |
+| **GameCube, Wii, PS2** (Windows app) | A **fast PC** (recent processor, decent graphics; real-game speed not tested yet). **PS2:** a BIOS file from **your own** PlayStation 2 |
 | **Browser player** | A modern browser (Chrome, Edge, Firefox, Safari) on a computer, tablet or phone |
 | **Games** | Your own games, in a folder Jellyfin can read |
 | **Internet link play** | Both players logged in to the **same Jellyfin**, each user allowed **remote connections** |
@@ -412,7 +498,7 @@
 
 ### 2. Make a games library
 
-1. Put your games in **one folder per console** (short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`):
+1. Put your games in **one folder per console** (short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`, `gc`, `wii`, `ps2`):
 
 ```
 /media/games/
@@ -423,15 +509,19 @@
 ├── Nintendo DS/         .nds
 ├── Nintendo 3DS/        .3ds .cci .cxi .3dsx (+ compressed .zcci .zcxi .z3dsx)
 ├── PS1/                 .chd .pbp   (one file per game)
-└── PSP/                 .iso .cso .pbp .chd
+├── PSP/                 .iso .cso .pbp .chd
+├── GameCube/            .iso .gcm .rvz .wia .gcz .ciso   (Windows app)
+├── Wii/                 .iso .wbfs .rvz .wia .gcz .ciso .wad   (Windows app)
+└── PS2/                 .iso .chd .cso .zso .gz   (Windows app; not .bin/.cue)
 ```
 
 2. **Dashboard → Plugins → Shoalcade → Add a games library**
 3. Give it a **Name** and the **ROM folder on the server** → **Create games library**
 4. Press **Scan for new games** and wait for it to finish
 
-- A `.zip` or `.7z` holding one game is fine (not PS1). **Nothing is ever written into your ROM folder.**
-- **PS1:** not yet `.bin/.cue`, `.iso`, archives or multi-disc games — see the [Install guide](guides/install.md).
+- A `.zip` or `.7z` holding one game is fine (not PS1, GameCube, Wii or PS2). **Nothing is ever written into your ROM folder.**
+- **PS1:** not yet `.bin/.cue`, `.iso` or archives — see the [Install guide](guides/install.md).
+- **Games on more than one disc:** a folder of `(Disc 1)`, `(Disc 2)` files or a `.m3u` — see [Games on more than one disc](#games-on-more-than-one-disc).
 
 ### 3. Install the app on your Android phone
 
@@ -463,6 +553,7 @@
 4. It installs **for your Windows account only** (no admin needed), with Desktop and Start menu shortcuts
 5. Open **Shoalcade**, type your server's **HTTPS** address, and **Log in** (or **Use Quick Connect instead**)
 6. Click **Download** on a game → **Play**
+7. **PS2 only:** pick your BIOS once on this PC: **⚙ Settings → PS2 → PS2 BIOS file…** (a file copied from **your own** PlayStation 2; see [PS2 BIOS](#ps2-bios))
 
 - **Updating:** run the new `ShoalcadeApp-win-Setup.exe` over the old one. Your login, games and saves stay.
 - **Uninstalling** (Windows **Settings → Apps**) keeps your games, saves and login in `%LOCALAPPDATA%\Shoalcade\`. Saves not yet uploaded are only there.
@@ -482,7 +573,7 @@ It's a hobby project that plays your own files from your own server. You install
 **Yes.** Once a game is on your phone or PC, it plays with no network at all. Saves go up by themselves when you're back online (**Upload saves automatically**, on by default). The browser player needs your server.
 
 **Is there a Windows version?**
-**Yes, new in v0.10.0.** It does what the phone app does: log in, library, download, play offline, saves synced with the phone and the browser, and link play with phones. It's the **first release**, so expect rough edges and please report them. See [Windows app](#-windows-app-new) and [Install step 5](#5-install-the-windows-app-optional-new).
+**Yes, new in v0.10.0.** It does what the phone app does: log in, library, download, play offline, saves synced with the phone and the browser, and link play with phones. It also plays **GameCube, Wii and PS2** (new). It's still **new**, so expect rough edges and please report them. See [Windows app](#-windows-app-new) and [Install step 5](#5-install-the-windows-app-optional-new).
 
 **Windows says "Windows protected your PC". Is that safe?**
 The installer isn't **code-signed** yet, so SmartScreen warns about it. Click **More info → Run anyway**. Only do this for `ShoalcadeApp-win-Setup.exe` downloaded from this project's [Releases](https://github.com/BBBannon/Shoalcade/releases).
@@ -497,10 +588,10 @@ On your Jellyfin server, one list per game per person, with **version history** 
 The app **asks**: **Keep the phone's**, **Keep Jellyfin's** or **Decide later**. It never picks silently, and both copies are kept either way.
 
 **Do snapshots sync?**
-No. Only **in-game saves** sync. Snapshots stay where you made them (phone, browser or Windows app), and loading one never changes your save. Windows snapshots are kept on your Jellyfin, so they follow you between PCs.
+No. Only **in-game saves** sync. Snapshots stay where you made them (phone, browser or Windows app), and loading one never changes your save. Windows snapshots are kept on your Jellyfin, so they follow you between PCs (except PSP and 3DS, and GameCube, Wii or PS2 ones too big for your Jellyfin's snapshot limit).
 
 **Can I use cheats?**
-Yes — your own codes, in the browser player's **Cheats** tab or the app's side menu → **Cheats**. Saves made with cheats on are marked, and your save from before cheats is kept. See [Cheats](#-cheats).
+Yes — your own codes, in the browser player's **Cheats** tab, the app's side menu → **Cheats**, or the Windows app's game card → **Cheats…**. Saves made with cheats on are marked, and your save from before cheats is kept. See [Cheats](#-cheats).
 
 **Can I play ROM hacks and translations?**
 Yes. Patch your own game file with **⚙ Settings → Patch a game** in the browser (IPS, BPS, xdelta and more), then put the result in your games folder.
@@ -509,7 +600,16 @@ Yes. Patch your own game file with **⚙ Settings → Patch a game** in the brow
 Yes — it uses **Jellyfin's own users**. Each person has their own saves. Jellyfin's **library access** decides who sees the games library, and Jellyfin's **Allow media downloading** permission is needed to play (on the phone and in the browser). There's no separate kids mode.
 
 **Which consoles? Why not SNES?**
-**GB, GBC, GBA, N64, DS, 3DS, PS1 and PSP.** Each console is a lot of work to make safe for saves, so the list is small for now. Other consoles may come later; their files stay on your server untouched.
+**GB, GBC, GBA, N64, DS, 3DS, PS1 and PSP**, plus **GameCube, Wii and PS2 in the Windows app**. Each console is a lot of work to make safe for saves, so the list is small for now. Other consoles (SNES, Wii U and the rest) may come later; their files stay on your server untouched.
+
+**Can I play GameCube, Wii or PS2 games?**
+**Yes, in the Windows app only (new).** The phone shows them as **Plays on Windows** and the browser as **Plays in the Windows app**. They need a fast PC, and **real-game speed hasn't been tested yet**. Try the **GameCube and Wii check** (⚙ Settings → **3DS check** tab) to see how your PC copes. See [GameCube, Wii and PS2](#gamecube-wii-and-ps2-windows-app-new).
+
+**Where do I get a PS2 BIOS?**
+**From your own PlayStation 2.** Shoalcade never includes, downloads or uploads one, and we can't help find one. Pick your file in **⚙ Settings → PS2 → PS2 BIOS file…** on each PC. GameCube and Wii need **no** BIOS.
+
+**I'm coming from JellyEMU with SNES (or other) games. What happens to them?**
+They **leave the list** but are **never deleted**: Shoalcade doesn't list them, and their JellyEMU browser saves aren't imported (they stay in JellyEMU's save folder, read-only to us). Keep JellyEMU if you need them. Full detail: [Moving from JellyEMU → Games that will disappear](guides/moving-from-jellyemu.md#games-that-will-disappear).
 
 **Will 3DS work on my phone?**
 **Probably, on a recent phone.** 3DS is heavy, so the app runs a one-minute **3DS check** first (Settings → 3DS check) and unlocks 3DS if your phone keeps up. Recent high-end phones pass at full speed. 3DS plays in the phone app and the Windows app, not in the browser. On Windows the check is advice only and never locks 3DS.
@@ -553,7 +653,7 @@ Yes, if you're a Jellyfin admin: browser library → game → **Edit game**. Use
 
 | Problem | Try |
 |---|---|
-| **No games after a scan** | Check the library was made with **Create games library** (Shoalcade's settings page). Put games in console folders (`gba`, `nds`, `ps1`, `psp`…) — a file whose type doesn't fit its folder's console is skipped. Run **Scan for new games** again. Check **Dashboard → Logs** for Shoalcade lines |
+| **No games after a scan** | Check the library was made with **Create games library** (Shoalcade's settings page). Put games in console folders (`gba`, `nds`, `ps1`, `psp`…) — a file whose type doesn't fit its folder's console is skipped. Run **Scan for new games** again. Check **Dashboard → Logs** for Shoalcade lines: each file left out says why (`Scanner skipped <folder>/<file>: <reason>`) |
 | **Games missing after removing JellyEMU, or the plugin not showing after an update** | Do a **full restart** — stop and start the Jellyfin service or container, not just the dashboard button. Then scan |
 | **App shows a red banner** | The plugin is missing or too old for the app. Update the plugin |
 | **Can't log in** | Use the **HTTPS** address. Type the username exactly. Try **Log in with Quick Connect** (an admin turns it on in **Dashboard → General**) |
@@ -565,6 +665,13 @@ Yes, if you're a Jellyfin admin: browser library → game → **Edit game**. Use
 | **Windows: saves won't upload** ("doesn't take saves from Windows yet") | Update the plugin to **0.10.0.0 or newer** and do a full restart of Jellyfin. The save waits safely on the PC until then |
 | **Link play: the other player can't find the PC** | Allow Shoalcade on **private networks** in Windows Firewall. Check both are on the same Wi-Fi (not a VPN). Or type the host's address |
 | **Internet link stalls or drops every minute** | Usually a reverse-proxy setting. See [Internet link play](guides/internet-link-play.md) |
+| **A game isn't listed** (e.g. a PS2 `.bin/.cue`, a `.zip` disc, a Wii U game) | **Dashboard → Logs** → open the newest Jellyfin log and search for **`Scanner skipped`**. Each line names the file and why. PS2 `.bin/.cue`: make one `.chd` of the disc |
+| **PS2: "This PS2 game needs a BIOS file"** | **⚙ Settings → PS2 → PS2 BIOS file…** and pick the BIOS from your own PlayStation 2. Picked once per PC |
+| **PS2: a game won't start or looks wrong** | Try the other emulator: **⚙ Settings → PS2 → PS2 emulator**. Your memory card works in both |
+| **GameCube / Wii / PS2: slow or stuttering** | Run the **GameCube and Wii check** (⚙ Settings → **3DS check** tab). Set **Picture size** back to **1×** (⚙ Settings → **Display**) |
+| **No Rewind for a GameCube, Wii or PS2 game** | This PC is too slow to rewind it without stutter, so it's off for that game. The menu (**Speed**) says why |
+| **Wii game wants a Nunchuk or Classic Controller** | Pause menu → **Controls → Wii controller**. Kept for that game |
+| **Network adapter: "Not available with PCEE2"** | Choose **LRPS2** in **⚙ Settings → PS2** |
 
 ---
 
@@ -574,8 +681,8 @@ Yes, if you're a Jellyfin admin: browser library → game → **Edit game**. Use
 
 - **Needs:** **JDK 17**, the **Android SDK**, **NDK 27.2** and **CMake 3.22** (Android Studio's SDK Manager installs them).
 - **One file isn't in git:** `android/app/src/main/assets/PPSSPP.zip` (PPSSPP's support files: free replacement fonts, compatibility list; **no Sony BIOS**).
-  - Download it from the libretro buildbot: `https://buildbot.libretro.com/assets/system/PPSSPP.zip`
-  - Save it as `android/app/src/main/assets/PPSSPP.zip`
+  - Make it with **`tools/fetch_ppsspp_assets.sh`** (needs `git` and Python 3). It fetches PPSSPP's `assets/` folder at the **exact PPSSPP commit** the app's PSP core was built from, packs it as `android/app/src/main/assets/PPSSPP.zip`, and **checks every file by SHA-256** against the files in the released apps.
+  - `tools/fetch_ppsspp_assets.sh --check` checks a `PPSSPP.zip` you already have.
   - Without it the app builds, but **PSP games won't start**.
 - The emulator cores are already in the repo (`android/app/src/main/jniLibs/`), from the libretro buildbot. Versions and sources: [docs/licences.md](docs/licences.md).
 
@@ -644,7 +751,13 @@ tools/build_windows_release.sh release   # → dist/windows/release/ (Setup.exe)
 | **gpSP** | GBA link play (apps) | GPL-2.0-or-later |
 | **PPSSPP** | PSP (apps) | GPL-2.0-or-later |
 | **PCSX ReARMed** | PS1 (apps and browser) | GPL-2.0-or-later |
+| **Mupen64Plus-Next** | N64 (apps and browser) | GPL-3.0 as combined (browser build: GPL-2.0-or-later) |
 | **Azahar** (our own build, small patches) | 3DS (apps) | GPL-3.0-or-later |
+| **Dolphin** (with our cheats patch) and its system files | GameCube, Wii (Windows app) | GPL-2.0-or-later (GameCube fonts from Droid Sans: Apache-2.0) |
+| **LRPS2** (with our build fixes and cheats patch) | PS2 (Windows app) | GPL-3.0 |
+| **PCEE2** (with our memory card and cheats patches) | PS2, second choice (Windows app) | GPL-3.0-or-later |
+| **zstd** | Packing GameCube, Wii and PS2 snapshots (Windows player) | BSD-3-Clause |
+| **libogc** | Inside our GameCube and Wii check scenes | zlib-style |
 | **SDL 3** | Windows game player: window, sound, controllers | zlib |
 | **Dear ImGui** | Windows pause menu | MIT |
 | **Compose Multiplatform** | Windows app screens | Apache-2.0 |
@@ -657,6 +770,7 @@ tools/build_windows_release.sh release   # → dist/windows/release/ (Setup.exe)
 | **libretro-database** | Game names (downloaded by your server, not shipped) | CC-BY-SA-4.0 |
 | **libretro-thumbnails** | Box art (downloaded by your server, not shipped) | Art belongs to the games' publishers |
 
+- Every part's own licence text: [THIRD_PARTY_LICENCES.txt](THIRD_PARTY_LICENCES.txt) (also in the phone app under **About → Every part's licence text**, and in the plugin zip).
 - Every part, version and source: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The Windows app lists all of its parts under **About Shoalcade** and in `licences\` and `SOURCE.txt` in its install folder
 - Full licence detail: [docs/licences.md](docs/licences.md)
 - Built with help from [Claude Code](https://claude.com/claude-code).
@@ -666,7 +780,7 @@ tools/build_windows_release.sh release   # → dist/windows/release/ (Setup.exe)
 ## Disclaimer
 
 - Shoalcade is **not affiliated with or endorsed by** Jellyfin, Nintendo, Sony or Microsoft.
-- Jellyfin is a trademark of Jellyfin, Inc. Nintendo, Game Boy, Nintendo 64, Nintendo DS, Nintendo 3DS, Sony, PlayStation, PSP, Microsoft and Windows are trademarks of their owners.
+- Jellyfin is a trademark of Jellyfin, Inc. Nintendo, Game Boy, Nintendo 64, Nintendo DS, Nintendo 3DS, GameCube, Wii, Sony, PlayStation, PSP, Microsoft and Windows are trademarks of their owners.
 - Shoalcade is provided **as is, with no warranty** (see [LICENSE](LICENSE)). **Back up your saves.**
 
 <!-- Discord invite: change it here only. -->

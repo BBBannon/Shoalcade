@@ -1,0 +1,15 @@
+Shoalcade build fix: the core's version string ("v2.0.0-<commit>") must name LRPS2's own commit.
+`git rev-parse --short HEAD` ran in CMake's build folder, so it named whatever Git repository that folder sat in
+(or nothing), not LRPS2. Run it in the LRPS2 source folder. No effect on the emulator itself.
+
+diff --git a/cmake/BuildParameters.cmake b/cmake/BuildParameters.cmake
+--- a/cmake/BuildParameters.cmake
++++ b/cmake/BuildParameters.cmake
+@@ -3,6 +3,7 @@ set(PCSX2_DEFS "")
+ 
+ execute_process(
+     COMMAND git rev-parse --short HEAD
++    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+     OUTPUT_VARIABLE GIT_VERSION
+     OUTPUT_STRIP_TRAILING_WHITESPACE
+ )

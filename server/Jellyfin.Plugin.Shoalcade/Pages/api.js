@@ -14,6 +14,47 @@
     return i > 0 ? p.slice(0, i) : "";
   })();
 
+  /**
+   * M3 (docs/plan-player-sandbox.md): inside the player frame (sandboxed, opaque origin "null") this script has no
+   * login and can't reach the server. Every call goes to the player page around it (play-shell.js) by postMessage,
+   * and that page only allows this one game's routes. findLogin() is never called in the frame.
+   */
+  const IN_FRAME = (function () {
+    try { return String(self.origin) === "null" && window.parent !== window; } catch (e) { return false; }
+  })();
+  const shell = IN_FRAME ? (function () {
+    const SHELL = new URL(location.href).origin; // the server's own origin: where the player page lives
+    const waiting = new Map();
+    const handlers = {};
+    let next = 1;
+    let initDone;
+    const init = new Promise(r => { initDone = r; });
+    window.addEventListener("message", e => {
+      if (e.source !== window.parent || e.origin !== SHELL) return;
+      const m = e.data;
+      if (!m || typeof m !== "object" || typeof m.t !== "string") return;
+      if (m.t === "init") { initDone(m); return; }
+      const w = typeof m.id === "number" ? waiting.get(m.id) : null;
+      if (w) {
+        if (m.t === "progress") { if (w.progress) w.progress(m); return; }
+        waiting.delete(m.id);
+        w.resolve(m);
+        return;
+      }
+      if (handlers[m.t]) handlers[m.t](m);
+    });
+    const post = (msg, transfer) => window.parent.postMessage(msg, SHELL, transfer || []);
+    /** Sends a request; resolves with the shell's answer. progress(m) gets the "progress" messages before it. */
+    const call = (msg, transfer, progress) => new Promise(resolve => {
+      const id = next++;
+      waiting.set(id, { resolve, progress });
+      post(Object.assign({}, msg, { id }), transfer);
+    });
+    post({ t: "hello" });
+    return { post, call, init, on: (t, fn) => { handlers[t] = fn; } };
+  })() : null;
+  let frameSignedIn = false;
+
   /** The Jellyfin web client's stored login for this server, or null. */
   function findLogin() {
     let creds;
@@ -61,6 +102,7 @@
    */
   async function request(path, opts) {
     opts = opts || {};
+    if (IN_FRAME) return check(await frameFetch(path, opts), opts);
     const headers = Object.assign({ Authorization: authHeader() }, opts.headers || {});
     let res;
     try {
@@ -76,7 +118,24 @@
     } catch (e) {
       throw new ApiError(0, "network", "Can't reach the server.");
     }
-    if (res.ok || (opts.allow && opts.allow.includes(res.status))) return res;
+    return check(res, opts);
+  }
+
+  /** The player frame's fetch: the shell makes the call (with the login) if it is one of this game's routes. */
+  async function frameFetch(path, opts) {
+    const h = opts.headers || {};
+    const m = await shell.call({
+      t: "req", method: opts.method || "GET", path, contentType: h["Content-Type"] || null,
+      body: opts.body === undefined ? null : opts.body, keepalive: !!opts.keepalive,
+    });
+    if (m.error) throw new ApiError(0, "network", "Can't reach the server.");
+    const empty = m.status === 204 || m.status === 205 || m.status === 304;
+    return new Response(empty ? null : m.body, { status: m.status, headers: m.headers || {} });
+  }
+
+  /** 2xx (or a status in opts.allow; any status with opts.raw) comes back; anything else is an ApiError. */
+  async function check(res, opts) {
+    if (res.ok || opts.raw || (opts.allow && opts.allow.includes(res.status))) return res;
     let body = null;
     try { body = await res.json(); } catch (e) { /* not JSON */ }
     if (res.status === 401) {
@@ -109,7 +168,15 @@
     signInUrl: BASE + "/web/",
     /** Jellyfin's own home screen (the pixel logo at the top left). */
     homeUrl: BASE + "/web/#/home",
-    hasLogin: () => !!(login || (login = findLogin())),
+    hasLogin: () => IN_FRAME ? frameSignedIn : !!(login || (login = findLogin())),
+    /** True inside the sandboxed player frame (M3). */
+    inFrame: IN_FRAME,
+    /** The player page around the frame (postMessage), or null outside the frame. */
+    shell,
+    /** Resolves once the page may start: at once, or in the frame once the player page has said hello back. */
+    ready: IN_FRAME ? shell.init.then(m => { frameSignedIn = !!m.signedIn; }) : Promise.resolve(),
+    /** In the frame: asks the player page to go somewhere from its fixed list (library, home, saves, signin, reload). */
+    go: where => { if (IN_FRAME) shell.post({ t: "go", to: where }); },
     /** Low-level call (login header added) for page scripts with their own routes, e.g. the player's snapshots. */
     request,
 
@@ -135,9 +202,20 @@
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj),
     }),
 
-    /** Downloads the ROM with Jellyfin's own route (checks login, library access and download permission). */
-    async rom(id, onProgress) {
-      const res = await request("/Items/" + encodeURIComponent(id) + "/Download");
+    /**
+     * Downloads the ROM with Jellyfin's own route (checks login, library access and download permission). For a disc
+     * set (D-8) opts.disc picks one disc (the plugin's route checks the same things).
+     */
+    async rom(id, onProgress, opts) {
+      if (IN_FRAME) {
+        // The player page downloads this game (only ever its own id) and hands the bytes over (moved, never copied).
+        const m = await shell.call({ t: "rom" }, null, p => { if (onProgress) onProgress(p.got, p.total); });
+        if (m.error) throw new ApiError(m.status || 0, m.code || "rom", m.message || "Couldn't download the game.");
+        return { bytes: new Uint8Array(m.bytes), name: m.name || null };
+      }
+      const disc = opts && Number.isInteger(opts.disc) && opts.disc >= 0 ? opts.disc : null;
+      const res = await request(disc === null ? "/Items/" + encodeURIComponent(id) + "/Download"
+        : "/shoalcade/games/" + encodeURIComponent(id) + "/discs/" + disc);
       let name = null;
       const cd = res.headers.get("Content-Disposition") || "";
       const m = /filename\*=UTF-8''([^;]+)/i.exec(cd) || /filename="?([^";]+)"?/i.exec(cd);
@@ -328,8 +406,8 @@
     /** Deletes every save and snapshot of a game no longer in the library; the counts shown must still be right. */
     deleteAllSaves: (id, o) => json(savePath(id) + "/delete-all" + q({ versions: o.versions, snapshots: o.snapshots }), { method: "POST" }),
 
-    /** Moves every version of a save to another game. */
-    moveSave: (id, to) => json(savePath(id) + "/move" + q({ to }), { method: "POST" }),
+    /** Moves every version of a save to another game (fromConsole: only when its console wasn't recorded, F7 gap 2). */
+    moveSave: (id, to, fromConsole) => json(savePath(id) + "/move" + q({ to, fromConsole }), { method: "POST" }),
 
     /** Every save in use as one zip: { blob, name }. */
     async exportSaves() {

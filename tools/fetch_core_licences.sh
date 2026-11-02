@@ -6,7 +6,7 @@
 #
 # For each Windows core in windows/cores/cores.lock: a shallow, blobless fetch of the pinned commit with a sparse
 # checkout of just its licence files (+ .gitmodules), so the index is the whole tree and `git submodule status` reads
-# as it does in a full checkout. PPSSPP and Azahar, whose submodules tools/build_windows_cores.sh initialises
+# as it does in a full checkout. PPSSPP, Azahar, Dolphin and PCEE2, whose submodules tools/build_windows_cores.sh initialises
 # (--recursive), get every submodule the same way, at the commit the tree records: their licence files (PPSSPP's
 # ffmpeg) and the nested submodule list in SOURCE.txt are then as in the build tree. A core folder that is a full
 # checkout (a real build tree) is left alone.
@@ -25,6 +25,9 @@ files() {
     mupen) echo LICENSE ;;
     ppsspp) echo LICENSE.TXT ffmpeg/COPYING.LGPLv2.1 ffmpeg/LICENSE.md ffmpeg/LICENSE ;;
     azahar) echo license.txt ;;
+    dolphin) echo COPYING Externals/licenses.md Data/Sys/GC/font-licenses.txt ;;
+    lrps2) echo COPYING.GPLv3 3rdparty/glslang/glslang/LICENSE.txt 3rdparty/vixl/LICENCE 3rdparty/vulkan-headers/LICENSE.md ;;
+    pcee2) echo COPYING.GPLv3 THIRD_PARTY_LICENSES.html ;;
     *) echo "unknown core $1" >&2; exit 1 ;;
   esac
 }
@@ -37,6 +40,7 @@ sparse() { # dir url commit path...
     git -C "$d" init -q
     git -C "$d" remote add origin "$url"
   fi
+  git -C "$d" config core.longpaths true # Dolphin's Externals pass Windows' 260-character limit (ignored on Linux)
   git -C "$d" cat-file -e "$c^{commit}" 2>/dev/null || git -C "$d" fetch -q --depth 1 --filter=blob:none origin "$c"
   git -C "$d" config core.sparseCheckout true
   git -C "$d" config core.autocrlf false # the bytes as committed (Git for Windows defaults to CRLF)
@@ -79,7 +83,7 @@ while IFS=$'\t' read -r core target repo commit _; do
   echo "== $core @ ${commit:0:12}"
   read -r -a want <<<"$(files "$core")"
   sparse "$d" "$repo" "$commit" "${want[@]}"
-  case "$core" in ppsspp|azahar) subs "$d" "${want[@]}" ;; esac
+  case "$core" in ppsspp|azahar|dolphin|pcee2) subs "$d" "${want[@]}" ;; esac
   for f in "${want[@]}"; do
     if [ -f "$d/$f" ]; then echo "  have $f"; else echo "  none $f (not in the tree at this commit)"; fi
   done

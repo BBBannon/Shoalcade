@@ -210,6 +210,24 @@ class SaveSyncCore(
 
     private suspend fun phoneSave(game: Game): ByteArray? = withContext(Dispatchers.IO) { Storage.readSave(userId, game) }
 
+    /**
+     * Review S11: GameCube saves synced before Dolphin's SRAM.raw was left out of the save (3b84122) hold it, so the
+     * first zip made since never matches the last synced one, even when the game didn't save, and could give a "both
+     * changed". If the phone's save files are exactly the synced version's (SRAM.raw aside), the mark takes this zip's
+     * SHA, so the save counts as unchanged. Only when the SHAs differ, once per game; a failed read changes nothing.
+     */
+    private suspend fun sameAsSynced(game: Game, bytes: ByteArray, sha: String) {
+        if (game.console != Console.GC) return
+        val base = synced(game) ?: return
+        if (base.sha256 == sha) return
+        val old = try { client.getSave(game.id, base.version)?.bytes } catch (e: IOException) { null } ?: return
+        if (withContext(Dispatchers.Default) { Storage.sameSave(game, bytes, old) }) state.set(baseKey(game), "${base.version}:$sha")
+    }
+
+    /** Review S6: only part of this game's save is here (a Start fresh that couldn't put it all back): never sent. */
+    private fun held(game: Game): SyncResult.Failed? =
+        if (Storage.uploadHeld(userId, game.id)) SyncResult.Failed("Not uploaded. ${Storage.SAVE_PARTLY_REMOVED}") else null
+
     /** True if the phone save has bytes the server hasn't seen from this phone. */
     suspend fun phoneHasNewChanges(game: Game): Boolean {
         val b = phoneSave(game)
@@ -260,6 +278,7 @@ class SaveSyncCore(
 
     /** Uploads the phone save with the version check. A conflict is remembered and returned for the user to settle. */
     suspend fun upload(game: Game): SyncResult = locked(game) {
+        held(game)?.let { return@locked it }
         val bytes = phoneSave(game)
         if (Storage.isBlank(bytes)) return@locked SyncResult.Failed("No save to upload yet. Save in the game first.")
         try {
@@ -293,6 +312,7 @@ class SaveSyncCore(
      * never on the phone and the words say so.
      */
     suspend fun uploadLatest(game: Game, snapshotNoSave: Boolean = false): SyncResult = locked(game) {
+        held(game)?.let { return@locked it }
         val bytes = phoneSave(game)
         val sha = if (Storage.isBlank(bytes)) null else JellyfinClient.sha256(bytes!!)
         // Toasts show two lines: "Nothing new to upload" always comes first.
@@ -300,6 +320,7 @@ class SaveSyncCore(
         try {
             ensureCompatible()
             val server = (client.game(game.id) ?: return@locked SyncResult.Failed("This game isn't on the server any more. Your save is kept on the phone.")).save
+            if (bytes != null && sha != null) sameAsSynced(game, bytes, sha)
             val phoneTime = withContext(Dispatchers.IO) { Storage.saveTime(userId, game) }
             when (val p = SavePlan.plan(SavePlan.Way.UPLOAD, sha, phoneTime, server, synced(game))) {
                 is SavePlan.Plan.Skip -> when (p.why) {
@@ -368,6 +389,7 @@ class SaveSyncCore(
      * choose again. Without [shown] (in-game and library questions) the save in use now is replaced, as before.
      */
     suspend fun keepPhone(game: Game, shown: Shown? = null): SyncResult = locked(game) {
+        held(game)?.let { return@locked it }
         val bytes = phoneSave(game)
         if (Storage.isBlank(bytes)) return@locked SyncResult.Failed("There's no phone save to keep.")
         try {

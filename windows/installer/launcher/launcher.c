@@ -6,15 +6,16 @@
  *  1. Velopack hooks (Velopack runs the main exe with --veloapp-install/-updated/-obsolete/-uninstall <version>):
  *     answers at once. On uninstall it tells the user that their games and saves are NOT deleted and where they are.
  *     It never deletes anything.
- *  2. Copies PPSSPP's support files from the install folder (app\system\PPSSPP) to the user's data folder
- *     (%LOCALAPPDATA%\Shoalcade[ Dev]\system\PPSSPP), which is the system folder the app gives the player,
- *     whenever the installed copy's stamp differs from the user's. Only that folder is written.
+ *  2. Copies the cores' support files from the install folder (app\system\PPSSPP and app\system\dolphin-emu) to the
+ *     user's data folder (%LOCALAPPDATA%\Shoalcade[ Dev]\system\...), which is the system folder the app gives the
+ *     player, whenever the installed copy's stamp differs from the user's. Only those folders are written, and never
+ *     their bios\ or memcards\ folders, an existing memory card (*.ps2) or IPL.bin (the user's own files).
  *  3. Starts the Java app IN THIS PROCESS (jvm.dll from runtime\, JNI invocation API, as jpackage's launcher does), so
  *     the running program is Shoalcade.exe: the taskbar and Task Manager show Shoalcade, and Velopack can stop it.
  *     Class path, main class and JVM options come from app\launcher.cfg, written at build time from the Gradle build.
  *
  * Install folder layout: Shoalcade.exe, runtime\ (Java), licences\, SOURCE.txt, and app\ = the jars, Skiko's DLL,
- * launcher.cfg, player\, cores\ and system\PPSSPP\. player\ and cores\ sit beside the Compose resources folder
+ * launcher.cfg, player\, cores\, system\PPSSPP\ and system\dolphin-emu\Sys\. player\ and cores\ sit beside the Compose resources folder
  * (app\resources), which is where the app's PlayerSetup.find looks for them (desktop/Cores.kt).
  */
 #define WIN32_LEAN_AND_MEAN
@@ -86,11 +87,11 @@ static int hook(const wchar_t *name) {
         /* Velopack waits up to 60 s for this hook, then carries on; the folder is kept either way. */
         MessageBoxW(NULL, msg, SC_APP_NAME, MB_OK | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
     }
-    /* install / updated / obsolete: nothing to do (PPSSPP files are copied when the app starts). */
+    /* install / updated / obsolete: nothing to do (PPSSPP and Dolphin files are copied when the app starts). */
     return 0;
 }
 
-/* ---------- PPSSPP support files ---------- */
+/* ---------- Core support files (PPSSPP, Dolphin) ---------- */
 
 static BOOL read_small_file(const wchar_t *path, char *buf, DWORD cap, DWORD *len) {
     HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
@@ -98,6 +99,18 @@ static BOOL read_small_file(const wchar_t *path, char *buf, DWORD cap, DWORD *le
     BOOL ok = ReadFile(h, buf, cap, len, NULL);
     CloseHandle(h);
     return ok;
+}
+
+/* The user's own firmware and memory cards live in the same system folders (pcsx2\bios\, pcsx2\memcards\; a GameCube
+ * IPL.bin). The build never packs them (build_windows_release.sh refuses to), and this copy never writes there either:
+ * folders named bios or memcards are skipped at any depth, and a memory card or IPL.bin that is already there is kept. */
+static BOOL is_user_folder(const wchar_t *name) {
+    return _wcsicmp(name, L"bios") == 0 || _wcsicmp(name, L"memcards") == 0;
+}
+
+static BOOL is_user_file(const wchar_t *name) {
+    size_t n = wcslen(name);
+    return _wcsicmp(name, L"IPL.bin") == 0 || (n >= 4 && _wcsicmp(name + n - 4, L".ps2") == 0);
 }
 
 static BOOL copy_tree(const wchar_t *src, const wchar_t *dst) {
@@ -114,26 +127,31 @@ static BOOL copy_tree(const wchar_t *src, const wchar_t *dst) {
         _snwprintf(s, MAX_PATH, L"%ls\\%ls", src, fd.cFileName);
         _snwprintf(d, MAX_PATH, L"%ls\\%ls", dst, fd.cFileName);
         s[MAX_PATH - 1] = d[MAX_PATH - 1] = 0;
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ok = copy_tree(s, d) && ok;
-        else ok = CopyFileW(s, d, FALSE) && ok;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (!is_user_folder(fd.cFileName)) ok = copy_tree(s, d) && ok;
+        } else if (is_user_file(fd.cFileName)) {
+            /* never overwrite: fails with ERROR_FILE_EXISTS when the user has one, which is fine */
+            if (!CopyFileW(s, d, TRUE) && GetLastError() != ERROR_FILE_EXISTS) ok = FALSE;
+        } else ok = CopyFileW(s, d, FALSE) && ok;
     } while (FindNextFileW(h, &fd));
     FindClose(h);
     return ok;
 }
 
-/* app\system\PPSSPP.stamp (written at build time: a hash of the folder) decides whether the user's copy is current.
- * Files are only added or overwritten, never deleted (PPSSPP may keep its own files there). */
-static void sync_ppsspp(void) {
+/* app\system\<name>.stamp (written at build time: a hash of the folder) decides whether the user's copy is current.
+ * Files are only added or overwritten, never deleted (the core may keep its own files there).
+ * Folders: PPSSPP (PSP), dolphin-emu (Dolphin's Sys folder, GameCube + Wii) and pcsx2 (PCEE2's resources, PS2). */
+static void sync_system_folder(const wchar_t *name) {
     wchar_t src[MAX_PATH], stamp_src[MAX_PATH], data[MAX_PATH], sys[MAX_PATH], dst[MAX_PATH], stamp_dst[MAX_PATH];
     char a[256], b[256];
     DWORD la = 0, lb = 0;
-    _snwprintf(src, MAX_PATH, L"%ls\\app\\system\\PPSSPP", g_root);
-    _snwprintf(stamp_src, MAX_PATH, L"%ls\\app\\system\\PPSSPP.stamp", g_root);
+    _snwprintf(src, MAX_PATH, L"%ls\\app\\system\\%ls", g_root, name);
+    _snwprintf(stamp_src, MAX_PATH, L"%ls\\app\\system\\%ls.stamp", g_root, name);
     if (!read_small_file(stamp_src, a, sizeof a, &la) || la == 0) return; /* nothing packed */
     if (!data_folder(data, MAX_PATH)) return;
     _snwprintf(sys, MAX_PATH, L"%ls\\system", data);
-    _snwprintf(dst, MAX_PATH, L"%ls\\PPSSPP", sys);
-    _snwprintf(stamp_dst, MAX_PATH, L"%ls\\PPSSPP.stamp", sys);
+    _snwprintf(dst, MAX_PATH, L"%ls\\%ls", sys, name);
+    _snwprintf(stamp_dst, MAX_PATH, L"%ls\\%ls.stamp", sys, name);
     if (read_small_file(stamp_dst, b, sizeof b, &lb) && la == lb && memcmp(a, b, la) == 0) return;
     CreateDirectoryW(data, NULL);
     CreateDirectoryW(sys, NULL);
@@ -298,7 +316,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
         fail(L"A file is missing:", p);
         return 2;
     }
-    sync_ppsspp();
+    sync_system_folder(L"PPSSPP");
+    sync_system_folder(L"dolphin-emu");
+    sync_system_folder(L"pcsx2"); /* PCEE2's resources; the user's bios\ and memcards\ there are never touched */
 
     /* Java's launcher also runs main on a new thread, to choose its stack size. */
     HANDLE t = CreateThread(NULL, 8u << 20, java_main, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);

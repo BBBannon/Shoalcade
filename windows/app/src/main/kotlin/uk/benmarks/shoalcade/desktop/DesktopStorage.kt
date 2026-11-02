@@ -7,6 +7,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import uk.benmarks.shoalcade.Console
+import uk.benmarks.shoalcade.DiscSets
 import uk.benmarks.shoalcade.Game
 import uk.benmarks.shoalcade.GameJson
 import uk.benmarks.shoalcade.JellyfinClient
@@ -58,6 +59,19 @@ object DesktopStorage {
     // ---- Downloads ----
 
     /**
+     * PS2: the game file is always `<gameId>.<ext>`, because both PS2 emulators name the memory card after it
+     * (`<save folder>\<game file name>.ps2`): the card is then the same on every PC, whatever the file is called on
+     * Jellyfin. Other consoles keep the server's name. Returns the file to play.
+     */
+    fun ps2RomName(game: Game, rom: File): File {
+        if (game.console != Console.PS2) return rom
+        val want = File(rom.parentFile, "${game.id}.${rom.extension.lowercase()}")
+        if (rom.name == want.name) return rom
+        if (want.exists() || !rom.renameTo(want)) throw IOException("Couldn't get the game file ready. Download it again.")
+        return want
+    }
+
+    /**
      * Downloads [game] into `library\roms\<console>\<itemId>\` through Jellyfin's own download route (the shared
      * [JellyfinClient.download]: `.part` file first, Cancel stops it mid-way), unpacks a .zip with the phone's
      * zip-slip-safe [Storage.unpackIfZipped], then checks the file with the shared [RomCheck] so a file that clearly
@@ -66,6 +80,8 @@ object DesktopStorage {
      */
     suspend fun download(client: JellyfinClient, game: Game, onProgress: (Float) -> Unit): File {
         val console = game.console ?: throw IOException("Unknown console.")
+        // D-8: a disc set: every disc, then its .m3u (the shared rule, as the phone).
+        if (DiscSets.isSet(game)) return DiscSets.download(client, game, onProgress)
         try {
             val target = client.download(game.id, Storage.downloadFolder(game), Storage.fallbackRomName(game), onProgress)
             return withContext(Dispatchers.IO) {
@@ -73,7 +89,7 @@ object DesktopStorage {
                 val rom = Storage.romFile(game)
                     ?: throw IOException("This file isn't a ${console.tag} game (.${target.extension}). Check the game file on your Jellyfin server, then download it again.")
                 RomCheck.problem(console, rom)?.let { throw IOException(RomCheck.message(console, it)) }
-                rom
+                ps2RomName(game, rom)
             }
         } catch (e: Throwable) {
             withContext(NonCancellable + Dispatchers.IO) { Storage.deleteDownload(game) } // the .part file, or the bad file

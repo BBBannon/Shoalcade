@@ -91,6 +91,12 @@ class AppModel(
     /** Plugin missing or versions don't match (D41): shown as a banner; downloaded games still play. */
     var serverProblem by mutableStateOf<String?>(null)
         private set
+    /** A newer Windows app than this one, from the user's plugin (S2, the phone's D165 banner). Null = nothing to offer. */
+    var appUpdate by mutableStateOf<DesktopApi.WindowsApp?>(null)
+        private set
+    private var updateHidden: String? = null
+    /** "Later": that version isn't offered again until the next start. */
+    fun updateLater() { updateHidden = appUpdate?.version; appUpdate = null }
     var sort by mutableStateOf(GameSort.DEFAULT)
         private set
     var favouritesOnly by mutableStateOf(false)
@@ -110,6 +116,16 @@ class AppModel(
         private set
     private var quickConnectJob: Job? = null
     private var checkJob: Job? = null
+
+    /**
+     * Bumped at every log in and log out. Work started under an older login (a game list, play time or star still on
+     * its way) checks it before it touches the list, the cache file or box art, so a fetch that lands after log out
+     * can never write the old user's list back. [listLock] makes "still the same login?" and the file write one step
+     * against log out's delete.
+     */
+    @Volatile private var epoch = 0
+    private val listLock = Any()
+    private fun writeListIf(e: Int, list: List<Game>) = synchronized(listLock) { if (e == epoch) DesktopStorage.writeGameList(list) }
 
     init {
         SaveSource.install()
@@ -151,6 +167,7 @@ class AppModel(
 
     private fun completeLogin(s: Session) {
         store.save(s)
+        synchronized(listLock) { epoch++ }
         session = s
         loadPrefs(s.userId)
         DesktopStorage.readGameList().let { games = it ?: emptyList(); gamesKnown = it != null }
@@ -202,21 +219,25 @@ class AppModel(
         store.clear()
         ServerStatus.disconnected()
         serverProblem = null
+        appUpdate = null
         session = null
         games = emptyList()
         gamesKnown = false
-        if (!keepCache) DesktopStorage.deleteGameList()
+        loading = false // an old login's refresh no longer clears it (see [epoch])
+        synchronized(listLock) { epoch++; if (!keepCache) DesktopStorage.deleteGameList() }
     }
 
     // ---- The game list (AppViewModel.kt lines 217-269) ----
 
     fun refresh() {
         loading = true
+        val mine = epoch
         scope.launch {
             try {
                 val c = client()
                 val url = session?.serverUrl ?: return@launch
                 val info = try { c.info() } catch (e: HttpException) { if (e.code != 404) throw e; null }
+                if (mine != epoch) return@launch // logged out (or in again) meanwhile
                 val problem = if (info == null) Compat.PLUGIN_MISSING else Compat.problem(info)
                 Compat.remember(url, problem)
                 serverProblem = problem
@@ -224,26 +245,35 @@ class AppModel(
                 if (info == null || problem != null) return@launch
                 hasFavourites = "favourites" in info.features
                 val before = games // names for saves on this PC whose game has left the server (N7)
-                games = c.listGames(info.canDownload).map { it.game }
+                val fetched = c.listGames(info.canDownload).map { it.game }
+                if (mine != epoch) return@launch
+                games = fetched
                 gamesKnown = true
                 val list = games
-                withContext(Dispatchers.IO) { DesktopStorage.writeGameList(list) }
+                withContext(Dispatchers.IO) { writeListIf(mine, list) }
+                if (mine != epoch) return@launch
                 serverFeatures = info.features
                 saveRules = info.keepRecent to info.keepDailyDays
                 maxLabelLength = info.maxLabelLength
                 hasCheats = "cheats" in info.features
                 flushPlayTime()
-                launch { afterListRefresh(before, list) }
-                launch { if (art.fetchMissing(c, list)) artVersion++ } // don't hold the spinner
+                launch {
+                    // Never in the way (as the phone): an older plugin without it, or any error, just shows nothing.
+                    val u = runCatching { api()?.windowsApp() }.getOrNull()?.takeIf { Compat.updateAvailable(it.version) }
+                    if (mine == epoch) appUpdate = u?.takeIf { it.version != updateHidden }
+                }
+                launch { afterListRefresh(mine, before, list) }
+                launch { if (art.fetchMissing(c, list) { mine == epoch } && mine == epoch) artVersion++ } // don't hold the spinner
             } catch (e: CancellationException) {
                 throw e
             } catch (e: HttpException) {
+                if (mine != epoch) return@launch // an old login's refusal must never log out the new one
                 if (e.code == 401) { message = "Your login has expired. Please log in again."; logout(keepCache = true) }
                 else { offline = true; message = e.message }
             } catch (e: IOException) {
-                offline = true // no network: the saved list stays, so downloaded games stay playable
+                if (mine == epoch) offline = true // no network: the saved list stays, so downloaded games stay playable
             } finally {
-                loading = false
+                if (mine == epoch) loading = false
             }
         }
     }
@@ -275,6 +305,9 @@ class AppModel(
         return GameSort.sort(list, sort) { g -> GameSort.lastPlayed(uid?.let { library.lastLaunch(it, g.id) }, g.serverPlayed) }
     }
 
+    /** When [g] was last played: this PC's last start or Jellyfin's, the later one (the library's "Played lately"). */
+    fun lastPlayed(g: Game): Long? = GameSort.lastPlayed(session?.userId?.let { library.lastLaunch(it, g.id) }, g.serverPlayed)
+
     /** Ids of the games downloaded to this PC (the phone's "On phone" truth: [Storage.isDownloaded]). */
     fun onPc(): Set<String> = games.filter { Storage.isDownloaded(it) }.mapTo(HashSet()) { it.id }
 
@@ -287,12 +320,13 @@ class AppModel(
         val s = session ?: return
         val features = serverFeatures ?: return
         val c = client()
+        val mine = epoch
         scope.launch {
             val totals = runCatching { withContext(Dispatchers.IO) { playQueue.flush(c, s.userId, features) } }.getOrDefault(emptyMap())
-            if (totals.isEmpty()) return@launch
+            if (totals.isEmpty() || mine != epoch) return@launch
             games = games.map { g -> totals[g.id]?.let { g.copy(playSeconds = it) } ?: g }
             val list = games
-            withContext(Dispatchers.IO) { DesktopStorage.writeGameList(list) }
+            withContext(Dispatchers.IO) { writeListIf(mine, list) }
         }
     }
 
@@ -300,22 +334,27 @@ class AppModel(
 
     fun setFavourite(game: Game, on: Boolean) {
         val c = client()
+        val mine = epoch
         scope.launch {
             try {
                 withContext(Dispatchers.IO) { c.setFavourite(game.id, on) }
+                if (mine != epoch) return@launch
                 games = games.map { if (it.id == game.id) it.copy(favourite = on) else it }
                 if (games.none { it.favourite }) chooseFavouritesOnly(false)
                 val list = games
-                withContext(Dispatchers.IO) { DesktopStorage.writeGameList(list) }
+                withContext(Dispatchers.IO) { writeListIf(mine, list) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                message = "Couldn't change the star: ${e.message ?: e.javaClass.simpleName}"
+                if (mine == epoch) message = "Couldn't change the star: ${e.message ?: e.javaClass.simpleName}"
             }
         }
     }
 
     // ---- Downloads (Downloads.kt: progress, Cancel, the same messages) ----
+
+    /** A PS2 game with no PS2 BIOS on this PC yet: the sheet says so instead of Play (plan §7). */
+    fun needsBios(g: Game) = g.console == uk.benmarks.shoalcade.Console.PS2 && Ps2.installed(DesktopStorage.context(), DesktopStorage.paths.systemDir) == null
 
     fun canDownload(g: Game) = !offline && serverProblem == null && g.canDownload && DesktopStorage.playableHere(g.console)
 
@@ -380,7 +419,7 @@ class AppModel(
     var autoUploadOn by mutableStateOf(AutoUpload.on(AutoUpload.store(DesktopStorage.context())))
         private set
 
-    private val cores by lazy { runCatching { Cores.packed() }.getOrElse { Cores(emptyList(), Cores.thisTarget()) } }
+    private val cores by lazy { runCatching { Cores.packed { Ps2.emulator(DesktopStorage.context()) } }.getOrElse { Cores(emptyList(), Cores.thisTarget()) } }
 
     /** The phone's SaveSyncCore, logged in: the same wiring as SaveSync.core() (sync store, auto upload, version check). */
     fun core(): SaveSyncCore? {
@@ -405,13 +444,15 @@ class AppModel(
     }
 
     /** After each game list: the orphan notice (once per save), ⚠️ marks, waiting saves and snapshots go up. */
-    private suspend fun afterListRefresh(before: List<Game>, list: List<Game>) {
+    private suspend fun afterListRefresh(mine: Int, before: List<Game>, list: List<Game>) {
+        if (mine != epoch) return
         val c = core() ?: return
         val listed = list.map { it.id }.toSet()
         val orphans = withContext(Dispatchers.IO) {
             c.rememberGone(before, listed) // so "Not in your library" can name them later
             c.orphansToMention(listed).toList()
         }
+        if (mine != epoch) return
         if (orphans.isNotEmpty()) message = orphanNotice(orphans, before.associate { it.id to it.name })
         refreshMarks()
         uploadWaiting()
@@ -669,8 +710,6 @@ class AppModel(
 
     // ---- The 3DS check (docs/windows/phase6-3ds.md): advisory only, never locks (plan Q6) ----
 
-    /** The 3DS check window is open (account menu → 3DS check). */
-    var checkOpen by mutableStateOf(false)
     /** The check is running (its own player window): the corner words, else null. */
     var checkLine by mutableStateOf<String?>(null)
         private set
@@ -704,6 +743,38 @@ class AppModel(
                     }
                     checkVersion++
                     "${out.result.label}. ${N3dsCheckPc.detail(out.result)} ${N3dsCheck.speedLine(out.fps)}"
+                }
+                N3dsCheckRun.Outcome.Cancelled -> N3dsCheckPc.CANCELLED
+                is N3dsCheckRun.Outcome.Failed -> out.why
+            }
+        }
+    }
+
+    // ---- The GameCube / Wii check (D222 D-7): advisory, our own homebrew scene, one player at a time ----
+
+    /** What the last GameCube or Wii check said; bumped [checkVersion] when a result is kept. */
+    var gcCheckNote by mutableStateOf<String?>(null)
+        private set
+
+    fun gcCheckSaved(c: uk.benmarks.shoalcade.Console): N3dsCheck.Saved = N3dsCheck.read(GcCheckPc.store(DesktopStorage.context(), c))
+
+    fun runGcCheck(c: uk.benmarks.shoalcade.Console) {
+        if (playing != null) { gcCheckNote = "Close the game first."; return }
+        if (n3dsJob?.isActive == true || checkRunning) return
+        gcCheckNote = null
+        checkLine = "${GcCheckPc.name(c)} check: getting ready…"
+        n3dsJob = scope.launch {
+            val dir = java.io.File(DesktopStorage.paths.dataDir, "gc-check/${c.key}")
+            val run = GcCheckRun(setupFor(), dir, c, playerArgs = playerArgs, log = java.io.File(DesktopStorage.paths.logsDir, "player.log"))
+            val out = try { run.run { line -> scope.launch { checkLine = line } } } finally { checkLine = null }
+            gcCheckNote = when (out) {
+                is N3dsCheckRun.Outcome.Measured -> {
+                    withContext(Dispatchers.IO) {
+                        N3dsCheck.save(GcCheckPc.store(DesktopStorage.context(), c), out.result, android.os.Build.FINGERPRINT,
+                            BuildConfig.VERSION_CODE.toLong(), System.currentTimeMillis())
+                    }
+                    checkVersion++
+                    "${out.result.label}. ${GcCheckPc.detail(c, out.result)} ${GcCheckPc.speedLine(out.fps, GcCheckPc.targetFps(c))}"
                 }
                 N3dsCheckRun.Outcome.Cancelled -> N3dsCheckPc.CANCELLED
                 is N3dsCheckRun.Outcome.Failed -> out.why
@@ -789,6 +860,19 @@ class AppModel(
             diskVersion++; refreshMarks(); flushPlayTime()
             uploadWaiting()
         }
+    }
+
+    /**
+     * The cheat editor for [g] (D143, D145): on the running game when it is this one (the game and its menu follow at
+     * once), else this PC's copy of the game's list. Changes go to Jellyfin when it can be reached, so the phone and the
+     * browser see them too. Null: no cheats on Windows for this console (3DS, D210), not logged in, or a link session.
+     */
+    fun cheatEditor(g: Game): CheatEditor? {
+        val console = g.console?.takeIf { CheatEditor.allowed(it) } ?: return null
+        val s = session ?: return null
+        playing?.takeIf { it.game.id == g.id }?.let { p -> return p.session.cheatHost?.let { CheatEditor(console, it) } }
+        val sync = if (hasCheats && !offline) client().let { cl -> CheatSyncCore(cl) { Compat.ensure(cl, s.serverUrl) } } else null
+        return CheatEditor(console, PcCheatHost(s.userId, g.id, scope, sync))
     }
 
     /** Close Game / Close Game (and Upload) from the shell's bar while a game is open. */

@@ -14,8 +14,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -190,7 +193,7 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Saves: ${game.name}") },
+        title = { DialogTitle("Saves: ${game.name}") },
         text = {
             Column {
                 vm.saveRules?.let { (recent, days) ->
@@ -199,7 +202,7 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
                 }
                 status?.let {
                     Text(it, color = if (statusError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(vertical = 6.dp))
+                        modifier = Modifier.padding(vertical = 6.dp).semantics { liveRegion = LiveRegionMode.Polite }) // read out when it changes
                 }
                 if (offline && history != null) {
                     Text("You're offline (Jellyfin can't be reached), so Pin and Name are off. Nothing was changed.",
@@ -217,7 +220,7 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
                         items(h.versions, key = { it.version }) { v ->
                             val canChange = !busy && !offline
                             Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                                Column(Modifier.fillMaxWidth().clickable(enabled = !busy) { selected = v }.padding(vertical = 2.dp)) {
+                                Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !busy, role = Role.Button) { selected = v }.padding(vertical = 2.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text("Version ${v.version}", fontWeight = if (v.isCurrent) FontWeight.Bold else FontWeight.Normal)
                                         if (v.isCurrent) Badge("In use", InUseRed, Color.White)
@@ -268,7 +271,7 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
     selected?.let { v ->
         AlertDialog(
             onDismissRequest = { selected = null },
-            title = { Text("Version ${v.version}") },
+            title = { DialogTitle("Version ${v.version}") },
             text = {
                 Text((v.label?.let { "“$it”\n" } ?: "") + describeVersion(v) + "\n" + sizeLabel(v.size) +
                     (if (v.isCurrent) "\nThis is the save in use." else "") + (if (v.pinned) "\nPinned: never cleared out." else ""))
@@ -293,7 +296,7 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
         var text by remember(v.version) { mutableStateOf((v.label ?: "").take(max)) }
         AlertDialog(
             onDismissRequest = { naming = null },
-            title = { Text("Name this save") },
+            title = { DialogTitle("Name this save") },
             text = {
                 Column {
                     Text("Version ${v.version}" + (v.createdMillis?.let { ", " + formatTime(it) } ?: "") +
@@ -323,7 +326,7 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
     confirmRestore?.let { v ->
         AlertDialog(
             onDismissRequest = { confirmRestore = null },
-            title = { Text("Use this save?") },
+            title = { DialogTitle("Use this save?") },
             text = {
                 Text("Version ${v.version} becomes the save in use. The save you were using stays in the list." +
                     if (Storage.isDownloaded(game)) " It's then put on this phone; your phone save is backed up first." else "")
@@ -342,7 +345,7 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
     replaceConflict?.let { (bytes, server) ->
         AlertDialog(
             onDismissRequest = { replaceConflict = null },
-            title = { Text("The save changed") },
+            title = { DialogTitle("The save changed") },
             text = {
                 Text("Another device saved this game since the list was loaded" +
                     (server?.let { " (${describeVersion(it)})" } ?: "") + ". Which should be in use? Both are kept in the list either way.")
@@ -449,14 +452,14 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Not in your library") },
+        title = { DialogTitle("Not in your library") },
         text = {
             Column {
                 Text("Games no longer in your library that still have a save, download or snapshot on this phone. " +
                     "Saves stay on this phone: nothing here deletes them.", style = MaterialTheme.typography.bodySmall)
                 status?.let {
                     Text(it, color = if (statusError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(vertical = 6.dp))
+                        modifier = Modifier.padding(vertical = 6.dp).semantics { liveRegion = LiveRegionMode.Polite })
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 val l = list
@@ -471,7 +474,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
                             Modifier.padding(vertical = 8.dp))
                     l is OrphanView.Ready -> LazyColumn(Modifier.heightIn(max = 360.dp)) {
                         items(l.saves, key = { it.id }) { o ->
-                            Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !busy) { selected = o }
+                            Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !busy, role = Role.Button) { selected = o }
                                 .padding(vertical = 6.dp)) {
                                 Text(o.title, fontWeight = FontWeight.SemiBold)
                                 Text(details(o), style = MaterialTheme.typography.bodySmall)
@@ -488,7 +491,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
     selected?.let { o ->
         AlertDialog(
             onDismissRequest = { selected = null },
-            title = { Text(o.title) },
+            title = { DialogTitle(o.title) },
             text = {
                 Text(details(o) + "\nThe game is no longer in your library." +
                     (if (o.hasSave) " This save stays on the phone whatever you pick." else "") +
@@ -521,13 +524,13 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
         val targets = remember(o, vm.games) { OrphanSave.targets(o, vm.games) }
         AlertDialog(
             onDismissRequest = { picking = null },
-            title = { Text("Upload to which game?") },
+            title = { DialogTitle("Upload to which game?") },
             text = {
                 if (targets.isEmpty()) Text("No game in your library can take this save.")
                 else LazyColumn(Modifier.heightIn(max = 360.dp)) {
                     items(targets, key = { it.id }) { g ->
                         Text(g.name + (g.console?.let { "  (${it.shortName})" } ?: ""),
-                            Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { picking = null; confirm = o to g }
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { picking = null; confirm = o to g }
                                 .padding(vertical = 12.dp))
                         HorizontalDivider()
                     }
@@ -540,7 +543,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
     confirm?.let { (o, g) ->
         AlertDialog(
             onDismissRequest = { confirm = null },
-            title = { Text("Upload to ${g.name}?") },
+            title = { DialogTitle("Upload to ${g.name}?") },
             text = {
                 Text("The ${o.title} save becomes the save in use for ${g.name} on Jellyfin. The save it was using stays in the list." +
                     (if (Storage.isDownloaded(g)) " It's then put on this phone; your phone save for ${g.name} is backed up first." else "") +
@@ -554,7 +557,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
     conflict?.let { (o, g, server) ->
         AlertDialog(
             onDismissRequest = { conflict = null },
-            title = { Text("The save changed") },
+            title = { DialogTitle("The save changed") },
             text = {
                 Text("Another device saved ${g.name} just now" + (server?.let { " (${describeVersion(it)})" } ?: "") +
                     ". Which should be in use? Both are kept in the list either way.")
@@ -577,7 +580,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
     removing?.let { o ->
         AlertDialog(
             onDismissRequest = { removing = null },
-            title = { Text("Remove ${o.title}?") },
+            title = { DialogTitle("Remove ${o.title}?") },
             text = {
                 Text("This deletes only the game's downloaded copy on this phone" + (o.download?.let { " (${sizeLabel(it)})" } ?: "") +
                     ". It's no longer in your library, so it can't be downloaded again unless it comes back. " +
@@ -596,7 +599,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
     deletingSnapshot?.let { o ->
         AlertDialog(
             onDismissRequest = { deletingSnapshot = null },
-            title = { Text("Delete the snapshot?") },
+            title = { DialogTitle("Delete the snapshot?") },
             text = {
                 Text("The snapshot of ${o.title}" + (o.snapshotTime?.let { " from ${formatTime(it)}" } ?: "") +
                     " is deleted from this phone. This can't be undone. The save is kept.")
@@ -615,7 +618,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
         val list = backupList
         AlertDialog(
             onDismissRequest = { backupsOf = null },
-            title = { Text("Older copies: ${o.title}") },
+            title = { DialogTitle("Older copies: ${o.title}") },
             text = {
                 Column {
                     Text("Copies of the save this phone kept before it was replaced (the last 10).",
@@ -625,7 +628,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
                         list.isEmpty() -> Text("No older copies on this phone.", Modifier.padding(vertical = 8.dp))
                         else -> LazyColumn(Modifier.heightIn(max = 360.dp)) {
                             items(list, key = { it.file.name }) { b ->
-                                Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !busy) { backupPicked = b }
+                                Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !busy, role = Role.Button) { backupPicked = b }
                                     .padding(vertical = 6.dp)) {
                                     Text(formatTime(b.time), fontWeight = FontWeight.SemiBold)
                                     Text((if (b.fromJellyfin) "Jellyfin's save, kept when the phone's replaced it" else "From this phone") +
@@ -645,7 +648,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
         val o = backupsOf
         AlertDialog(
             onDismissRequest = { backupPicked = null },
-            title = { Text("Copy from ${formatTime(b.time)}") },
+            title = { DialogTitle("Copy from ${formatTime(b.time)}") },
             text = { Text((if (b.fromJellyfin) "Jellyfin's save, kept when the phone's replaced it" else "From this phone") +
                 " · " + sizeLabel(b.file.length())) },
             confirmButton = {
@@ -667,7 +670,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
         val o = backupsOf
         AlertDialog(
             onDismissRequest = { confirmBackup = null },
-            title = { Text("Put this copy back?") },
+            title = { DialogTitle("Put this copy back?") },
             text = {
                 Text("The copy from ${formatTime(b.time)} becomes the save on this phone. " +
                     "The save there now is kept as an older copy first.")

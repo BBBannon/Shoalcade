@@ -68,24 +68,27 @@
     show("loading");
     if (!api.hasLogin()) { show("signed-out"); return; }
     try {
-      const [info, saves, prefs, app] = await Promise.all([
+      const [info, saves, prefs, app, win] = await Promise.all([
         api.info(),
         api.saveList(),
         api.request("/shoalcade/prefs").then(r => r.json()),
         appInfo(),
+        appInfo("windows").catch(() => ({ off: true })), // an older plugin or an error: no Windows section
       ]);
       S.info = info;
       S.prefs = prefs && typeof prefs === "object" ? prefs : {};
       S.app = app;
+      S.win = win;
       api.showVersion(info);
       $("who").textContent = info.user && info.user.name ? "Signed in as " + info.user.name : "";
       renderSaves(saves);
       renderPlayer();
       show("settings");
       renderApp();
+      renderWindows();
       // Only our own section ids, never the hash as a selector (a crafted link like settings#[ used to throw, I3).
       const want = location.hash.slice(1);
-      if (["saves-s", "app-s", "player-s", "patch-s"].includes(want)) $(want).scrollIntoView();
+      if (["saves-s", "app-s", "win-s", "player-s", "patch-s"].includes(want) && !$(want).hidden) $(want).scrollIntoView();
     } catch (e) {
       if (e && e.status === 401) {
         $("signed-out-text").textContent = e.message;
@@ -97,9 +100,9 @@
     }
   }
 
-  /** { off } when the admin turned the download off (404 app_off), else the server's app info. */
-  async function appInfo() {
-    const res = await api.request("/shoalcade/app/info", { allow: [404] });
+  /** { off } when the admin turned the download off (404 app_off), else the server's app info (platform: "windows", S2). */
+  async function appInfo(platform) {
+    const res = await api.request("/shoalcade/app/info" + (platform ? "?platform=" + platform : ""), { allow: [404] });
     let body = null;
     try { body = await res.json(); } catch (e) { /* not JSON */ }
     if (res.status === 404) return { off: !body || body.error === "app_off" };
@@ -148,6 +151,18 @@
     $("app-ver").textContent = "Version " + a.version + " · " + size(a.size);
     $("app-addr").textContent = location.origin + api.BASE;
     newCode();
+  }
+
+  // ---------- Windows app (S3, D181): a link to this release's GitHub page ----------
+  function renderWindows() {
+    const w = S.win || {};
+    const on = !w.off && typeof w.url === "string" && /^https:\/\/github\.com\//.test(w.url);
+    $("win-s").hidden = !on;
+    $("win-chip").hidden = !on;
+    if (!on) return;
+    $("win-get").href = w.url;
+    $("win-ver").textContent = w.version ? "Version " + w.version : "";
+    $("win-addr").textContent = location.origin + api.BASE;
   }
 
   /** A fresh download link (ticket) from the server: absolute URL, for the QR code and the button. */
@@ -252,7 +267,7 @@
       h("p", { class: "fine set-sub", text: "Controls" }),
       list.length
         ? h("ul", { class: "set-changed" }, list.map(x => {
-          const b = h("button", { type: "button", class: "mini", text: "Reset to defaults", "aria-label": "Reset " + c.name + " " + x.label.toLowerCase() + " to defaults" });
+          const b = h("button", { type: "button", class: "mini" }, ["Reset to defaults", h("span", { class: "sr", text: " (" + c.name + " " + x.label.toLowerCase() + ")" })]);
           b.addEventListener("click", () => resetPart(c, x, b));
           return h("li", null, [h("span", { text: x.label + ": changed" }), b]);
         }))
@@ -272,6 +287,7 @@
 
   async function setSnapshots(c, sw) {
     const on = sw.checked;
+    const hadFocus = document.activeElement === sw;
     sw.disabled = true;
     try {
       await change(c, p => { p.snapshots = on; });
@@ -281,6 +297,7 @@
       toast("Couldn't save your settings: " + message(e));
     } finally {
       sw.disabled = false;
+      if (hadFocus) sw.focus({ preventScroll: true });
     }
   }
 
@@ -295,7 +312,10 @@
         else delete p.touch;
       });
       toast(c.name + " " + part.label.replace(/ \(.*\)$/, "").toLowerCase() + " reset to defaults.");
-      $("con-" + c.key).replaceWith(consoleBox(c));
+      const box = consoleBox(c);
+      $("con-" + c.key).replaceWith(box);
+      const next = box.querySelector("button.mini") || box.querySelector("input");
+      if (next) next.focus({ preventScroll: true });
     } catch (e) {
       b.disabled = false;
       toast("Couldn't save your settings: " + message(e));

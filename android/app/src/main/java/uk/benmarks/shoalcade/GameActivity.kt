@@ -54,6 +54,8 @@ import kotlin.math.ceil
 class GameActivity : ComponentActivity() {
 
     private lateinit var retroView: GLRetroView
+    /** D-8: this session plays a disc set's .m3u (the Discs menu asks the core how many discs it has). */
+    private var discSet = false
     private lateinit var pad: GamepadView
     private lateinit var game: Game
     private lateinit var console: Console
@@ -107,6 +109,7 @@ class GameActivity : ComponentActivity() {
         }
         // A file that clearly isn't a game can crash the emulator, and the whole app with it: refuse it first.
         RomCheck.problem(console, rom)?.let { toast(RomCheck.message(console, it)); finish(); return }
+        discSet = console.takesDiscSets && rom.extension.equals("m3u", ignoreCase = true)
         LibraryPrefs.of(this).recordLaunch(userId, game.id) // "Last played" sort
 
         if (intent.getBooleanExtra(EXTRA_LINK, false)) {
@@ -454,6 +457,7 @@ class GameActivity : ComponentActivity() {
         lifecycleScope.launch {
             retroView.getGLRetroEvents().filterIsInstance<GLRetroView.GLRetroEvents.FrameRendered>().first()
             applySound() // F5: now the core exists, App Mute holds from the very start
+            putBackDisc() // P12: a disc set starts on the disc that was in last time
             loading?.stage = LoadingWords.GAME
             launch { watchFirstPicture() }
             // If we gave the core a real save but it reads back blank, the core rejected it
@@ -882,8 +886,24 @@ class GameActivity : ComponentActivity() {
             speedAllowed = link == null, // two linked phones would drift apart
             fastForward = fastOn, ffSpeed = ffSpeed,
             cheats = cheatBook.cheats.map { MenuCheat(it.id, it.name, cheatBook.isOn(it.id)) },
+            discCount = discCount(),
+            disc = if (discCount() > 1) runCatching { retroView.getCurrentDisk() }.getOrDefault(0) else 0,
         )
     }
+
+    /** P12: the disc each disc set had in last time, kept on the phone per user and game (as the Windows app does). */
+    private val discPrefs by lazy { DiscPrefs.of(this) }
+
+    /** P12: once the core runs, a disc set gets back the disc that was in when the person last changed disc. */
+    private fun putBackDisc() {
+        val count = discCount()
+        val d = discPrefs.startDisc(userId, game.id, count) ?: return
+        if (runCatching { retroView.changeDisk(d) }.isSuccess) toast("${GameMenu.discLabel(d)} is in, as last time.")
+    }
+
+    /** D-8: discs the core reports, only for a disc set (.m3u) of a disc-set console; other games never ask the core. */
+    private fun discCount(): Int =
+        if (discSet) runCatching { retroView.getAvailableDisks() }.getOrDefault(0) else 0
 
     /** Re-reads what the drawer shows (a choice changed, or the phone turned). */
     private fun refreshDrawer(resetFocus: Boolean = false) {
@@ -1016,6 +1036,13 @@ class GameActivity : ComponentActivity() {
             GameMenu.ID_ADD_CHEAT -> { closeDrawer(); openCheats(list = false) }
             GameMenu.ID_EDIT_CHEATS -> { closeDrawer(); openCheats(list = true) }
             else -> {
+                GameMenu.discOf(id)?.let { d ->
+                    if (d < discCount()) {
+                        retroView.changeDisk(d)
+                        discPrefs.keep(userId, game.id, d, discCount())
+                        Toast.makeText(this, "${GameMenu.discLabel(d)} is in.", Toast.LENGTH_SHORT).show()
+                    }
+                }
                 GameMenu.cheatOf(id)?.let { toggleCheat(it) }
                 GameMenu.speedOf(id)?.let { n ->
                     FastForward.setSpeed(soundStore, n)
@@ -1241,7 +1268,7 @@ class GameActivity : ComponentActivity() {
             if (console.hasFolderSaves) SaveSync(this).markSavedWithCheats(userId, game)
         }
         if (!ready) return // applied when the game is ready
-        val ops = CheatApply.ops(active)
+        val ops = CheatApply.ops(active, console)
         retroView.queueEvent {
             var refused = 0
             for (op in ops) runCatching {

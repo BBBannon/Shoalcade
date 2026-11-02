@@ -159,6 +159,14 @@ while IFS=$'\t' read -r core target repo commit licence file bytes hash; do
 done < <(grep -v '^#' "$LOCK")
 [ "$n" -ge 7 ] || die "expected 7 Windows cores in cores.lock, found $n"
 [ -f "$CORES/PPSSPP/LICENSE.TXT" ] || die "PPSSPP system folder missing: $CORES/PPSSPP"
+if grep -q "^dolphin$(printf '\t')win$(printf '\t')" "$LOCK"; then # Dolphin's Sys, written beside the core by build_windows_cores.sh
+  [ -f "$CORES/dolphin-emu/Sys/codehandler.bin" ] && [ -d "$CORES/dolphin-emu/Sys/GameSettings" ] ||
+    die "Dolphin system folder missing: $CORES/dolphin-emu/Sys (run tools/build_windows_cores.sh dolphin)"
+fi
+if grep -q "^pcee2$(printf '\t')win$(printf '\t')" "$LOCK"; then # PCEE2's resources, written beside the core
+  [ -f "$CORES/pcsx2/resources/GameIndex.yaml" ] ||
+    die "PCEE2 resources missing: $CORES/pcsx2/resources (run tools/build_windows_cores.sh pcee2)"
+fi
 
 # --- 2. player -------------------------------------------------------------------------------------------------------
 say "2. ShoalcadePlayer.exe (Release, MinGW)"
@@ -187,12 +195,27 @@ ${TP}strip --strip-unneeded -o "$PLAYER/SDL3.dll" "$PB/SDL3.dll"
 
 # Only Windows' own DLLs (and SDL3.dll for the player) may be needed: a MinGW runtime DLL here would mean a
 # "works on the build machine, fails on Ben's PC" install.
-SYSTEM_DLLS='^(kernel32|user32|gdi32|shell32|advapi32|ole32|oleaut32|ws2_32|winmm|opengl32|iphlpapi|bcrypt|winhttp|version|shlwapi|crypt32|msvcrt|imm32|setupapi|cfgmgr32|hid|dinput8|dxgi|d3d11|d3d12|dwmapi|uxtheme|comdlg32|comctl32|secur32|userenv|ntdll|dbghelp|powrprof|mfplat|mfreadwrite|mf|propsys|winusb|xinput1_4|api-ms-win-.*)\.dll$'
+SYSTEM_DLLS='^(kernel32|user32|gdi32|shell32|advapi32|ole32|oleaut32|ws2_32|winmm|opengl32|iphlpapi|bcrypt|winhttp|version|shlwapi|crypt32|msvcrt|imm32|setupapi|cfgmgr32|hid|dinput8|dxgi|d3dcompiler_47|d3d11|d3d12|dwmapi|uxtheme|comdlg32|comctl32|secur32|userenv|ntdll|dbghelp|powrprof|avrt|mfplat|mfreadwrite|mf|propsys|winusb|xinput1_4|api-ms-win-.*)\.dll$'
 check_imports() { # file allowed-extra-regex
   local bad
   bad=$(${TP}objdump -p "$1" | tr -d '\r' | sed -n 's/^\s*DLL Name: //p' | tr 'A-Z' 'a-z' |
         grep -v -E "$SYSTEM_DLLS" | grep -v -E "${2:-^$}" || true)
   [ -z "$bad" ] || die "$(basename "$1") needs non-Windows DLLs: $bad"
+}
+# No BIOS, firmware, keys or memory card is ever shipped (and the launcher would copy it over the user's own): the build
+# stops if the installer image holds a bios\ or memcards\ folder (any *.bin in them included), a PS2/PS1/GameCube card,
+# a GameCube IPL.bin, a Sony BIOS (scph*) or a 3DS/Wii key file.
+refuse_firmware() { # image folder
+  local bad
+  bad=$(find "$1" \( -type d \( -iname bios -o -iname memcards \) -print \) -o \( -type f \( -iname '*.ps2' \
+        -o -iname 'IPL.bin' -o -iname 'scph*' -o -iname '*.mcd' -o -iname '*.mcr' -o -iname '*.gci' \
+        -o -iname 'MemoryCard*.raw' -o -iname 'SRAM.raw' -o -iname '*.keys' -o -iname 'keys.txt' -o -iname 'aes_keys.txt' \
+        -o -iname 'keys.bin' -o -iname 'otp.bin' -o -iname 'nand.bin' -o -iname 'seeddb.bin' -o -iname 'boot9.bin' \
+        -o -iname 'boot11.bin' -o -iname 'movable.sed' \) -print \))
+  [ -z "$bad" ] || die "the installer image would hold a BIOS, key or memory card (never shipped): ${bad:0:800}"
+  # A PS2 BIOS by content, whatever it is called (review S12): the app's own BIOS rule (Ps2.check / PCSX2 IsBIOS).
+  bad=$("$PY" -I "$INST/find_ps2_bios.py" "$1") || die "the PS2 BIOS check couldn't run on $1"
+  [ -z "$bad" ] || die "the installer image would hold a PS2 BIOS (never shipped): ${bad:0:800}"
 }
 check_imports "$PLAYER/ShoalcadePlayer.exe" '^sdl3\.dll$'
 check_imports "$PLAYER/SDL3.dll"
@@ -278,16 +301,28 @@ build_variant() {
   cp "$PLAYER/ShoalcadePlayer.exe" "$PLAYER/SDL3.dll" "$IMG/app/player/"
   cp "$CORES"/*_libretro.dll "$IMG/app/cores/"
   cp -r "$CORES/PPSSPP" "$IMG/app/system/PPSSPP"
-  # The stamp the launcher compares before copying PPSSPP's files to the user's system folder.
-  (cd "$IMG/app/system" && find PPSSPP -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1) \
-    > "$IMG/app/system/PPSSPP.stamp"
+  # Only the folders the cores' builds write (a test player run against $CORES may have added bios\, memcards\, a
+  # User\ folder...): Dolphin's Sys\ (GameCube + Wii) and PCEE2's resources\ (PS2). Never a BIOS.
+  if [ -d "$CORES/dolphin-emu/Sys" ]; then mkdir -p "$IMG/app/system/dolphin-emu"; cp -r "$CORES/dolphin-emu/Sys" "$IMG/app/system/dolphin-emu/Sys"; fi
+  if [ -d "$CORES/pcsx2/resources" ]; then mkdir -p "$IMG/app/system/pcsx2"; cp -r "$CORES/pcsx2/resources" "$IMG/app/system/pcsx2/resources"; fi
+  refuse_firmware "$IMG"
+  # The stamps the launcher compares before copying each folder to the user's system folder.
+  local sysdir
+  for sysdir in PPSSPP dolphin-emu pcsx2; do
+    [ -d "$IMG/app/system/$sysdir" ] || continue
+    (cd "$IMG/app/system" && find "$sysdir" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1) \
+      > "$IMG/app/system/$sysdir.stamp"
+  done
 
   say "4.$v-d Icons + Shoalcade.exe"
   mkdir -p "$VW/icons"
   "$PY" -I "$INST/make_icons.py" "$ROOT/docs/assets/logo.svg" "$VW/icons" $([ $dev = 1 ] && echo --dev)
+  # The space in "Shoalcade Dev" goes to the resource compiler as the escape \040: Windows' windres passes the -D
+  # values to its preprocessor through a command line that splits them at spaces.
+  local sp='\040'
   (cd "$INST/launcher" && ${TP}windres -I "$INST/launcher" \
       -DSC_ICON="\\\"$VW/icons/shoalcade.ico\\\"" -DSC_VER_COMMA="$VER_COMMA" -DSC_VER_STR="\\\"$VERSION\\\"" \
-      -DSC_APP_NAME_A="\\\"$name\\\"" launcher.rc -O coff -o "$VW/launcher-res.o")
+      -DSC_APP_NAME_A="\\\"${name// /$sp}\\\"" launcher.rc -O coff -o "$VW/launcher-res.o")
   ${TP}gcc -O2 -Wall -Wextra -Werror -municode -mwindows -I"$JDK_WIN/include" -I"$JDK_WIN/include/win32" \
     "-DSC_DATA_FOLDER=L\"$data\"" "-DSC_APP_NAME=L\"$name\"" \
     "$INST/launcher/launcher.c" "$VW/launcher-res.o" -o "$IMG/Shoalcade.exe" -static -s

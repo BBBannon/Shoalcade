@@ -78,7 +78,7 @@ body.game-shown #intro { display: none; }
 .lay[aria-pressed=true] { border-color: var(--ink); background: var(--p-well); color: var(--p-ink); }
 .lay[aria-pressed=true] svg { fill: var(--accent-soft); }
 .ctl-body { padding-top: 12px; }
-.ctl-body h4 { margin: 16px 0 8px; }
+.ctl-body h3, .ctl-body h4 { margin: 16px 0 8px; }
 .binds { list-style: none; margin: 0; padding: 0; }
 .binds li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: .9rem; }
 .binds .key { max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -129,7 +129,7 @@ body.game-shown #intro { display: none; }
 .tp-dpad span[data-d=Left] { top: 33.3%; height: 33.4%; left: 0; width: 36%; border-radius: 6px 0 0 6px; border-right-width: 0; }
 .tp-dpad span[data-d=Right] { top: 33.3%; height: 33.4%; right: 0; width: 36%; border-radius: 0 6px 6px 0; border-left-width: 0; }
 .tp-sh { width: calc(86px * var(--ts)); height: calc(38px * var(--ts)); border-radius: 10px; }
-.tp-sm { width: calc(74px * var(--ts)); height: calc(30px * var(--ts)); border-radius: 15px; font-size: calc(.75rem * var(--ts)); }
+.tp-sm { width: calc(74px * var(--ts)); height: max(24px, calc(30px * var(--ts))); border-radius: 15px; font-size: calc(.75rem * var(--ts)); }
 .tp-dpad { left: 14px; top: 50%; transform: translateY(-50%); }
 .tp-face { right: 14px; top: 50%; transform: translateY(-50%); }
 .tp-sh[data-b=L] { left: 14px; top: 64px; }
@@ -208,3 +208,7 @@ body.game-shown #intro { display: none; }
 .txt { width: 100%; padding: 8px 10px; border: 2px solid var(--p-ink); border-radius: var(--r-s); background: var(--p-raise); color: var(--p-ink); font: inherit; }
 .txt.code { font-family: var(--mono); font-size: .85rem; resize: vertical; min-height: 4.5em; }
 .cheat-err { color: var(--danger); font-weight: 650; }
+/* M3: the player page is only the sandboxed game frame, edge to edge (play-shell.js). */
+.sc-shell { margin: 0; height: 100%; overflow: hidden; background: #151A12; }
+.sc-shell #sc-frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.sc-shell-msg { margin: 0; padding: 24px 16px; color: var(--bg); }

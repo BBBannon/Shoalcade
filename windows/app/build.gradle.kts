@@ -42,6 +42,8 @@ val sharedMain = listOf(
     // 3DS phase (docs/windows/phase6-3ds.md): the 3DS check's rules (verdict, speed line, saved result), unchanged.
     // Its phone-only pre-check names ActivityManager / PackageManager / Build.SUPPORTED_ABIS: stand-ins here, never run.
     "N3dsCheck",
+    // Disc sets (D-8): every disc, then the .m3u, the shared rule.
+    "DiscSets",
 ).map { "$pkg$it.kt" }.toSet()
 
 /**
@@ -59,6 +61,8 @@ val sharedTests = listOf(
     "ExactSaveSizeTest", "TestbedIntegrationTest",
     // Link play phase: the phone's own link rule and relay tests.
     "LinkRulesTest", "LinkRelayTest",
+    // Disc sets (D-8).
+    "DiscSetTest",
 ).map { "$pkg$it.kt" }.toSet()
 
 /** The phone app's versionName, read from its own build file, so both apps always carry the same number (plan §6). */
@@ -118,8 +122,9 @@ sourceSets {
         // The logo, by path (docs/assets/logo.svg): window icon and login screen. The cores lock (windows/cores):
         // which core file plays each console and the snapshot tag (desktop/Cores.kt).
         // The 3DS check scene (tools/n3ds-check, the same file the phone ships) is packed in too (D208).
-        resources { srcDir("../../docs/assets"); srcDir("../cores"); srcDir("../../android/app/src/main/assets")
-            include("logo.svg", "cores.lock", "n3ds/check.3dsx") }
+        // The GameCube / Wii check scenes (tools/gc-check, our own libogc homebrew, D-7).
+        resources { srcDir("../../docs/assets"); srcDir("../cores"); srcDir("../../android/app/src/main/assets"); srcDir("../../tools")
+            include("logo.svg", "cores.lock", "n3ds/check.3dsx", "gc-check/gc-check.dol", "gc-check/wii-check.dol") }
     }
     test {
         kotlin {

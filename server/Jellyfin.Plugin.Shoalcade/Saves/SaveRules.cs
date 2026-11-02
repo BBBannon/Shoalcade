@@ -45,6 +45,15 @@ internal static class SaveRules
             return "A " + console.DisplayName + " save must be a .zip of its save folder.";
         }
 
+        if (console.Key is "gc" or "wii" or "ps2")
+        {
+            var problem = CheckFolderZip(console, data, allowBlank, out errorCode);
+            if (problem is not null)
+            {
+                return problem;
+            }
+        }
+
         if (!allowBlank && IsBlank(data))
         {
             errorCode = "blank";
@@ -85,6 +94,111 @@ internal static class SaveRules
 
         return null;
     }
+
+    /// <summary>A PS2 memory card: 8 MB of pages with their error-correction bytes (1024 x 528 x 16), the same file in
+    /// LRPS2 and PCEE2.</summary>
+    public const long Ps2CardSize = 8_650_752;
+
+    /// <summary>
+    /// GameCube / Wii / PS2 (D218): the zip the Windows app makes of the game's save files (Storage S1) must hold only
+    /// what that console's save is, so a wrong or damaged upload can never become the save another PC restores:
+    /// GameCube = Dolphin's User/GC card folders (with or without <c>SRAM.raw</c>, the console's settings: the app now
+    /// leaves it out, older builds put it in; <c>SRAM.raw</c> alone is no save),
+    /// Wii = only <c>&lt;hi&gt;/&lt;lo&gt;/data/…</c> under User/Wii/title, PS2 = exactly one memory card
+    /// <c>&lt;game&gt;.ps2</c> at the top, 8,650,752 bytes, not blank. No entry may climb out of its folder.
+    /// </summary>
+    private static string? CheckFolderZip(GameConsole console, ReadOnlySpan<byte> data, bool allowBlank, out string? errorCode)
+    {
+        errorCode = "format";
+        var files = new List<(string Name, long Length, System.IO.Compression.ZipArchiveEntry Entry)>();
+        try
+        {
+            using var ms = new System.IO.MemoryStream(data.ToArray(), writable: false);
+            using var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Read);
+            foreach (var e in zip.Entries)
+            {
+                var name = e.FullName.Replace('\\', '/');
+                if (name.EndsWith('/'))
+                {
+                    continue; // a folder entry
+                }
+
+                if (name.StartsWith('/') || name.Contains(':', StringComparison.Ordinal) || name.Split('/').Any(p => p is ".." or "."))
+                {
+                    return "That " + console.DisplayName + " save has a file outside its save folder (" + name + ").";
+                }
+
+                files.Add((name, e.Length, e));
+            }
+
+            if (files.Count == 0)
+            {
+                errorCode = "blank";
+                return "That " + console.DisplayName + " save is an empty zip, so the game has probably never saved.";
+            }
+
+            switch (console.Key)
+            {
+                case "ps2":
+                    if (files.Count != 1 || files[0].Name.Contains('/', StringComparison.Ordinal)
+                        || !files[0].Name.EndsWith(".ps2", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return "A PS2 save must be a .zip of the game's one memory card (a .ps2 file).";
+                    }
+
+                    if (files[0].Length != Ps2CardSize)
+                    {
+                        errorCode = "size";
+                        return string.Format(
+                            CultureInfo.InvariantCulture,
+                            "That isn't a PS2 memory card: it is {0:N0} bytes (a card is {1:N0}).",
+                            files[0].Length,
+                            Ps2CardSize);
+                    }
+
+                    if (!allowBlank)
+                    {
+                        using var card = files[0].Entry.Open();
+                        var bytes = new byte[Ps2CardSize];
+                        card.ReadExactly(bytes);
+                        if (IsBlank(bytes))
+                        {
+                            errorCode = "blank";
+                            return "That PS2 memory card is empty (never formatted), so the game has probably never saved.";
+                        }
+                    }
+
+                    break;
+                case "wii":
+                    var notData = files.FirstOrDefault(f => !WiiData.IsMatch(f.Name));
+                    if (notData.Name is not null)
+                    {
+                        return "A Wii save holds only the games' save data (title/…/data); this zip has " + notData.Name + ".";
+                    }
+
+                    break;
+                case "gc":
+                    if (files.All(f => string.Equals(f.Name, "SRAM.raw", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        errorCode = "blank";
+                        return "That GameCube save has only the console's settings (SRAM.raw), no memory card files.";
+                    }
+
+                    break;
+            }
+        }
+        catch (Exception ex) when (ex is System.IO.InvalidDataException or System.IO.IOException)
+        {
+            // Not a zip / bad data (InvalidDataException is not an IOException), or an entry shorter than it says
+            // (EndOfStreamException, review #7).
+            return "That " + console.DisplayName + " save isn't a readable .zip.";
+        }
+
+        errorCode = null;
+        return null;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex WiiData = new("^[^/]+/[^/]+/data/.+$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     private static string SizeText(long n) => n >= 1024 * 1024 ? (n / (1024 * 1024)).ToString(CultureInfo.InvariantCulture) + " MB"
         : n >= 1024 ? (n / 1024).ToString(CultureInfo.InvariantCulture) + " KB" : n.ToString(CultureInfo.InvariantCulture) + " bytes";

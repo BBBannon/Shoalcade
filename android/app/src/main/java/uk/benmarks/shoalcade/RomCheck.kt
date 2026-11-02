@@ -13,10 +13,28 @@ object RomCheck {
 
     /** Why the file can't be a game for [console], or null if it may be (the emulator decides). */
     fun problem(console: Console, file: File): String? {
+        if (console.takesDiscSets && file.extension.equals("m3u", ignoreCase = true)) return discSetProblem(console, file)
         val size = file.length()
         if (size <= 0L) return "the file is empty"
         val head = readHead(file) ?: return "the file can't be read"
         return problem(console, file.extension.lowercase(), size, head)
+    }
+
+    /**
+     * D-8: a disc set's .m3u: one plain file name per line, each a disc next to it that passes [problem] itself.
+     * Lines starting with # are comments.
+     */
+    private fun discSetProblem(console: Console, m3u: File): String? {
+        val names = runCatching { m3u.readLines(Charsets.UTF_8) }.getOrNull()?.map { it.trim() }
+            ?.filter { it.isNotEmpty() && !it.startsWith("#") } ?: return "the disc list can't be read"
+        if (names.isEmpty()) return "the disc list is empty"
+        for (n in names) {
+            if (n.contains('/') || n.contains('\\') || n == "." || n == ".." || n.endsWith(".m3u", ignoreCase = true)) return "the disc list is damaged"
+            val disc = File(m3u.parentFile, n)
+            if (!disc.isFile) return "a disc is missing ($n)"
+            problem(console, disc)?.let { return "$n: $it" }
+        }
+        return null
     }
 
     /** As [problem], from the file's extension, size and first [HEAD] bytes (unit-tested). */
@@ -45,6 +63,24 @@ object RomCheck {
                 "pbp" -> tooSmall(0x28) ?: if (at(0, "\u0000PBP")) null else mark
                 "chd" -> tooSmall(0x7C) ?: if (at(0, "MComprHD")) null else mark
                 else -> null
+            }
+            // Windows only (D218). Discs: GameCube / Wii magic words in the disc header, PS2 an ISO 9660 disc.
+            // Dolphin's own compressed forms (rvz, wia, gcz, ciso, wbfs) and homebrew (dol, elf) are checked by the
+            // emulator itself: just big enough for a header.
+            Console.GC -> when (ext) {
+                "iso", "gcm" -> tooSmall(0x440) ?: if (at(0x1C, "\u00C2\u0033\u009F\u003D")) null else mark
+                else -> tooSmall(0x100)
+            }
+            Console.WII -> when (ext) {
+                "iso" -> tooSmall(0x440) ?: if (at(0x18, "\u005D\u001C\u009E\u00A3")) null else mark
+                else -> tooSmall(0x100)
+            }
+            Console.PS2 -> when (ext) {
+                "iso" -> tooSmall(0x8006) ?: if (at(0x8001, "CD001")) null else mark
+                "cso", "ciso" -> tooSmall(0x18) ?: if (at(0, "CISO")) null else mark
+                "zso" -> tooSmall(0x18) ?: if (at(0, "ZISO")) null else mark
+                "chd" -> tooSmall(0x7C) ?: if (at(0, "MComprHD")) null else mark
+                else -> tooSmall(0x100)
             }
             Console.N3DS -> when (ext) {
                 "3ds", "cci" -> tooSmall(0x200) ?: if (at(0x100, "NCSD")) null else mark

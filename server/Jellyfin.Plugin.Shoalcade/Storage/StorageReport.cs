@@ -247,7 +247,9 @@ public sealed class StorageReport
             g.Unreadable |= bad;
             unreadable |= bad;
             g.SaveBytes = files.Sum(f => f.Length);
-            var histories = new[] { ReadHistory(Path.Combine(dir, SaveStore.HistoryFileName)), ReadHistory(Path.Combine(dir, SaveStore.BrowserFolderName, SaveStore.HistoryFileName)) };
+            var histories = new[] { ReadHistory(Path.Combine(dir, SaveStore.HistoryFileName), ref bad), ReadHistory(Path.Combine(dir, SaveStore.BrowserFolderName, SaveStore.HistoryFileName), ref bad) };
+            g.Unreadable |= bad; // L12: a damaged history hides pins and moved copies
+            unreadable |= bad;
             var versions = histories.Where(h => h is not null).SelectMany(h => h!.Versions).ToList();
             g.VersionCount = histories.Any(h => h is not null) ? versions.Count : files.Count(f => f.Name.StartsWith('v') && (f.Name.EndsWith(".sav", StringComparison.Ordinal) || f.Name.EndsWith(".zip", StringComparison.Ordinal)));
             g.PinnedCount = versions.Count(v => v.Pinned);
@@ -425,9 +427,17 @@ public sealed class StorageReport
         }
     }
 
-    /// <summary>Reads a history file without locking it (it is only ever replaced whole), or null if missing or damaged.</summary>
-    private static SaveHistory? ReadHistory(string path)
+    /// <summary>
+    /// Reads a history file without locking it (it is only ever replaced whole), or null if missing or damaged.
+    /// <paramref name="bad"/> is set when it exists but can't be read (L12: its pins and moved copies would be missed).
+    /// </summary>
+    private static SaveHistory? ReadHistory(string path, ref bool bad)
     {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
         try
         {
             using var s = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
@@ -435,6 +445,7 @@ public sealed class StorageReport
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
+            bad = true;
             return null;
         }
     }

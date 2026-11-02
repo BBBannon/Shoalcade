@@ -1,0 +1,225 @@
+Shoalcade: cheats through retro_cheat_set / retro_cheat_reset for the PCEE2 libretro core (PS2), as Shoalcade's
+LRPS2 patch (tools/lrps2-patches/0003). Upstream's were empty. A code is one or more lines joined by '+' (or new
+lines); each line is a pnach line ("patch=1,EE,2XXXXXXX,extended,YYYYYYYY") or a raw decrypted code
+("XXXXXXXX YYYYYYYY", turned into patch=1,EE,XXXXXXXX,extended,YYYYYYYY: applied every vsync). A code with an
+unreadable line is skipped whole (logged). Encrypted codes (CodeBreaker, GameShark, Action Replay MAX) are not
+read. The codes form their own always-enabled patch group (not tied to the "enable cheats" option, which is about
+pnach files), rebuilt on the CPU thread and kept across patch reloads and boots. Nothing is written to the cheats
+folder, the memory cards or the system folder.
+
+diff --git a/pcee2-libretro/Libretro.cpp b/pcee2-libretro/Libretro.cpp
+index dc04194f2..a1ae01cd4 100644
+--- a/pcee2-libretro/Libretro.cpp
++++ b/pcee2-libretro/Libretro.cpp
+@@ -21,11 +21,13 @@
+ #include <atomic>
+ #include <bit>
+ #include <chrono>
++#include <cctype>
+ #include <cmath>
+ #include <condition_variable>
+ #include <cstdlib>
+ #include <cstring>
+ #include <deque>
++#include <map>
+ #include <mutex>
+ #include <thread>
+ #include <vector>
+@@ -81,6 +83,7 @@
+ #include "pcsx2/SIO/Pad/Pad.h"
+ #include "pcsx2/SaveState.h"
+ #include "pcsx2/USB/USB.h"
++#include "pcsx2/Patch.h"
+ #include "pcsx2/VMManager.h"
+ #include "pcsx2/ps2/BiosTools.h"
+ 
+@@ -3670,8 +3673,100 @@ bool retro_unserialize(const void* data, size_t size)
+ 	return result;
+ }
+ 
+-void retro_cheat_reset(void) {}
+-void retro_cheat_set(unsigned index, bool enabled, const char* code) {}
++// Shoalcade (tools/pcee2-patches/0002): cheats through retro_cheat_set, as in Shoalcade's LRPS2 patch. A code
++// is one or more lines joined by '+' (or new lines); each line is a pnach line
++// ("patch=1,EE,2XXXXXXX,extended,YYYYYYYY") or a raw decrypted code ("XXXXXXXX YYYYYYYY", which becomes
++// patch=1,EE,XXXXXXXX,extended,YYYYYYYY: applied every vsync). A code with an unreadable line is skipped whole.
++static std::map<unsigned, std::vector<std::string>> s_sc_cheat_codes;
++
++static void ScCheatsPublish()
++{
++	std::string text;
++	for (const auto& kv : s_sc_cheat_codes)
++		for (const std::string& line : kv.second)
++			text.append(line).append("\n");
++	Patch::ShoalcadeSetCheats(std::move(text));
++}
++
++static bool ScIsHex(const std::string& s)
++{
++	if (s.empty())
++		return false;
++	for (char c : s)
++		if (!std::isxdigit(static_cast<unsigned char>(c)))
++			return false;
++	return true;
++}
++
++void retro_cheat_reset(void)
++{
++	s_sc_cheat_codes.clear();
++	ScCheatsPublish();
++}
++
++void retro_cheat_set(unsigned index, bool enabled, const char* code)
++{
++	s_sc_cheat_codes.erase(index);
++	if (enabled && code)
++	{
++		std::vector<std::string> lines;
++		const std::string text(code);
++		std::string piece;
++		for (size_t i = 0; i <= text.size(); i++)
++		{
++			const char ch = i < text.size() ? text[i] : '+';
++			if (ch != '+' && ch != '\n' && ch != '\r')
++			{
++				piece += ch;
++				continue;
++			}
++			std::string line; // trimmed, runs of blanks folded to one space
++			bool space = false;
++			for (char c : piece)
++			{
++				if (c == ' ' || c == '\t')
++				{
++					space = !line.empty();
++					continue;
++				}
++				if (space)
++					line += ' ';
++				space = false;
++				line += c;
++			}
++			piece.clear();
++			if (line.empty())
++				continue;
++			if (line.compare(0, 6, "patch=") == 0)
++			{
++				lines.push_back(line);
++				continue;
++			}
++			std::string a, b;
++			const size_t sp = line.find(' ');
++			if (sp != std::string::npos)
++			{
++				a = line.substr(0, sp);
++				b = line.substr(sp + 1);
++			}
++			else if (line.size() == 16)
++			{
++				a = line.substr(0, 8);
++				b = line.substr(8);
++			}
++			if (a.size() != 8 || b.size() != 8 || !ScIsHex(a) || !ScIsHex(b))
++			{
++				Console.WarningFmt("Shoalcade: cheat {} skipped, unreadable line: {}", index, line);
++				lines.clear();
++				break;
++			}
++			lines.push_back("patch=1,EE," + a + ",extended," + b);
++		}
++		if (!lines.empty())
++			s_sc_cheat_codes[index] = std::move(lines);
++	}
++	ScCheatsPublish();
++}
+ 
+ unsigned retro_get_region(void)
+ {
+diff --git a/pcsx2/Patch.cpp b/pcsx2/Patch.cpp
+index 89d72f838..b827136c7 100644
+--- a/pcsx2/Patch.cpp
++++ b/pcsx2/Patch.cpp
+@@ -27,6 +27,7 @@
+ 
+ #include <algorithm>
+ #include <cstring>
++#include <mutex>
+ #include <span>
+ #include <sstream>
+ #include <type_traits>
+@@ -128,6 +129,9 @@ namespace Patch
+ 	static std::vector<PatchGroup> s_gamedb_patches;
+ 	static std::vector<PatchGroup> s_game_patches;
+ 	static std::vector<PatchGroup> s_cheat_patches;
++	static std::vector<PatchGroup> s_sc_cheat_patches; // Shoalcade: the frontend's cheats
++	static std::mutex s_sc_cheats_lock;
++	static std::string s_sc_cheats_text;
+ 
+ 	static u32 s_gamedb_counts = 0;
+ 	static u32 s_patches_counts = 0;
+@@ -809,6 +813,22 @@ void Patch::UpdateActivePatches(bool reload_enabled_list, bool verbose, bool ver
+ 		message.append_format("{}{}", message.empty() ? "" : "\n",
+ 			TRANSLATE_PLURAL_STR("Patch", "%n cheat patches are active.", "OSD Message", c_count));
+ 
++	// Shoalcade (tools/pcee2-patches/0002): the frontend's cheats, rebuilt from their text here (always on
++	// the CPU thread) and always active: they don't depend on EnableCheats, which is about pnach files.
++	{
++		std::string text;
++		{
++			std::lock_guard<std::mutex> lk(s_sc_cheats_lock);
++			text = s_sc_cheats_text;
++		}
++		decltype(s_sc_cheat_patches)().swap(s_sc_cheat_patches);
++		if (!text.empty())
++		{
++			LoadPatchesFromString(&s_sc_cheat_patches, text);
++			EnablePatches(&s_sc_cheat_patches, std::vector<std::string>(), nullptr);
++		}
++	}
++
+ 	// Display message on first boot when we load patches.
+ 	// Except when it's just GameDB.
+ 	const bool just_gamedb = (p_count == 0 && c_count == 0 && gp_count > 0);
+@@ -882,6 +902,26 @@ bool Patch::ReloadPatchAffectingOptions()
+ 	return current_ar != EmuConfig.GS.AspectRatio || custom_aspect_ratio != EmuConfig.CurrentCustomAspectRatio || current_interlace != EmuConfig.GS.InterlaceMode;
+ }
+ 
++void Patch::ShoalcadeSetCheats(std::string pnach_text)
++{
++	{
++		std::lock_guard<std::mutex> lk(s_sc_cheats_lock);
++		s_sc_cheats_text = std::move(pnach_text);
++	}
++	Host::RunOnCPUThread([]() {
++		UpdateActivePatches(false, false, false, false);
++		// "once" lines can't wait for the next boot: apply them now, once.
++		std::vector<const PatchCommand*> mine;
++		for (const PatchGroup& g : s_sc_cheat_patches)
++			for (const PatchCommand& c : g.patches)
++				mine.push_back(&c);
++		EEMemoryInterface ee;
++		IOPMemoryInterface iop;
++		ApplyPatches(mine, PPT_ONCE_ON_LOAD, ee, iop);
++		Console.WriteLnFmt("Shoalcade: {} cheat line(s) active", mine.size());
++	});
++}
++
+ void Patch::UnloadPatches()
+ {
+ 	s_override_interlace_mode = {};
+diff --git a/pcsx2/Patch.h b/pcsx2/Patch.h
+index 255b6ea38..8896de19c 100644
+--- a/pcsx2/Patch.h
++++ b/pcsx2/Patch.h
+@@ -142,6 +142,10 @@ namespace Patch
+ 	extern bool ReloadPatchAffectingOptions();
+ 	extern void UnloadPatches();
+ 
++	/// Shoalcade (tools/pcee2-patches/0002): the frontend's cheats (retro_cheat_set), as pnach text.
++	/// Any thread; the active list is rebuilt on the CPU thread. Kept across patch reloads and boots.
++	extern void ShoalcadeSetCheats(std::string pnach_text);
++
+ 	/// Functions for Dynamic EE patching.
+ 	extern void LoadDynamicPatches(const std::vector<DynamicPatch>& patches);
+ 	extern void ApplyDynamicPatches(u32 pc);

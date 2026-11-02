@@ -28,6 +28,15 @@ enum class Console(
      * ConsoleDetector writes the same). Save = the core's whole save RAM, 296,960 bytes ([N64Save]). Last, so no tag clash.
      */
     N64("n64", "N64", "N64", "n64", "libmupen64plusnext_libretro_android.so", setOf("z64", "n64", "v64")),
+    /**
+     * GameCube, Wii and PS2 (D218, plan-windows-gc-wii-ps2.md): **Windows app only**. No phone core (null), so the phone
+     * never downloads or plays them. On Windows: Dolphin (GameCube + Wii) and LRPS2 or PCEE2 (PS2, the person picks,
+     * D222 D-3). Folder saves: Dolphin's User folder / the PS2 memory card in the game's save folder ([Storage]).
+     * Extensions: plan §4 (no archives: discs are too big to unpack per play; PS2 .bin/.cue out in v1, D-5).
+     */
+    GC("gc", "GameCube", "GameCube", "gc", null, setOf("iso", "gcm", "rvz", "wia", "gcz", "ciso", "tgc", "dol", "elf")),
+    WII("wii", "Wii", "Wii", "wii", null, setOf("iso", "wbfs", "rvz", "wia", "gcz", "ciso", "wad", "dol", "elf")),
+    PS2("ps2", "PlayStation 2", "PS2", "ps2", null, setOf("iso", "chd", "cso", "zso", "gz", "ciso", "elf")),
     ;
 
     /**
@@ -35,8 +44,8 @@ enum class Console(
      * No `else`, so a new console must be placed here.
      */
     val maker: Maker get() = when (this) {
-        GB, GBC, GBA, NDS, N3DS, N64 -> Maker.NINTENDO
-        PSP, PSX -> Maker.SONY
+        GB, GBC, GBA, NDS, N3DS, N64, GC, WII -> Maker.NINTENDO
+        PSP, PSX, PS2 -> Maker.SONY
     }
 
     val isDualScreen get() = this == NDS
@@ -45,20 +54,26 @@ enum class Console(
     val isLandscape get() = this == PSP || this == N64
 
     /** The controller's left stick (and the touch stick) is the game's analogue stick, not the D-pad. 3DS: the circle pad. */
-    val hasAnalogueStick get() = this == PSP || this == N64 || this == N3DS
+    val hasAnalogueStick get() = this == PSP || this == N64 || this == N3DS || isWindowsOnly
 
     /**
      * Players the phone can drive: N64 takes one controller per player, up to 4 (core ports 0-3, [PlayerPorts]).
      * Everything else is player 1 only (every controller plays as player 1, as before).
      */
-    val players get() = if (this == N64) 4 else 1
+    val players get() = if (this == N64 || isWindowsOnly) 4 else 1
+
+    /** GameCube, Wii, PS2: played by the Windows app only (no phone core, D218). The phone shows them, never plays them. */
+    val isWindowsOnly get() = this == GC || this == WII || this == PS2
+
+    /** D-8: a game of this console can be a disc set (several discs and a .m3u naming them, one save). */
+    val takesDiscSets get() = this == PSX || this == PS2 || this == GC || this == WII
 
     /**
      * PSP saves are a folder of files on a pretend memory stick, not one block of save memory.
      * Each game gets its own memory stick folder, uploaded to Jellyfin as one zip (D27). 3DS the same: the core's
      * pretend SD card, `Nintendo 3DS` folder (D158).
      */
-    val hasFolderSaves get() = this == PSP || this == N3DS
+    val hasFolderSaves get() = this == PSP || this == N3DS || isWindowsOnly
 
     /**
      * Consoles whose save is always one exact size: PS1 (memory card, [PsxCard.SIZE]) and N64 (save RAM, [N64Save.SIZE]).

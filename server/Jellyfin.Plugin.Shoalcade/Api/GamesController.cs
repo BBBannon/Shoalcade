@@ -57,8 +57,130 @@ public class GamesController : ShoalcadeControllerBase
             return false;
         }
 
-        var ext = Path.GetExtension(rom.Item.Path ?? string.Empty).ToLowerInvariant();
+        // A disc set plays its first disc in the browser (D-8; EmulatorJS gets one file).
+        var discs = DiscFiles(rom);
+        var ext = Path.GetExtension(discs.Count > 0 ? discs[0] : rom.Item.Path ?? string.Empty).ToLowerInvariant();
         return rom.Console.Extensions.Contains(ext) || ext is ".zip" or ".7z";
+    }
+
+    /// <summary>The discs of a disc-set game (D-8), in play order; empty for a one-file game.</summary>
+    /// <param name="rom">ROM.</param>
+    /// <returns>Full paths.</returns>
+    internal static IReadOnlyList<string> DiscFiles(RomItem rom)
+    {
+        var path = rom.Item.Path;
+        return string.IsNullOrEmpty(path) || !rom.Console.TakesDiscSets
+            || rom.Console.Extensions.Contains(Path.GetExtension(path).ToLowerInvariant())
+            ? [] : Scanner.RomScanner.DiscSet(path, rom.Console);
+    }
+
+    /// <summary>The file names the discs are served under: their own, made unique within the set.</summary>
+    /// <param name="discs">Disc paths.</param>
+    /// <returns>Names, same order.</returns>
+    internal static IReadOnlyList<string> DiscNames(IReadOnlyList<string> discs)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return discs.Select((p, i) =>
+        {
+            var name = Path.GetFileName(p);
+            return seen.Add(name) ? name : (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + " - " + name;
+        }).ToList();
+    }
+
+    /// <summary>
+    /// A disc-set game's discs (D-8): names and sizes, plus a .m3u naming them. Needs a login, the game in the user's
+    /// libraries and Jellyfin's download permission, as Jellyfin's own download route does.
+    /// </summary>
+    /// <param name="id">Item id.</param>
+    /// <returns>The discs.</returns>
+    [HttpGet("games/{id:guid}/discs")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public ActionResult<DiscSetDto> GetDiscs([FromRoute] Guid id)
+    {
+        if (DiscSetFor(id, out var discs) is ActionResult fail)
+        {
+            return fail;
+        }
+
+        var names = DiscNames(discs);
+        List<DiscDto> list;
+        try
+        {
+            list = discs.Select((p, i) => new DiscDto(i, names[i], new FileInfo(p).Length)).ToList();
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return DiscGone(); // a disc went while this was answered (S12): not a 500
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return CantReadGame();
+        }
+
+        Response.Headers.CacheControl = "no-store";
+        return new DiscSetDto(list, string.Concat(names.Select(n => n + "\n")));
+    }
+
+    private ObjectResult DiscGone() =>
+        Fail(StatusCodes.Status409Conflict, "disc_gone", "This game's discs have just changed on the server. Try again.");
+
+    /// <summary>One disc of a disc-set game (D-8), as a download. Range requests work, but the apps start a dropped
+    /// disc download again from the beginning (they don't resume).</summary>
+    /// <param name="id">Item id.</param>
+    /// <param name="index">Disc index from /discs (0 = the first disc).</param>
+    /// <returns>The disc file.</returns>
+    [HttpGet("games/{id:guid}/discs/{index:int}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public ActionResult GetDisc([FromRoute] Guid id, [FromRoute] int index)
+    {
+        if (DiscSetFor(id, out var discs) is ActionResult fail)
+        {
+            return fail;
+        }
+
+        if (index < 0 || index >= discs.Count)
+        {
+            return Fail(StatusCodes.Status404NotFound, "no_disc", "This game has no such disc.");
+        }
+
+        if (!System.IO.File.Exists(discs[index]))
+        {
+            // Gone since the set was read, or (folder unreadable too) asleep: a clean answer, not a 500 (S12).
+            return Directory.Exists(Path.GetDirectoryName(discs[index])) ? DiscGone() : CantReadGame();
+        }
+
+        Response.Headers.CacheControl = "no-store";
+        return PhysicalFile(discs[index], "application/octet-stream", DiscNames(discs)[index], enableRangeProcessing: true);
+    }
+
+    private ActionResult? DiscSetFor(Guid id, out IReadOnlyList<string> discs)
+    {
+        discs = [];
+        if (RequireUser(out var user) is ActionResult fail)
+        {
+            return fail;
+        }
+
+        if (RequireRom(id, user, out var rom) is ActionResult notFound)
+        {
+            return notFound;
+        }
+
+        if (!user.HasPermission(PermissionKind.EnableContentDownloading))
+        {
+            return Fail(StatusCodes.Status403Forbidden, "no_download", "Your Jellyfin account isn't allowed to download. Ask the server admin.");
+        }
+
+        discs = DiscFiles(rom);
+        return discs.Count == 0 ? Fail(StatusCodes.Status404NotFound, "not_a_set", "This game is one file, not a disc set.") : null;
     }
 
     /// <summary>Server version and what it supports. The app checks this (D41).</summary>
@@ -255,6 +377,7 @@ public class GamesController : ShoalcadeControllerBase
             IsBrowserPlayable(r, _web.EmulatorAvailable),
             SaveVersionDto.From(save, save?.Version),
             data?.IsFavorite == true,
-            playSeconds);
+            playSeconds,
+            DiscFiles(r).Count);
     }
 }

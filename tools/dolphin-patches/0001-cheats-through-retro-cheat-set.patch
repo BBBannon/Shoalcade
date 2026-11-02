@@ -1,0 +1,310 @@
+Shoalcade: cheats through retro_cheat_set / retro_cheat_reset for the Dolphin libretro core (GameCube + Wii).
+Upstream only switched codes already in the game's INI (and only with "Automatically Import Cheats" on), so a
+code typed into Shoalcade did nothing. With this patch:
+- retro_cheat_set: a code that isn't one of the INI's codes is added. Lines are joined by '+' (or new lines).
+  "AR:" in front = Action Replay, "GECKO:" = Gecko; with neither, dashed lines (XXXX-XXXX-XXXXX) are encrypted
+  Action Replay (decrypted with Dolphin's own ARDecrypt) and plain "XXXXXXXX YYYYYYYY" lines are Gecko
+  (Shoalcade decision D-4). An unreadable code is skipped (logged). "Internal Cheats" must still be on.
+- retro_cheat_reset: drops the added codes and puts the INI's codes back as the INI has them. It no longer
+  calls PatchEngine::Shutdown(), which also removed the game's own INI patches (GameSettings fixes).
+- retro_unserialize: re-arms the Gecko code handler with the codes on now, so loading a snapshot made with a
+  Gecko cheat on doesn't bring that cheat back (Dolphin's own FIXME in Gecko::DoState).
+- A title boot (PatchEngine::LoadPatches) applies these lists instead of re-reading the INI's codes, so codes the
+  frontend sets before the game has booted (its start-up cheats) aren't dropped (PatchEngine::SetCheatCodesOverride).
+Nothing is written to the game's INI, its save or the system folder.
+
+diff --git a/Source/Core/Core/PatchEngine.cpp b/Source/Core/Core/PatchEngine.cpp
+index e162b6e0b3..a37eae695b 100644
+--- a/Source/Core/Core/PatchEngine.cpp
++++ b/Source/Core/Core/PatchEngine.cpp
+@@ -174,6 +174,14 @@ void SavePatchSection(Common::IniFile* local_ini, std::span<const Patch> patches
+   local_ini->SetLines("OnFrame", lines);
+ }
+ 
++// Shoalcade: a plain pointer (constant-initialised, so it can be set from another file's static initialiser).
++static void (*s_cheat_codes_override)() = nullptr;
++
++void SetCheatCodesOverride(void (*apply)())
++{
++  s_cheat_codes_override = apply;
++}
++
+ void LoadPatches()
+ {
+   const auto& sconfig = SConfig::GetInstance();
+@@ -194,6 +202,10 @@ void LoadPatches()
+     Gecko::SetSyncedCodesAsActive();
+     ActionReplay::SetSyncedCodesAsActive();
+   }
++  else if (s_cheat_codes_override)
++  {
++    s_cheat_codes_override();
++  }
+   else
+   {
+     Gecko::SetActiveCodes(Gecko::LoadCodes(globalIni, localIni), sconfig.GetGameID(),
+diff --git a/Source/Core/Core/PatchEngine.h b/Source/Core/Core/PatchEngine.h
+index 7acff8689b..6b839350e9 100644
+--- a/Source/Core/Core/PatchEngine.h
++++ b/Source/Core/Core/PatchEngine.h
+@@ -64,6 +64,10 @@ bool ApplyFramePatches(Core::System& system);
+ void Shutdown();
+ void Reload(Core::System& system);
+ 
++// Shoalcade (tools/dolphin-patches/0001): when set, LoadPatches (a title boot) applies the Action Replay / Gecko
++// codes through this instead of reading them from the game's INI, so a frontend's cheat list survives the boot.
++void SetCheatCodesOverride(void (*apply)());
++
+ inline int GetPatchTypeCharLength(PatchType type)
+ {
+   int size = 8;
+diff --git a/Source/Core/DolphinLibretro/Main.cpp b/Source/Core/DolphinLibretro/Main.cpp
+index 098f6c6af1..82038209e3 100644
+--- a/Source/Core/DolphinLibretro/Main.cpp
++++ b/Source/Core/DolphinLibretro/Main.cpp
+@@ -1,6 +1,8 @@
+ 
++#include <cctype>
+ #include <cmath>
+ #include <cstdint>
++#include <cstring>
+ #include <libretro.h>
+ #include <string>
+ #include <thread>
+@@ -18,6 +20,7 @@
+ #include "Common/Thread.h"
+ #include "Common/scmrev.h"
+ #include "Common/Version.h"
++#include "Core/ARDecrypt.h"
+ #include "Core/ActionReplay.h"
+ #include "Core/BootManager.h"
+ #include "Core/Config/GraphicsSettings.h"
+@@ -628,6 +631,11 @@ bool retro_unserialize(const void* data, size_t size)
+   Core::RunOnCPUThread(Core::System::GetInstance(), [&] {
+     PointerWrap p((u8**)&data, size, PointerWrap::Mode::Read);
+     State::DoState(Core::System::GetInstance(), p);
++    // Shoalcade (tools/dolphin-patches/0001): a snapshot carries the Gecko code handler and the codes
++    // that were on when it was made (Dolphin's own FIXME in Gecko::DoState). Re-arm the handler with
++    // the codes on NOW, so a snapshot never brings back a cheat that is off.
++    Gecko::SetActiveCodes(Libretro::g_gecko_codes, SConfig::GetInstance().GetGameID(),
++                          SConfig::GetInstance().GetRevision());
+   }, true);
+ 
+   if (!was_cpu)
+@@ -672,7 +680,7 @@ void* retro_get_memory_data(unsigned id)
+   return NULL;
+ }
+ 
+-static void enable_cheat_by_code(bool enabled, const char* code)
++static bool enable_cheat_by_code(bool enabled, const char* code)
+ {
+   std::string incoming(code);
+   bool found = false;
+@@ -723,21 +731,167 @@ static void enable_cheat_by_code(bool enabled, const char* code)
+       }
+     }
+   }
++  return found;
++}
++
++// Shoalcade (tools/dolphin-patches/0001): a code the frontend sends that is not one of the game's INI
++// codes is added as a new code. Lines are joined by '+' (or new lines). Type: "AR:" in front = Action
++// Replay, "GECKO:" = Gecko; with neither, dashed lines (XXXX-XXXX-XXXXX) are encrypted Action Replay
++// and plain "XXXXXXXX YYYYYYYY" lines are Gecko (Shoalcade decision D-4). Unreadable codes are skipped.
++static std::string shoalcade_clean_line(const std::string& raw)
++{
++  std::string out;
++  bool space = false;
++  for (char ch : raw)
++  {
++    if (ch == ' ' || ch == '\t')
++    {
++      space = !out.empty();
++      continue;
++    }
++    if (space)
++      out += ' ';
++    space = false;
++    out += ch;
++  }
++  // "XXXXXXXXYYYYYYYY" (16 hex digits, no space) -> "XXXXXXXX YYYYYYYY"
++  if (out.size() == 16 && out.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos)
++    out.insert(8, " ");
++  return out;
++}
++
++static bool shoalcade_add_cheat(unsigned index, const char* code)
++{
++  std::string text(code ? code : "");
++  enum class Kind { Auto, AR, Gecko } kind = Kind::Auto;
++  const size_t lead = text.find_first_not_of(" \t\r\n");
++  text.erase(0, lead == std::string::npos ? text.size() : lead);
++  auto take_prefix = [&text](const char* p) {
++    const size_t n = std::strlen(p);
++    if (text.size() < n)
++      return false;
++    for (size_t i = 0; i < n; i++)
++      if (std::toupper(static_cast<unsigned char>(text[i])) != p[i])
++        return false;
++    text.erase(0, n);
++    return true;
++  };
++  if (take_prefix("AR:"))
++    kind = Kind::AR;
++  else if (take_prefix("GECKO:"))
++    kind = Kind::Gecko;
++
++  std::vector<std::string> lines;
++  std::string piece;
++  for (size_t i = 0; i <= text.size(); i++)
++  {
++    const char ch = i < text.size() ? text[i] : '+';
++    if (ch == '+' || ch == '\n' || ch == '\r')
++    {
++      std::string line = shoalcade_clean_line(piece);
++      if (!line.empty())
++        lines.push_back(line);
++      piece.clear();
++    }
++    else
++      piece += ch;
++  }
++  if (lines.empty())
++    return false;
++
++  bool dashed = true;
++  for (const auto& line : lines)
++    dashed = dashed && line.find('-') != std::string::npos;
++  if (kind == Kind::Auto)
++    kind = dashed ? Kind::AR : Kind::Gecko;
++
++  const std::string name = fmt::format("Shoalcade cheat {}", index);
++  if (kind == Kind::AR)
++  {
++    ActionReplay::ARCode c;
++    c.name = name;
++    c.enabled = true;
++    c.user_defined = true;
++    std::vector<std::string> encrypted;
++    for (const auto& line : lines)
++    {
++      const auto parsed = ActionReplay::DeserializeLine(line);
++      if (std::holds_alternative<ActionReplay::AREntry>(parsed))
++        c.ops.push_back(std::get<ActionReplay::AREntry>(parsed));
++      else if (std::holds_alternative<ActionReplay::EncryptedLine>(parsed))
++        encrypted.push_back(std::get<ActionReplay::EncryptedLine>(parsed));
++      else
++      {
++        WARN_LOG_FMT(ACTIONREPLAY, "Shoalcade: not an Action Replay line: {}", line);
++        return false;
++      }
++    }
++    if (!encrypted.empty() &&
++        (!c.ops.empty() || !ActionReplay::DecryptARCode(encrypted, &c.ops) || c.ops.empty()))
++    {
++      WARN_LOG_FMT(ACTIONREPLAY, "Shoalcade: encrypted Action Replay code not accepted");
++      return false;
++    }
++    Libretro::g_ar_codes.push_back(std::move(c));
++  }
++  else
++  {
++    Gecko::GeckoCode g;
++    g.name = name;
++    g.enabled = true;
++    g.user_defined = true;
++    for (const auto& line : lines)
++    {
++      const auto parsed = Gecko::DeserializeLine(line);
++      if (!parsed)
++      {
++        WARN_LOG_FMT(ACTIONREPLAY, "Shoalcade: not a Gecko line: {}", line);
++        return false;
++      }
++      g.codes.push_back(*parsed);
++    }
++    Libretro::g_gecko_codes.push_back(std::move(g));
++  }
++  NOTICE_LOG_FMT(ACTIONREPLAY, "Shoalcade: cheat {} added ({}, {} line(s))", index,
++                 kind == Kind::AR ? "Action Replay" : "Gecko", lines.size());
++  return true;
++}
++
++// On the CPU thread: the lists become the active codes.
++static void shoalcade_apply_cheats_here()
++{
++  const std::string& game_id = SConfig::GetInstance().GetGameID();
++  const u16 game_revision = SConfig::GetInstance().GetRevision();
++  ActionReplay::ApplyCodes(Libretro::g_ar_codes, game_id, game_revision);
++  Gecko::SetActiveCodes(Libretro::g_gecko_codes, game_id, game_revision);
++}
++
++// A title boot (PatchEngine::LoadPatches) applies these lists too, so codes set before the game has booted (the
++// frontend's start-up cheats) aren't replaced by the INI's.
++[[maybe_unused]] static const bool s_shoalcade_cheats_hook =
++    (PatchEngine::SetCheatCodesOverride(&shoalcade_apply_cheats_here), true);
++
++static void shoalcade_apply_cheats()
++{
++  Core::RunOnCPUThread(Core::System::GetInstance(), [] { shoalcade_apply_cheats_here(); }, true);
+ }
+ 
+ // reset cheats to off
++// Shoalcade: drops every code the frontend added and puts the game's INI codes back as the INI has
++// them. No longer calls PatchEngine::Shutdown(), which also removed the game's own INI patches (the
++// GameSettings fixes) until the game was restarted.
+ void retro_cheat_reset(void)
+ {
+   const bool importCheats = Libretro::GetOption<bool>(Libretro::Options::retroarch_core::CHEATS_IMPORT, true);
+ 
+-  if (!Config::AreCheatsEnabled() || !importCheats)
+-    return;
+-
+-  Core::RunOnCPUThread(Core::System::GetInstance(), [&] {
+-    PatchEngine::Shutdown();
+-  }, true);
+-
+-  Libretro::reload_cheats_from_ini();
++  if (importCheats)
++    Libretro::reload_cheats_from_ini();
++  else
++  {
++    Libretro::g_ar_codes.clear();
++    Libretro::g_gecko_codes.clear();
++  }
++  shoalcade_apply_cheats();
+ }
+ 
+ // Enable/disable a cheat
+@@ -750,26 +904,11 @@ void retro_cheat_set(unsigned index, bool enabled, const char *code)
+     return;
+   }
+ 
+-  const bool importCheats = Libretro::GetOption<bool>(Libretro::Options::retroarch_core::CHEATS_IMPORT, true);
+-  if (!importCheats)
+-  {
+-    OSD::AddMessage("You cannot apply any cheats until you enabled the following option:\n"
+-      "Core > Automatically Import Cheats into RetroArch - set this to ON", OSD::Duration::VERY_LONG, OSD::Color::RED);
+-    return;
+-  }
++  // Look up by code as index is unreliable. Shoalcade: a code that isn't one of the game's INI codes is
++  // added (no longer needs "Automatically Import Cheats", which only concerns the INI codes).
++  if (!enable_cheat_by_code(enabled, code ? code : "") && enabled)
++    shoalcade_add_cheat(index, code);
+ 
+-  const std::string& game_id = SConfig::GetInstance().GetGameID();
+-  const u16 game_revision = SConfig::GetInstance().GetRevision();
+-
+-  // Look up by code as index is unreliable
+-  enable_cheat_by_code(enabled, code);
+-
+-  Core::RunOnCPUThread(Core::System::GetInstance(), [&] {
+-    // Apply Action Replay
+-    ActionReplay::ApplyCodes(Libretro::g_ar_codes, game_id, game_revision);
+-
+-    // Apply Gecko
+-    Gecko::SetActiveCodes(Libretro::g_gecko_codes, game_id, game_revision);
+-  }, true);
++  shoalcade_apply_cheats();
+ }
+ } // extern "C"

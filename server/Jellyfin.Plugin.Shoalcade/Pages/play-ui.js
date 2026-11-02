@@ -195,6 +195,35 @@
   function panelOpen() { return panelState.open; }
   function conflictOpen() { return !$("sc-conflict").hidden; }
 
+  /**
+   * WCAG 2.4.3: rebuilds a list without dropping keyboard focus to the page. The focused control is found again in the
+   * new list by its id or data-k; if it is gone, the list's first control (or the list itself) gets focus.
+   */
+  function replaceKeepingFocus(list, kids) {
+    const a = document.activeElement;
+    const had = !!a && a !== document.body && list.contains(a);
+    const key = had ? (a.id ? "#" + CSS.escape(a.id) : a.dataset.k ? '[data-k="' + CSS.escape(a.dataset.k) + '"]' : null) : null;
+    list.replaceChildren(...kids);
+    if (!had) return;
+    const t = (key && list.querySelector(key)) || list.querySelector("button:not(:disabled), input:not(:disabled), select:not(:disabled)");
+    if (t) { t.focus({ preventScroll: true }); return; }
+    list.tabIndex = -1;
+    list.focus({ preventScroll: true });
+  }
+
+  /** WCAG 2.4.3/4.1.2: while a card that says aria-modal is up, nothing else on the page can be reached; focus returns after. */
+  let modalReturn = null;
+  function modalCard(on) {
+    for (const id of ["toolbar", "panel", "stage", "touchpad"]) $(id).inert = on;
+    if (on) {
+      if (!modalReturn) modalReturn = document.activeElement;
+    } else {
+      const back = modalReturn;
+      modalReturn = null;
+      if (back && back.isConnected && back !== document.body && !back.closest("[hidden]")) back.focus({ preventScroll: true });
+    }
+  }
+
   /** Address of the library view the person came from (?c=&q= kept, the game's sheet open). */
   function libraryHref() {
     const from = new URLSearchParams(params.get("from") || "");
@@ -208,14 +237,16 @@
    * Sends the save (and the automatic snapshot) first, then goes. If the save didn't reach the server, asks first
    * (Stay / Leave anyway) instead of going anyway (M6).
    */
-  async function leaveTo(href, useHistory) {
+  async function leaveTo(href, useHistory, where) {
     if (S.leaving) return;
     S.leaving = true;
     if (playing()) {
       toast("Saving before you go…");
       if (!(await player.leave()) && !(await askLeave())) { S.leaving = false; return; }
     }
-    if (useHistory && params.has("from") && history.length > 1) history.back();
+    // M3: the sandboxed frame can't move the page; the player page goes there itself (a fixed list of places).
+    if (api.inFrame) api.go(where);
+    else if (useHistory && params.has("from") && history.length > 1) history.back();
     else location.href = href;
     setTimeout(() => { S.leaving = false; }, 1500);
   }
@@ -225,11 +256,13 @@
     const card = $("sc-leave");
     if (panelOpen()) closePanel();
     card.hidden = false;
+    modalCard(true);
     wake();
     $("sc-leave-stay").focus();
     return new Promise(resolve => {
       const done = go => {
         card.hidden = true;
+        if (!conflictOpen()) modalCard(false);
         $("sc-leave-stay").removeEventListener("click", stay);
         $("sc-leave-go").removeEventListener("click", leave);
         if (go) player.leavingAnyway = true; // the person already said yes: no second browser prompt
@@ -337,6 +370,14 @@
   async function screenshot() {
     try {
       const png = await player.screenshot();
+      if (api.inFrame) {
+        // M3: a sandboxed frame can't download; the player page saves it (PNG only).
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+        const name = (player.game ? player.game.name : "game").replace(/[\\/:*?"<>|]+/g, "").trim().slice(0, 80) || "game";
+        api.shell.post({ t: "download", name: name + " " + stamp + ".png", bytes: png instanceof Uint8Array ? png : new Uint8Array(png) });
+        toast("Screenshot saved to your downloads.");
+        return;
+      }
       const url = URL.createObjectURL(new Blob([png], { type: "image/png" }));
       const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
       const name = (player.game ? player.game.name : "game").replace(/[\\/:*?"<>|]+/g, "").trim().slice(0, 80) || "game";
@@ -380,23 +421,31 @@
     if (e.detail > 0 && b.closest("#toolbar") && b.dataset.act !== "settings") b.blur();
   });
 
+  // A new tab (Ctrl/middle click) is left to the browser, except in the sandboxed frame (M3), which can't open one.
+  const ownTab = e => !api.inFrame && (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0);
   for (const id of ["tb-back", "sc-error-back"]) {
     $(id).addEventListener("click", e => {
-      if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+      if (ownTab(e)) return;
       e.preventDefault();
-      leaveTo(libraryHref(), true);
+      leaveTo(libraryHref(), true, "library");
     });
   }
   // The pixel Jellyfin logo: same path as Back to library, so the save is sent before leaving.
   $("tb-jf").addEventListener("click", e => {
-    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+    if (ownTab(e)) return;
     e.preventDefault();
-    leaveTo(api.homeUrl, false);
+    leaveTo(api.homeUrl, false, "home");
   });
   $("saves-link").addEventListener("click", e => {
-    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+    if (ownTab(e)) return;
     e.preventDefault();
-    leaveTo($("saves-link").getAttribute("href"), false);
+    leaveTo($("saves-link").getAttribute("href"), false, "saves");
+  });
+  // Sign in (after an expired login): only the player page can go there (M3).
+  $("sc-signin").addEventListener("click", e => {
+    if (!api.inFrame) return;
+    e.preventDefault();
+    api.go("signin");
   });
 
   /** Shortcut keys. Registered before the engine's game keys, so a shortcut never reaches the game. */
@@ -451,6 +500,8 @@
     $("toolbar").querySelector("[data-act=settings]").setAttribute("aria-expanded", "false");
     // Only the latest open/close counts: a slide-in frame or hide timer from an earlier one does nothing.
     setTimeout(() => { if (gen === panelState.gen) p.hidden = true; }, 220);
+    // Focus goes back to the game (not a button: game keys are ignored while a button has focus).
+    if (p.contains(document.activeElement)) { const st = $("stage"); st.tabIndex = -1; st.focus({ preventScroll: true }); }
     if (playing() && !conflictOpen()) player.setInputEnabled(true);
     wake();
     relayout();
@@ -600,19 +651,20 @@
     }
     if (seq !== snapSeq) return;
     if (!data.enabled) { say("Snapshots are off for this console. Your normal save still works."); list.replaceChildren(); return; }
-    // D81: Game Boy snapshots from the old gambatte core can never load in mGBA, so their slots show as empty, with a note.
+    // D81/D221: Game Boy snapshots from the old gambatte core can never load in mGBA. They show in their slot with a
+    // note and are kept (the server never replaces them) until deleted on purpose.
     const all = data.snapshots || [];
     const old = all.filter(isOldGambatte);
     const oldNote = old.length
-      ? (old.length === 1 ? "1 old snapshot" : old.length + " old snapshots") + " from before the browser player changed its Game Boy emulator can't be loaded, so " +
-        (old.length === 1 ? "it is" : "they are") + " hidden. Saving into " + (old.length === 1 ? "that slot replaces it" : "those slots replaces them") + "."
+      ? (old.length === 1 ? "1 snapshot was" : old.length + " snapshots were") + " made with the old Game Boy emulator and can't be loaded. " +
+        (old.length === 1 ? "It's" : "They're") + " kept until you delete " + (old.length === 1 ? "it" : "them") + " (you can download " + (old.length === 1 ? "it" : "them") + " from the Saves page)."
       : "";
     say([playing() ? "" : "Start the game to save or load snapshots.", oldNote].filter(Boolean).join(" "));
     S.snapUrls.forEach(u => URL.revokeObjectURL(u));
     S.snapUrls = [];
-    const bySlot = new Map(all.filter(s => !isOldGambatte(s)).map(s => [s.slot, s]));
+    const bySlot = new Map(all.map(s => [s.slot, s]));
     const rows = ["auto", "1", "2", "3"].map(slot => snapRow(slot, bySlot.get(slot) || null));
-    list.replaceChildren(...rows);
+    replaceKeepingFocus(list, rows);
   }
 
   /** A snapshot made by the gambatte core, dropped in D81 (GB/GBC now play on mGBA). */
@@ -632,8 +684,11 @@
       }).catch(() => {});
     }
     const otherCore = info && info.core && info.core !== player.snapshotCore;
+    const oldEngine = isOldGambatte(info);
     const meta = !info ? (slot === "auto" ? "Taken when you leave the game or switch to another tab" : "Empty")
       : damaged ? "Damaged on the server, so it can't be loaded. Save over it or delete it."
+      : oldEngine ? when(info.created) + ". Made with the old Game Boy emulator, so it can't be loaded. Kept until you delete it"
+        + (slot === "auto" ? "; until then no automatic snapshot is taken." : ".")
       : when(info.created) + ", " + size(info.size) + (info.cheats && info.cheats.length ? ", " + (info.cheats.length === 1 ? "1 cheat" : info.cheats.length + " cheats") + " on" : "")
         + (otherCore ? ". Made by a different emulator version, so it can't be loaded" : "");
     const acts = h("div", { class: "sv-acts" });
@@ -642,12 +697,12 @@
       refreshSnaps();
     };
     if (info && playing() && !otherCore && !damaged) {
-      const b = h("button", { type: "button", class: "mini", title: "Go back to this moment" }, icon("load"), "Load");
+      const b = h("button", { type: "button", class: "mini", title: "Go back to this moment", "data-k": slot + ":load" }, icon("load"), "Load");
       b.addEventListener("click", () => sure(b, "Press Load again. Play since then is lost unless the game saved.", () => run(() => player.loadSnapshot(slot), "Loaded " + label.toLowerCase() + ".")));
       acts.append(b);
     }
-    if (slot !== "auto" && playing()) {
-      const b = h("button", { type: "button", class: "mini" }, icon("save"), info ? "Save over" : "Save here");
+    if (slot !== "auto" && playing() && !oldEngine) {
+      const b = h("button", { type: "button", class: "mini", "data-k": slot + ":save" }, icon("save"), info ? "Save over" : "Save here");
       b.addEventListener("click", () => {
         const go = () => run(() => player.saveSnapshot(slot), "Saved to " + label.toLowerCase() + ".");
         if (info) sure(b, "Press Save over again to replace " + label.toLowerCase() + ".", go); else go();
@@ -655,7 +710,7 @@
       acts.append(b);
     }
     if (info) {
-      const b = h("button", { type: "button", class: "mini danger" }, icon("trash"), "Delete");
+      const b = h("button", { type: "button", class: "mini danger", "data-k": slot + ":delete" }, icon("trash"), "Delete");
       b.addEventListener("click", () => sure(b, "Press Delete again to delete " + label.toLowerCase() + ".", () => run(() => player.deleteSnapshot(slot), "Deleted " + label.toLowerCase() + ".")));
       acts.append(b);
     }
@@ -670,15 +725,23 @@
     gb: "Game Boy: GameShark codes like 01FF16D0, or Game Genie codes like 00A-17B-C49.",
     gbc: "Game Boy Color: GameShark codes like 01FF16D0, or Game Genie codes like 00A-17B-C49.",
     gba: "Game Boy Advance: CodeBreaker, GameShark or Action Replay codes, like 82025CE4 03E7. Put each line of a long code on its own line.",
-    nds: "DS: Action Replay codes (cheat sites often call them GameShark DS: they're the same), like 02000000 0000270F. Put each line on its own line.",
+    nds: "DS: Action Replay codes (cheat sites often call them GameShark DS: they're the same), like 02000000 0000270F. Put each line on its own line. CodeBreaker DS codes don't work.",
     psx: "PlayStation: GameShark codes, like 800A1234 03E7. Put each line on its own line.",
     n64: "Nintendo 64: GameShark codes, like 8XXXXXXX YYYY. Put each code on its own line.",
   };
   const CODE_OK = /^[A-Za-z0-9 +\-:_.,\n]+$/;
+  // CodeBreaker DS (same rule as the phone's CheatRules.isCodeBreakerDs): first line 0000xxxx (encrypted) or 8000xxxx,
+  // then the game's 4-character code in hex ("8000FD28 41534D45" = ASME). The DS core only runs Action Replay codes, and
+  // encrypted CodeBreaker codes can't be converted without DS BIOS key data, so they are refused, never converted.
+  const CBDS_FIRST = /^[08]000[0-9A-Fa-f]{4} ?([0-9A-Fa-f]{8})$/;
+  function isCodeBreakerDs(lines) {
+    const m = CBDS_FIRST.exec((lines[0] || "").split("+")[0].trim());
+    return !!m && m[1].match(/../g).every(x => /[A-Z0-9]/.test(String.fromCharCode(parseInt(x, 16))));
+  }
   const cheatForm = { editing: null };
 
   /** Plain-English problem with a name and code, or "" if they're fine (same rules as the server). */
-  function cheatProblem(name, code) {
+  function cheatProblem(name, code, consoleKey) {
     const n = name.trim().replace(/\s+/g, " ");
     const lines = code.replace(/\r/g, "").split("\n").map(l => l.trim().replace(/\s+/g, " ")).filter(Boolean);
     if (!n) return "Give the cheat a name.";
@@ -686,6 +749,7 @@
     if (!lines.length) return "Type or paste the cheat code.";
     if (!CODE_OK.test(lines.join("\n"))) return "That doesn't look like a cheat code. Codes use letters, numbers, spaces and + - : _ . , only.";
     if (lines.length > 64 || lines.join("\n").length > 4000) return "That code is too long.";
+    if (consoleKey === "nds" && isCodeBreakerDs(lines)) return "CodeBreaker DS codes aren't supported (the DS engine only runs Action Replay codes). Look for the Action Replay version of this cheat.";
     return "";
   }
 
@@ -715,10 +779,11 @@
     const doc = player.cheats;
     const on = new Set(doc.active);
     say(!doc.cheats.length ? "No cheats yet. Add one below." : (on.size ? on.size + " on." : "None on.") + (playing() ? "" : " They go on when the game starts."));
-    list.replaceChildren(...doc.cheats.map(c => {
+    replaceKeepingFocus(list, doc.cheats.map(c => {
       const sw = h("input", { type: "checkbox", role: "switch", id: "cheat-" + c.id });
       sw.checked = on.has(c.id);
       sw.addEventListener("change", async () => {
+        const hadFocus = document.activeElement === sw;
         sw.disabled = true;
         const ids = doc.cheats.filter(x => x.id === c.id ? sw.checked : on.has(x.id)).map(x => x.id);
         try {
@@ -728,6 +793,7 @@
           toast("Couldn't change it: " + e.message);
         }
         renderCheats();
+        if (hadFocus && $("cheat-" + c.id)) $("cheat-" + c.id).focus({ preventScroll: true });
       });
       const edit = h("button", { type: "button", class: "mini" }, "Edit");
       edit.addEventListener("click", () => {
@@ -758,7 +824,7 @@
   $("cheat-add").addEventListener("click", async () => {
     const name = $("cheat-name").value, code = $("cheat-code").value;
     const err = $("cheat-err");
-    const problem = cheatProblem(name, code);
+    const problem = cheatProblem(name, code, player.game && player.game.console);
     if (problem) { err.textContent = problem; err.hidden = false; return; }
     err.hidden = true;
     const b = $("cheat-add");
@@ -794,8 +860,8 @@
     return null;
   }
 
-  function keyButton(text, onClick, title) {
-    const b = h("button", { type: "button", class: "key", text, title });
+  function keyButton(text, onClick, title, k) {
+    const b = h("button", { type: "button", class: "key", text, title, "data-k": k });
     b.addEventListener("click", () => onClick(b));
     return b;
   }
@@ -804,8 +870,8 @@
     const playable = ((player.info && player.info.consoles) || []).filter(c => c.browserCore && C.BUTTONS[c.key]);
     if (!S.ctlConsole) S.ctlConsole = player.game ? player.game.console : (playable[0] && playable[0].key);
     const cc = $("cc");
-    cc.replaceChildren(...playable.map(c => {
-      const b = h("button", { type: "button", text: SHORT[c.key] || c.key, title: c.name, "aria-pressed": String(c.key === S.ctlConsole) });
+    replaceKeepingFocus(cc, playable.map(c => {
+      const b = h("button", { type: "button", text: SHORT[c.key] || c.key, title: c.name, "aria-pressed": String(c.key === S.ctlConsole), "data-k": c.key });
       b.addEventListener("click", () => { S.ctlConsole = c.key; renderControls(); });
       return b;
     }));
@@ -823,17 +889,17 @@
 
     if (S.ctlTab === "keys") {
       const map = C.buildMap(buttons, C.defaultKeys(scope), controls.keyboard);
-      out.replaceChildren(h("ul", { class: "binds" }, buttons.map(b => h("li", {},
+      replaceKeepingFocus(out, [h("ul", { class: "binds" }, buttons.map(b => h("li", {},
         h("span", { text: buttonLabel(scope, b) }),
-        keyButton(map[b].map(keyName).join(" / ") || "Not set", el => startListen({ kind: "key", scope, name: b, el }), "Change the key for " + buttonLabel(scope, b))))),
-      h("p", { class: "fine", text: "Click a key, then press the new key. Esc cancels." }));
+        keyButton(map[b].map(keyName).join(" / ") || "Not set", el => startListen({ kind: "key", scope, name: b, el }), "Change the key for " + buttonLabel(scope, b), "key:" + b)))),
+      h("p", { class: "fine", text: "Click a key, then press the new key. Esc cancels." })]);
       reset.textContent = "Reset " + name + " keys to defaults";
     } else if (S.ctlTab === "hot") {
       const map = hotkeysOf(prefs);
-      out.replaceChildren(h("ul", { class: "binds" }, HOTKEYS.map(([k, label]) => h("li", {},
+      replaceKeepingFocus(out, [h("ul", { class: "binds" }, HOTKEYS.map(([k, label]) => h("li", {},
         h("span", { text: label }),
-        keyButton(map[k].map(keyName).join(" / ") || "Not set", el => startListen({ kind: "hot", scope, name: k, el }), "Change the key for " + label.toLowerCase())))),
-      h("p", { class: "fine", text: "Shortcuts work while the game is running and the settings are closed." }));
+        keyButton(map[k].map(keyName).join(" / ") || "Not set", el => startListen({ kind: "hot", scope, name: k, el }), "Change the key for " + label.toLowerCase(), "hot:" + k)))),
+      h("p", { class: "fine", text: "Shortcuts work while the game is running and the settings are closed." })]);
       reset.textContent = "Reset " + name + " shortcuts to defaults";
     } else if (S.ctlTab === "pad") {
       const pad = firstPad();
@@ -874,8 +940,8 @@
       out.replaceChildren(
         isTouch ? null : h("p", { class: "note", text: "This screen isn't a touch screen, so touch buttons stay hidden here. These settings are used on phones and tablets." }),
         h("label", { class: "tog" }, h("span", { text: "Show touch buttons" }), show, h("span", { class: "tog-ui", "aria-hidden": "true" })),
-        h("h4", {}, h("label", { for: "touch-size", text: "Button size" })), sz,
-        h("h4", {}, h("label", { for: "touch-see", text: "See-through" })), op,
+        h("h3", {}, h("label", { for: "touch-size", text: "Button size" })), sz,
+        h("h3", {}, h("label", { for: "touch-see", text: "See-through" })), op,
         h("p", { class: "fine", text: "Buttons shown: " + (buttons.includes("StickUp") ? "stick, " : "") + "D-pad, "
           + buttons.filter(b => !/^(Stick)?(Up|Down|Left|Right)$/.test(b)).map(b => buttonLabel(scope, b)).join(", ") + "." }));
       reset.textContent = "Reset " + name + " touch buttons";
@@ -1164,6 +1230,7 @@
   // ---------------------------------------------------------------------------------------------
   player.on("game", g => {
     document.title = g.name + " - Shoalcade";
+    if (api.inFrame) api.shell.post({ t: "title", text: document.title }); // the tab shows the player page's title
     $("intro-title").textContent = g.name;
     $("tb-title").textContent = g.name;
     $("panel-title").textContent = g.name;
@@ -1301,12 +1368,14 @@
     if (panelOpen()) closePanel();
     $("paused").hidden = true;
     $("sc-conflict").hidden = false;
+    modalCard(true);
     wake();
     $("sc-keep-browser").focus();
   });
 
   player.on("resolved", () => {
     $("sc-conflict").hidden = true;
+    modalCard(false);
     toast(S.status.text);
   });
 
@@ -1319,7 +1388,7 @@
   }
 
   $("sc-start").addEventListener("click", () => launch(null));
-  $("sc-retry").addEventListener("click", () => location.reload());
+  $("sc-retry").addEventListener("click", () => { if (api.inFrame) api.go("reload"); else location.reload(); });
   document.addEventListener("fullscreenchange", relayout);
   window.addEventListener("orientationchange", relayout);
 
@@ -1460,5 +1529,5 @@
   $("saves-link").href = "saves-manager?id=" + encodeURIComponent(itemId);
   body.classList.toggle("no-fullscreen", !document.fullscreenEnabled);
   wake();
-  player.prepare(itemId);
+  api.ready.then(() => player.prepare(itemId)); // in the frame (M3): once the player page has answered
 })();

@@ -20,9 +20,9 @@ android {
         applicationId = "uk.benmarks.shoalcade"
         minSdk = 30 // Android 11+
         targetSdk = 35
-        versionCode = 19 // +1 for every build Ben installs
+        versionCode = 20 // +1 for every build Ben installs
         // a0.6 dev 1 (D41, D88): sent to the server in every request. Dev builds are "0.6.0-devN"; launch is "1.0.0".
-        versionName = "0.13.0"
+        versionName = "0.14.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
@@ -111,10 +111,14 @@ val checkReleaseSigning by tasks.registering {
 tasks.matching { it.name == "packageRelease" || it.name == "packageReleaseBundle" }
     .configureEach { dependsOn(checkReleaseSigning) }
 
-// GPL-3.0: the licence text must travel with the APK. Copied from the repo root into the app's assets.
+// GPL-3.0: the licence text must travel with the APK. Copied from the repo root into the app's assets, with every
+// bundled part's own licence (THIRD_PARTY_LICENCES.txt, made by tools/make_third_party_licences.py). Both open from About.
 val licenceAssets = layout.buildDirectory.dir("generated/licence")
 val copyLicence by tasks.registering(Copy::class) {
     from(rootProject.file("../LICENSE")) { rename { "LICENSE.txt" } }
+    val texts = listOf(rootProject.file("../LICENSE"), rootProject.file("../THIRD_PARTY_LICENCES.txt"))
+    from(texts[1])
+    doFirst { texts.forEach { if (!it.isFile) throw GradleException("Licence file missing: $it (the APK must carry it)") } }
     into(licenceAssets)
 }
 android.sourceSets["main"].assets.srcDir(licenceAssets)

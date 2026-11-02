@@ -128,9 +128,14 @@ class DesktopApi(
         return o.optJSONObject("current")?.let(SaveVersion::parse)
     }
 
-    /** Move every version (and the game's snapshots and cheats) to [to]. Returns the server's notes (snapshots moved too…). */
-    suspend fun move(itemId: String, to: String): List<String> {
-        val o = json(request("/shoalcade/save/${id(itemId)}/move?to=${id(to)}").POST(HttpRequest.BodyPublishers.noBody()).build())
+    /**
+     * Move every version (and the game's snapshots and cheats) to [to]. Returns the server's notes (snapshots moved too…).
+     * [fromConsole]: for a removed game whose console wasn't recorded, the console key the person picked (F7 gap 2); the
+     * server never lets it override a recorded one and checks every version fits it.
+     */
+    suspend fun move(itemId: String, to: String, fromConsole: String? = null): List<String> {
+        val pick = fromConsole?.let { "&fromConsole=${enc(it)}" } ?: ""
+        val o = json(request("/shoalcade/save/${id(itemId)}/move?to=${id(to)}$pick").POST(HttpRequest.BodyPublishers.noBody()).build())
         val w = o.optJSONArray("warnings") ?: JSONArray()
         return (0 until w.length()).mapNotNull { w.opt(it) as? String }
     }
@@ -175,6 +180,25 @@ class DesktopApi(
         return JellyfinClient.contentDispositionName(res.headers().firstValue("Content-Disposition").orElse(null))
     }
 
+    // ---- The Windows app's own update (AppController S2, D165 / D181) ----
+
+    /** A newer Windows app: its version and the page its installer is on. */
+    data class WindowsApp(val version: String, val url: String)
+
+    /**
+     * `GET /shoalcade/app/info?platform=windows`: the version the user's plugin says is current, and its release page.
+     * Null if the admin turned it off (404), or the answer has no version or no https page (never opens anything else).
+     */
+    suspend fun windowsApp(): WindowsApp? {
+        val res = send(request("/shoalcade/app/info?platform=windows").GET().build(), HttpResponse.BodyHandlers.ofString())
+        if (res.statusCode() == 404) return null
+        check(res) { res.body() }
+        val o = try { JSONObject(res.body()) } catch (e: JSONException) { throw BadReplyException() }
+        val v = o.optString("version").takeIf { o.optBoolean("available") && it.isNotEmpty() && it != "null" } ?: return null
+        val url = o.optString("url").takeIf { safePage(it) } ?: return null
+        return WindowsApp(v, url)
+    }
+
     // ---- Snapshots on the server (StatesController.cs; the browser's play.js "snapshots") ----
 
     /** One filled slot. [core] = the core build that made it (a snapshot only ever loads in the same one). */
@@ -193,11 +217,17 @@ class DesktopApi(
         }
     }
 
-    /** The filled slots, and whether snapshots are on for this console (the person's server setting, D38). */
-    suspend fun snapshots(itemId: String): Pair<List<Snapshot>, Boolean> {
+    /**
+     * The filled slots, whether snapshots are on for this console (the person's server setting, D38), and the biggest
+     * snapshot the server takes ([SnapshotList.maxBytes], null from an older plugin).
+     */
+    data class SnapshotList(val list: List<Snapshot>, val enabled: Boolean, val maxBytes: Long?)
+
+    suspend fun snapshots(itemId: String): SnapshotList {
         val o = json(request("/shoalcade/state/${id(itemId)}").GET().build())
         val a = o.optJSONArray("snapshots") ?: JSONArray()
-        return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map(Snapshot::parse).filter { it.slot in SLOTS } to o.optBoolean("enabled", true)
+        return SnapshotList((0 until a.length()).mapNotNull { a.optJSONObject(it) }.map(Snapshot::parse).filter { it.slot in SLOTS },
+            o.optBoolean("enabled", true), o.optLong("maxBytes", 0L).takeIf { it > 0 })
     }
 
     /** A snapshot's bytes and the core that made it (`X-Shoalcade-Core`). */
@@ -243,6 +273,12 @@ class DesktopApi(
     companion object {
         /** The server's slots: 1-3 and the Automatic one ("auto"). */
         val SLOTS = listOf("1", "2", "3", "auto")
+
+        /** Only an https web page with a host is ever opened from a server's answer (no file:, no javascript:, no http). */
+        fun safePage(u: String?): Boolean = runCatching {
+            val uri = URI(u ?: return false)
+            uri.scheme.equals("https", true) && !uri.host.isNullOrEmpty() && uri.userInfo == null
+        }.getOrDefault(false)
 
         /** A cheat as the server's snapshot list keeps it. */
         fun cheatPairs(list: List<ServerCheat>) = list.map { it.name to it.code }

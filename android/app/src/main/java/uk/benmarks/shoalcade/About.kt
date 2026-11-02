@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -55,27 +57,34 @@ object Licences {
     )
 }
 
+/** A licence text shipped in the APK's assets (copied there by build.gradle.kts), and what to say if it's missing. */
+private enum class LicenceText(val title: String, val asset: String, val missing: String) {
+    GPL("GNU GPL v3", "LICENSE.txt", "Licence text missing. See https://www.gnu.org/licenses/gpl-3.0.txt"),
+    PARTS("Included software: licences", "THIRD_PARTY_LICENCES.txt",
+        "Licence texts missing. See THIRD_PARTY_LICENCES.txt in ${Licences.APP_SOURCE}"),
+}
+
 @Composable
 fun AboutDialog(onDismiss: () -> Unit) {
     val ctx = LocalContext.current
-    var showLicence by remember { mutableStateOf(false) }
+    var showing by remember { mutableStateOf<LicenceText?>(null) }
     val version = remember {
         runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
     }
-    val licenceText = remember(showLicence) {
-        if (!showLicence) "" else runCatching { ctx.assets.open("LICENSE.txt").bufferedReader().use { it.readText() } }
-            .getOrDefault("Licence text missing. See https://www.gnu.org/licenses/gpl-3.0.txt")
+    // Split at blank lines: the parts' licences are ~300 KB, too much for one Text, so they scroll lazily.
+    val paragraphs = remember(showing) {
+        val l = showing ?: return@remember emptyList()
+        runCatching { ctx.assets.open(l.asset).bufferedReader().use { it.readText() } }.getOrDefault(l.missing)
+            .replace("\r\n", "\n").split("\n\n")
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (showLicence) "GNU GPL v3" else "Shoalcade $version") },
+        title = { DialogTitle(showing?.title ?: "Shoalcade $version") },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (showLicence) {
-                    Text(licenceText, fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 13.sp)
-                    return@Column
-                }
+            if (showing != null) LazyColumn {
+                items(paragraphs) { Text(it, fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 13.sp, modifier = Modifier.padding(bottom = 13.dp)) }
+            } else Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("Free software under the GNU General Public License v3. You may share and change it under those terms. It comes with no warranty.")
                 Spacer(Modifier.height(8.dp))
                 Text("Source code: ${Licences.APP_SOURCE}")
@@ -84,6 +93,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(12.dp))
                 Text("Included software", fontWeight = FontWeight.Bold)
+                TextButton(onClick = { showing = LicenceText.PARTS }) { Text("Every part's licence text") }
                 Licences.parts.forEach { p ->
                     Column(Modifier.padding(top = 8.dp)) {
                         Text("${p.name} · ${p.licence}", fontWeight = FontWeight.SemiBold)
@@ -95,7 +105,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
         dismissButton = {
-            TextButton(onClick = { showLicence = !showLicence }) { Text(if (showLicence) "Back" else "Full licence") }
+            TextButton(onClick = { showing = if (showing == null) LicenceText.GPL else null }) { Text(if (showing == null) "Full licence" else "Back") }
         },
     )
 }

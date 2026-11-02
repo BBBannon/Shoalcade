@@ -52,7 +52,7 @@ internal fun SyncAllDialog(vm: AppViewModel, report: SyncAll.Report) {
     val close = { vm.batchReport = null; vm.batchAsks.clear(); vm.batchSettled.clear() }
     AlertDialog(
         onDismissRequest = { if (vm.settling == null) close() },
-        title = { Text("${report.way.word} finished") },
+        title = { DialogTitle("${report.way.word} finished") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(report.summary(), fontWeight = FontWeight.Bold)

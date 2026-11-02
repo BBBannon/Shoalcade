@@ -63,6 +63,18 @@ public sealed class GameConsole
         // Placed AFTER psp, so a .chd/.pbp with no console in its name or folder still falls back to PSP (D89).
         new("psx", "PlayStation", ["PlayStation"], [".chd", ".pbp"], "pcsx_rearmed", BrowserSaveMode.Shared, "sav", PsxCardSize,
             [PsxCardSize], [0], exactSizes: true, singleFileOnly: true),
+
+        // GameCube, Wii, PS2 (D218): played by the Windows app only (no browser core, no phone core). The save is a zip
+        // of the save files in the game's folder, as the app's Storage makes it (S1): GameCube = Dolphin's User/GC (card
+        // folders), Wii = User/Wii/title/<hi>/<lo>/data, PS2 = the game's own 8 MB memory card (SaveRules checks each).
+        // One file per game (discs are too big to unpack per play: no .zip/.7z; PS2 .bin/.cue out in v1, D-5). Placed
+        // AFTER psp and psx, so a stray .iso/.cso/.chd with no console in its name or folder still means PSP (D89).
+        new("gc", "GameCube", ["GameCube"], [".iso", ".gcm", ".rvz", ".wia", ".gcz", ".ciso", ".tgc", ".dol", ".elf"], null,
+            BrowserSaveMode.None, "zip", 64L * 1024 * 1024, [], [0], singleFileOnly: true),
+        new("wii", "Wii", ["Wii"], [".iso", ".wbfs", ".rvz", ".wia", ".gcz", ".ciso", ".wad", ".dol", ".elf"], null,
+            BrowserSaveMode.None, "zip", 64L * 1024 * 1024, [], [0], singleFileOnly: true),
+        new("ps2", "PlayStation 2", ["PlayStation 2"], [".iso", ".chd", ".cso", ".zso", ".gz", ".ciso", ".elf"], null,
+            BrowserSaveMode.None, "zip", 64L * 1024 * 1024, [], [0], singleFileOnly: true),
     ];
 
     private static readonly Dictionary<string, GameConsole> ByKey = AllConsoles.ToDictionary(c => c.Key, StringComparer.Ordinal);
@@ -100,7 +112,7 @@ public sealed class GameConsole
     /// <summary>Gets every known console.</summary>
     public static IReadOnlyList<GameConsole> All => AllConsoles;
 
-    /// <summary>Gets the short key used in URLs and folders (gb, gbc, gba, n64, nds, 3ds, psp, psx).</summary>
+    /// <summary>Gets the short key used in URLs and folders (gb, gbc, gba, n64, nds, 3ds, psp, psx, gc, wii, ps2).</summary>
     public string Key { get; }
 
     /// <summary>Gets the name shown to people.</summary>
@@ -160,10 +172,22 @@ public sealed class GameConsole
     /// </summary>
     public string? Maker => Key switch
     {
-        "gb" or "gbc" or "gba" or "n64" or "nds" or "3ds" => "Nintendo",
-        "psp" or "psx" => "Sony",
+        "gb" or "gbc" or "gba" or "n64" or "nds" or "3ds" or "gc" or "wii" => "Nintendo",
+        "psp" or "psx" or "ps2" => "Sony",
         _ => null,
     };
+
+    /// <summary>
+    /// Gets a value indicating whether only the Windows app plays this console (GameCube, Wii, PS2: D218). The phone
+    /// lists them with "Plays on Windows", the browser with "Plays in the Windows app"; saves sync as usual.
+    /// </summary>
+    public bool WindowsOnly => Key is "gc" or "wii" or "ps2";
+
+    /// <summary>
+    /// Gets a value indicating whether a game of this console can be a disc set (D-8): a game folder holding
+    /// "(Disc 1)", "(Disc 2)"... files, or a .m3u list, all in the console's own disc formats. One game, one save.
+    /// </summary>
+    public bool TakesDiscSets => Key is "psx" or "ps2" or "gc" or "wii";
 
     /// <summary>Looks up a console by key.</summary>
     /// <param name="key">Console key.</param>
@@ -209,6 +233,11 @@ public sealed class GameConsole
         }
 
         var ext = string.IsNullOrEmpty(path) ? string.Empty : Path.GetExtension(path).ToLowerInvariant();
+        if (TakesDiscSets && (ext == ".m3u" || Directory.Exists(path)))
+        {
+            return true; // a disc set (D-8): the discs themselves are checked when they are served
+        }
+
         return ext.Length > 0
             && (Extensions.Contains(ext, StringComparer.Ordinal) || (!SingleFileOnly && ext is ".zip" or ".7z"));
     }

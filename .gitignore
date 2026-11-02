@@ -121,14 +121,27 @@ tools/*
 !tools/n3ds-check/
 !tools/build_azahar_core.sh
 !tools/build_n3ds_check.sh
+# ...and the GameCube / Wii check scene (D222 D-7: our own libogc scene, shipped like the 3DS one)
+!tools/gc-check/
+!tools/build_gc_check.sh
 !tools/vendor_lr3ds.py
 # ...and the Windows/Linux core build (we ship our own core builds, plus a PPSSPP build-fix patch)
 !tools/build_windows_cores.sh
 !tools/windows-cores/
 !tools/ppsspp-patches/
+# ...and the LRPS2 (PS2) MinGW build fixes (Windows-only core, D218)
+!tools/lrps2-patches/
+# ...and the Dolphin (GameCube + Wii) cheats patch (Windows-only core, D218)
+!tools/dolphin-patches/
+# ...and the PCEE2 (PS2, second choice) per-game memory card and cheats patches (Windows-only core, D222)
+!tools/pcee2-patches/
 # ...and the Windows installer build: it controls how the shipped files are built and installed (GPLv3 Corresponding Source)
 !tools/build_windows_release.sh
 !tools/fetch_core_licences.sh
+# ...and the script that makes the PSP support files (assets/PPSSPP.zip) from PPSSPP's source
+!tools/fetch_ppsspp_assets.sh
+# ...and the script that writes THIRD_PARTY_LICENCES.txt (the licence texts shipped in the APK and plugin zip)
+!tools/make_third_party_licences.py
 android/coretest/
 android/linktest/
 android/app/src/test/

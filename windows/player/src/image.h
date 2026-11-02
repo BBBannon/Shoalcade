@@ -17,7 +17,7 @@ struct RgbaImage {
 
 /** PNG bytes of the image (stb_image_write). Empty on failure. */
 std::vector<uint8_t> encode_png(const RgbaImage &img);
-/** Encodes and writes atomically. */
+/** Encodes and writes it straight to [path] (no rename, D225). */
 bool write_png(const std::string &path, const RgbaImage &img, std::string *err = nullptr);
 /** FNV-1a 64 of the RGB bytes (alpha ignored), as 16 hex digits. Used by the headless tests. */
 std::string frame_hash(const RgbaImage &img);

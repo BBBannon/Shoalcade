@@ -63,16 +63,33 @@ public sealed class RomLibrary
     /// <param name="itemId">Item id.</param>
     /// <param name="user">The signed-in user. Never null: Jellyfin treats a null user as "can see everything".</param>
     /// <returns>The ROM, or null.</returns>
-    public RomItem? GetRom(Guid itemId, User user)
+    public RomItem? GetRom(Guid itemId, User user) => GetRom(itemId, user, out _);
+
+    /// <summary>
+    /// <see cref="GetRom(Guid, User)"/>, also saying when a null is only "can't read the game's files right now" (S4):
+    /// a game the user can see whose disc set or disc header can't be read now and never was. Callers answer that with
+    /// a 503 so apps try again, never a 404 (which apps take as "this game won't take a save").
+    /// </summary>
+    /// <param name="itemId">Item id.</param>
+    /// <param name="user">The signed-in user.</param>
+    /// <param name="cantReadNow">True when the null is only "can't read now".</param>
+    /// <returns>The ROM, or null.</returns>
+    public RomItem? GetRom(Guid itemId, User user, out bool cantReadNow)
     {
         ArgumentNullException.ThrowIfNull(user);
+        cantReadNow = false;
         if (itemId == Guid.Empty)
         {
             return null;
         }
 
         var item = _library.GetItemById<BaseItem>(itemId, user);
-        return item is not null && ToRom(item, _images) is RomItem rom && IsInItsLibrary(item) ? rom : null;
+        if (item is null || !IsInItsLibrary(item))
+        {
+            return null;
+        }
+
+        return ToRom(item, _images, out cantReadNow);
     }
 
     /// <summary>Gets a ROM with no user check. Only for server-side jobs (JellyEMU import), never for a request.</summary>
@@ -84,6 +101,11 @@ public sealed class RomLibrary
     /// <param name="itemId">Item id.</param>
     /// <returns>Whether it exists.</returns>
     public bool Exists(Guid itemId) => itemId != Guid.Empty && _library.GetItemById(itemId) is not null;
+
+    /// <summary>The id a file had (or would have) as a game of its own: Jellyfin's id for a Book at that path (D233).</summary>
+    /// <param name="path">Full path of the file.</param>
+    /// <returns>The item id.</returns>
+    public Guid OldItemId(string path) => _library.GetNewItemId(path, typeof(Book));
 
     /// <summary>Lists every ROM the user can see.</summary>
     /// <param name="user">User.</param>
@@ -163,8 +185,17 @@ public sealed class RomLibrary
     /// <param name="item">Item.</param>
     /// <param name="images">Jellyfin's image processor, for the real image tag (null = a cache-busting stand-in).</param>
     /// <returns>The ROM or null.</returns>
-    internal static RomItem? ToRom(BaseItem item, IImageProcessor? images = null)
+    internal static RomItem? ToRom(BaseItem item, IImageProcessor? images = null) => ToRom(item, images, out _);
+
+    /// <summary>Turns an item into a ROM, or null if it isn't one, or isn't one that can be told now.</summary>
+    /// <param name="item">Item.</param>
+    /// <param name="images">Jellyfin's image processor (null = a cache-busting stand-in).</param>
+    /// <param name="cantReadNow">True when the answer is null only because the game's files can't be read now and were
+    /// never read (a sleeping NAS, review S4): the game is not gone, so a request for it should be tried again.</param>
+    /// <returns>The ROM or null.</returns>
+    internal static RomItem? ToRom(BaseItem item, IImageProcessor? images, out bool cantReadNow)
     {
+        cantReadNow = false;
         if (item is not Book || item.IsFolder || string.IsNullOrEmpty(item.Path))
         {
             return null;
@@ -177,7 +208,48 @@ public sealed class RomLibrary
         }
 
         var console = GameConsole.Detect(tags, item.Path);
-        if (console is null || !console.AcceptsItemPath(item.Path))
+        if (!GameConsole.All.Any(c => c.Tags.Any(t => tags.Contains(t, StringComparer.Ordinal))))
+        {
+            // An item no tag names a console for (JellyEMU's "Unknown"): a disc image's own header settles the .iso
+            // clash (PSP, PS2, GameCube and Wii all use .iso: D218) instead of the first console with that extension.
+            // Read once per file version (review #4). A disc that can't be read now and was never read is left out of
+            // this answer rather than guessed: a guess could give it another console's save rules.
+            if (!Scanner.ConsoleDetector.TryDiscTag(item.Path, out var disc))
+            {
+                cantReadNow = true;
+                return null;
+            }
+
+            if (disc is not null)
+            {
+                console = GameConsole.Detect([disc], item.Path);
+            }
+        }
+
+        if (console is null)
+        {
+            return null;
+        }
+
+        // D-8: an item for a folder or a .m3u is a game only while it is a whole disc set (2+ discs in the console's own
+        // formats); JellyEMU also makes folder items for a disc folder we turn down (one disc, or a .cue/.bin). A set folder
+        // that can't be read now uses its last set read; with none, the game is "can't read now", not "gone" (S4). A path
+        // with a set of 2+ is a set folder or .m3u, which every disc console takes, so the path check is for the rest only
+        // (it asks whether the folder exists, which a sleeping drive answers "no").
+        if (console.TakesDiscSets && !console.Extensions.Contains(System.IO.Path.GetExtension(item.Path).ToLowerInvariant()))
+        {
+            if (!Scanner.RomScanner.TryDiscSet(item.Path, console, out var set))
+            {
+                cantReadNow = true;
+                return null;
+            }
+
+            if (set.Count < 2)
+            {
+                return null;
+            }
+        }
+        else if (!console.AcceptsItemPath(item.Path))
         {
             return null;
         }

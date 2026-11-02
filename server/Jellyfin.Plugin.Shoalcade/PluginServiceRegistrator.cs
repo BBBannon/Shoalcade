@@ -69,16 +69,23 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         // Our box art source ticked once per games library (a library made by hand in the dashboard lists its image
         // sources and leaves new ones unticked): at start-up, after each scan and when a games library is made here.
-        serviceCollection.AddSingleton(sp => new BoxArtSwitch(
-            Path.Combine(sp.GetRequiredService<ShoalcadeServices>().DataRoot, "box-art.json"),
-            new JellyfinLibraryImageSettings(
-                sp.GetRequiredService<ILibraryManager>(),
-                sp.GetRequiredService<IServerConfigurationManager>(),
-                sp.GetRequiredService<IProviderManager>(),
-                sp.GetRequiredService<IFileSystem>()),
-            sp.GetRequiredService<GamesLibrarySetup>().GamesLibraryIds,
-            () => sp.GetRequiredService<ScannerGuard>().StandDown,
-            sp.GetRequiredService<ILogger<BoxArtSwitch>>()));
+        // Rule for every factory here: resolve what a service needs NOW, never inside a lambda it keeps. Jellyfin's
+        // in-process restart disposes this container while a start-up task may still be running, and a kept
+        // "() => sp.GetRequiredService<…>()" then throws ObjectDisposedException (SwitchOnBoxArtTask, 01/11/2026).
+        serviceCollection.AddSingleton(sp =>
+        {
+            var guard = sp.GetRequiredService<ScannerGuard>();
+            return new BoxArtSwitch(
+                Path.Combine(sp.GetRequiredService<ShoalcadeServices>().DataRoot, "box-art.json"),
+                new JellyfinLibraryImageSettings(
+                    sp.GetRequiredService<ILibraryManager>(),
+                    sp.GetRequiredService<IServerConfigurationManager>(),
+                    sp.GetRequiredService<IProviderManager>(),
+                    sp.GetRequiredService<IFileSystem>()),
+                sp.GetRequiredService<GamesLibrarySetup>().GamesLibraryIds,
+                () => guard.StandDown,
+                sp.GetRequiredService<ILogger<BoxArtSwitch>>());
+        });
         serviceCollection.AddSingleton(sp => new Md5Cache(
             Path.Combine(sp.GetRequiredService<ShoalcadeServices>().DataRoot, "scanner", "md5.json"),
             TimeProvider.System,
@@ -86,9 +93,11 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         // Game names + box art (D48): libretro-database lists downloaded into shoalcade/gamedb (used by RomInfoProvider)
         // and libretro-thumbnails pictures (BoxArtProvider, found by Jellyfin itself). One polite HTTP client for both.
-        serviceCollection.AddSingleton(sp => new LibretroHttp(
-            () => sp.GetRequiredService<IHttpClientFactory>().CreateClient(NamedClient.Default),
-            TimeProvider.System));
+        serviceCollection.AddSingleton(sp =>
+        {
+            var clients = sp.GetRequiredService<IHttpClientFactory>(); // resolved now, not per request (see the rule above)
+            return new LibretroHttp(() => clients.CreateClient(NamedClient.Default), TimeProvider.System);
+        });
         serviceCollection.AddSingleton(sp => new GameDatabase(
             Path.Combine(sp.GetRequiredService<ShoalcadeServices>().DataRoot, "gamedb"),
             sp.GetRequiredService<LibretroHttp>(),

@@ -29,9 +29,11 @@ public:
     /**
      * Opens the window and its GL context. `hw` = the core's SET_HW_RENDER request, or nullptr for a software core.
      * Headless: the window is never shown (a GL context still exists, for GL cores and frame capture).
+     * newest_gl (GameCube, Wii, PS2: plan P2): a core-profile context of the newest version the driver gives (4.6
+     * down to the core's own), not exactly the version the core asked for (Intel then gives exactly 3.3).
      */
     bool create(const std::string &title, const retro_game_geometry &geom, const retro_hw_render_callback *hw,
-                bool headless, std::string &err);
+                bool headless, std::string &err, bool newest_gl = false);
     void destroy();
 
     /** Framebuffer for GL cores (sized to the core's max geometry). Called again if the geometry grows. */

@@ -15,7 +15,7 @@
 
   const api = window.SC.api;
   const $ = id => document.getElementById(id);
-  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP" };
+  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP", gc: "GC", wii: "Wii", ps2: "PS2" };
   const SOURCE = {
     browser: "the browser player",
     app: "the phone app",
@@ -254,6 +254,11 @@
       renderGame();
       show("game-view");
       showFlash();
+      // From the library sheet's Snapshots button: go straight to them.
+      if (location.hash === "#snaps" && !$("snaps").hidden) {
+        $("snaps-h").scrollIntoView({ block: "start" });
+        $("snaps-h").focus({ preventScroll: true });
+      }
     } catch (e) {
       failed(e);
     }
@@ -325,9 +330,15 @@
     await loadSnaps();
   }
 
-  /** F8: a game no longer in the library shows its browser snapshots here (in-library games have them in the player). */
+  /** Every game shows its snapshots here (F8: also one no longer in the library; in the library: reached from the game sheet). */
   async function loadSnaps() {
-    S.snaps = S.removed ? ((await api.snapshots(S.id)).snapshots || []) : [];
+    // 404 = none to show: a removed game with saves only, or a console the browser player doesn't run (PSP, 3DS).
+    try {
+      S.snaps = (await api.snapshots(S.id)).snapshots || [];
+    } catch (e) {
+      if (!e || e.status !== 404) throw e;
+      S.snaps = [];
+    }
   }
 
   /** Reloads everything from the server after a change, so the page always shows what the server holds. */
@@ -369,10 +380,12 @@
     acts.querySelector("[data-act=upload]").hidden = S.removed;
     acts.querySelector("[data-act=fresh]").hidden = S.removed || !hist.current;
     const snaps = S.snaps;
-    acts.querySelector("[data-act=move]").hidden = !vs.length && !snaps.length;
+    // Snapshots move on their own only for a removed game (F8); an in-library game's follow its save (B9).
+    const moveSnaps = S.removed ? snaps : [];
+    acts.querySelector("[data-act=move]").hidden = !vs.length && !moveSnaps.length;
     acts.querySelector("[data-act=delete-all]").hidden = !S.removed || (!vs.length && !snaps.length);
     acts.hidden = S.removed && !vs.length && !snaps.length;
-    if (!vs.length && !snaps.length) closeMove();
+    if (!vs.length && !moveSnaps.length) closeMove();
 
     const nc = $("no-current");
     nc.hidden = !(vs.length && !hist.current);
@@ -387,6 +400,8 @@
       : "No saves yet for this game. Play the game, or upload a save file.";
     $("snaps").hidden = !snaps.length;
     $("snap-list").replaceChildren(...snaps.map(snapRow));
+    $("snap-note").textContent = playable() ? "To start from a snapshot, press Play: the player offers them before the game starts." : "";
+    $("snap-note").hidden = !playable();
 
     // The real rule from the server only (D68): never a made-up stand-in.
     const r = S.info.saveRules;
@@ -425,9 +440,11 @@
     ]);
   }
 
-  /** One browser snapshot of a removed game (F8): download or delete. */
+  /** One snapshot: download or delete. */
   function snapRow(st) {
     const name = st.slot === "auto" ? "Automatic snapshot" : "Snapshot slot " + st.slot;
+    // D81/D221: made by the old Game Boy emulator (gambatte): kept, never replaced, but it can't be loaded.
+    const oldEngine = typeof st.core === "string" && /^gambatte/i.test(st.core);
     const btn = (act, icon, label, title) => h("button", { type: "button", class: "mini", "data-act": act, "data-slot": st.slot, title }, [ico(icon), h("span", { text: label })]);
     return h("li", { class: "sv" }, [
       h("div", { class: "sv-main" }, [
@@ -435,7 +452,8 @@
           h("time", { datetime: st.created, title: fullTime(st.created), text: when(st.created) }),
           st.damaged ? h("span", { class: "badge pin", text: "Damaged" }) : null,
         ]),
-        h("span", { class: "sv-meta", text: [name, st.core ? "Made with " + st.core : null, size(st.size)].filter(Boolean).join(" · ") }),
+        h("span", { class: "sv-meta", text: [name, oldEngine ? "Made with the old Game Boy emulator, so it can't be loaded. Kept until you delete it"
+          : st.core ? "Made with " + st.core : null, size(st.size)].filter(Boolean).join(" · ") }),
       ]),
       h("div", { class: "sv-acts" }, [
         st.damaged ? null : btn("snap-download", "dl", "Download", "Download this snapshot as a file"),
@@ -451,7 +469,7 @@
   async function doSnapDownload(st) {
     const blob = await api.snapshotFile(S.id, st.slot);
     const url = URL.createObjectURL(blob);
-    const name = (S.entries[0] && S.entries[0].gameName) || "game";
+    const name = (S.game && S.game.name) || (S.entries[0] && S.entries[0].gameName) || "game";
     const a = h("a", { href: url, download: name + " snapshot " + st.slot + ".state", hidden: true });
     document.body.append(a);
     a.click();
@@ -478,10 +496,26 @@
   }
 
   // ---------- actions ----------
+  /** The control that started an action, as a selector that finds its rebuilt copy after a refresh (WCAG 2.4.3). */
+  function focusKey(el) {
+    if (!el || !el.dataset || !el.dataset.act) return null;
+    return "[data-act=\"" + el.dataset.act + "\"]" + (el.dataset.v ? "[data-v=\"" + el.dataset.v + "\"]" : "") + (el.dataset.slot ? "[data-slot=\"" + el.dataset.slot + "\"]" : "");
+  }
+
+  /** After an action the list is rebuilt: put focus back on the same control, or on the page's first action. */
+  function restoreFocus(key) {
+    const a = document.activeElement;
+    if (a && a !== document.body && a.isConnected && !a.closest("[hidden]")) return;
+    const view = $("game-view");
+    const t = (key && view.querySelector(key)) || [...view.querySelectorAll("#acts button, #versions button")].find(b => !b.closest("[hidden]") && !b.hidden);
+    if (t && !t.closest("[hidden]")) t.focus({ preventScroll: true });
+  }
+
   async function run(fn) {
     if (S.busy) return;
     S.busy = true;
-    document.body.setAttribute("aria-busy", "true");
+    const key = focusKey(document.activeElement);
+    $("versions").setAttribute("aria-busy", "true"); // not on <body>: that would also silence the toast
     showError("");
     try {
       await fn();
@@ -492,7 +526,8 @@
       if (e && e.code === "conflict") { try { await refresh(); showError(message(e)); } catch (e2) { /* keep first error */ } }
     } finally {
       S.busy = false;
-      document.body.removeAttribute("aria-busy");
+      $("versions").removeAttribute("aria-busy");
+      if (!$("game-view").hidden) restoreFocus(key);
     }
   }
 
@@ -601,7 +636,7 @@
       title: "Start fresh?",
       text: ["Next time you play, the game starts from the beginning.",
         "Nothing is deleted: the save in use now (version " + cur.version + ", " + when(cur.created) + ") stays in the list, so you can pick it again any time with “Use this save”.",
-        "This save is shared with the phone app."],
+        "This save is shared with the phone and Windows apps."],
       ok: "Start fresh", okKind: "danger",
     });
     if (r !== "ok") return;
@@ -618,7 +653,7 @@
       title: "Upload this save?",
       text: ["“" + file.name + "” (" + size(file.size) + ") becomes the save in use for " + $("g-title").textContent + ".",
         cur ? "The save in use now (version " + cur.version + ", " + when(cur.created) + ") stays in the list." : "",
-        "This save is shared with the phone app."],
+        "This save is shared with the phone and Windows apps."],
       ok: "Upload",
     });
     if (r !== "ok") return;
@@ -676,10 +711,31 @@
     return c && c.saveFormat ? c.saveFormat : key;
   }
 
+  /** The save's console: recorded, or (F7 gap 2) the one the owner picked because it wasn't recorded. */
+  function moveConsole() {
+    return S.console || $("move-con").value || null;
+  }
+
   function moveTargets() {
-    const f = saveFormat(S.console);
-    return S.games.filter(g => saveFormat(g.console) === f && g.id !== S.id)
+    const key = moveConsole();
+    if (!key) return [];
+    const f = saveFormat(key);
+    const list = S.games.filter(g => saveFormat(g.console) === f && g.id !== S.id)
       .sort((a, b) => String(a.sortName || a.name).localeCompare(String(b.sortName || b.name), "en-GB"));
+    const set = S.removed ? discSetMatch((S.entries[0] && S.entries[0].gameName) || "", list) : null;
+    return set ? [set].concat(list.filter(g => g !== set)) : list;
+  }
+
+  /**
+   * Review S2: a removed game named like "… (Disc 1)" whose discs are now one game (a disc set, D-8) is offered that
+   * game first, already picked, as its saves belong there now. Null when the name has no disc number or no set matches.
+   */
+  function discSetMatch(fromName, games) {
+    const plain = s => String(s || "").replace(/[^a-z0-9]+/gi, "").toLowerCase();
+    const base = s => plain(String(s || "").replace(/[([]\s*(disc|disk|cd)\s*\d+[^)\]]*[)\]]/gi, ""));
+    const want = base(fromName);
+    if (!want || want === plain(fromName)) return null;
+    return games.find(g => g.discs > 1 && base(g.name) === want) || null;
   }
 
   /** "Game Boy or Game Boy Color" for a shared format, else just the console's name. */
@@ -691,21 +747,38 @@
 
   /** Target name, with its console when it differs from this game's (e.g. a Game Boy save going to a Game Boy Color game). */
   function targetLabel(g) {
-    return g.console === S.console ? g.name : g.name + " (" + consoleName(g.console) + ")";
+    const name = g.discs > 1 && S.removed ? g.name + " (all " + g.discs + " discs)" : g.name;
+    return g.console === moveConsole() ? name : name + " (" + consoleName(g.console) + ")";
   }
 
-  function openMove() {
+  /** Fills the target list for the save's console (none yet if its console still has to be picked). */
+  function fillTargets() {
+    const key = moveConsole();
     const list = moveTargets();
     const sel = $("move-to");
     sel.replaceChildren(...list.map(g => h("option", { value: g.id, text: targetLabel(g) })));
     sel.hidden = !list.length;
+    sel.labels[0].hidden = !key;
     $("movebox").querySelector("[data-act=move-go]").hidden = !list.length;
-    $("move-none").hidden = !!list.length;
-    $("move-none").textContent = "There are no other " + formatNames(S.console) + " games in your library to move this save to.";
-    $("movebox").querySelector("label").textContent = (S.hist.versions || []).length ? "Move all of this save's versions to" : "Move this game's snapshots to";
+    $("move-none").hidden = !key || !!list.length;
+    $("move-none").textContent = key ? "There are no other " + formatNames(key) + " games in your library to move this save to." : "";
+    return list;
+  }
+
+  function openMove() {
+    // F7 gap 2: a removed game whose console wasn't recorded asks for it first (the server checks the save fits it).
+    const pick = !S.console;
+    const con = $("move-con");
+    $("move-con-box").hidden = !pick;
+    if (pick && !con.options.length) {
+      con.replaceChildren(h("option", { value: "", text: "Pick a console" }),
+        ...((S.info && S.info.consoles) || []).map(c => h("option", { value: c.key, text: c.name })));
+    }
+    $("move-to").labels[0].textContent = (S.hist.versions || []).length ? "Move all of this save's versions to" : "Move this game's snapshots to";
+    const list = fillTargets();
     $("movebox").hidden = false;
     $("acts").querySelector("[data-act=move]").setAttribute("aria-expanded", "true");
-    (list.length ? sel : $("movebox").querySelector("[data-act=move-cancel]")).focus();
+    (pick && !con.value ? con : list.length ? $("move-to") : $("movebox").querySelector("[data-act=move-cancel]")).focus();
   }
 
   function closeMove() {
@@ -720,6 +793,8 @@
     const n = (S.hist.versions || []).length;
     const there = (S.list.saves || []).find(e => e.itemId === to);
     // F8: a removed game with only snapshots moves just those; the target's save isn't touched.
+    const key = moveConsole();
+    if (!key) return;
     const r = await ask(!n ? {
       title: "Move these snapshots?",
       text: ["Its browser snapshots move to “" + target.name + "”. That game's save isn't changed.",
@@ -732,13 +807,13 @@
           ? "“" + target.name + "” already has a save in use. It stays in use; the moved versions go into its list, so you can pick one there with “Use this save”."
           : "The save in use here becomes the save in use for “" + target.name + "”.",
         "Its browser snapshots move too. A snapshot slot “" + target.name + "” already uses is never replaced: that snapshot stays here.",
-        target.console !== S.console
-          ? consoleName(S.console) + " and " + consoleName(target.console) + " saves use the same format, so either game can use them."
+        target.console !== key
+          ? consoleName(key) + " and " + consoleName(target.console) + " saves use the same format, so either game can use them."
           : null].filter(Boolean),
       ok: "Move save",
     });
     if (r !== "ok") return;
-    const res = await api.moveSave(S.id, to);
+    const res = await api.moveSave(S.id, to, S.console ? null : key);
     // The page reloads for the target game, so the message is handed over and shown there (see showFlash).
     // The game's browser snapshots move too (B9); the server says which, and any that stayed behind.
     const from = (S.game && S.game.name) || (S.entries[0] && S.entries[0].gameName);
@@ -791,6 +866,7 @@
       const b = e.target.closest("[data-ask]");
       if (b) d.close(b.dataset.ask);
     });
+    $("move-con").addEventListener("change", fillTargets);
     $("ask-input").addEventListener("keydown", e => {
       if (e.key === "Enter") { e.preventDefault(); d.close("ok"); }
     });
