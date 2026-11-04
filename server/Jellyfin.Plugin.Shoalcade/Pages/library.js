@@ -21,8 +21,8 @@
   "use strict";
 
   const api = window.SC.api;
+  const { h, SHORT, message } = window.SC.ui;
   const $ = id => document.getElementById(id);
-  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP", gc: "GC", wii: "Wii", ps2: "PS2" };
   const RECENT_MAX = 6;
   /** The "★ Starred" filter (a pseudo console in ?c=, so Back from the player returns to it). */
   const STARRED = "starred";
@@ -36,26 +36,7 @@
     groupOf: new Map(), menuBtn: null };
 
   // ---------- helpers ----------
-  function h(tag, attrs, kids) {
-    const e = document.createElement(tag);
-    for (const k in attrs || {}) {
-      const v = attrs[k];
-      if (v === undefined || v === null || v === false) continue;
-      if (k === "class") e.className = v;
-      else if (k === "text") e.textContent = v;
-      else e.setAttribute(k, v === true ? "" : String(v));
-    }
-    for (const c of kids || []) if (c) e.append(c);
-    return e;
-  }
-
   const fold = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-
-  function hue(id) {
-    let n = 0;
-    for (let i = 0; i < id.length; i++) n = (n * 31 + id.charCodeAt(i)) % 360;
-    return n;
-  }
 
   function consoleName(key) {
     const c = S.info && (S.info.consoles || []).find(x => x.key === key);
@@ -99,6 +80,7 @@
   }
 
   // ---------- sort (D123) ----------
+  const platformRank = k => { const i = PLATFORM_ORDER.indexOf(k); return i < 0 ? PLATFORM_ORDER.length : i; };
   const byName = (a, b) => collator.compare(a.name, b.name) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
   /** The list in the chosen order. Unknowns (no year, never played, unknown console) always last, then by name. */
@@ -108,10 +90,7 @@
     if (sort === "year") {
       return out.sort((a, b) => (a.year == null) - (b.year == null) || (b.year || 0) - (a.year || 0) || byName(a, b));
     }
-    if (sort === "platform") {
-      const rank = g => { const i = PLATFORM_ORDER.indexOf(g.console); return i < 0 ? PLATFORM_ORDER.length : i; };
-      return out.sort((a, b) => rank(a) - rank(b) || byName(a, b));
-    }
+    if (sort === "platform") return out.sort((a, b) => platformRank(a.console) - platformRank(b.console) || byName(a, b));
     const t = new Map(out.map(g => { const a = lastActivity(g); return [g.id, a ? a.t : null]; }));
     return out.sort((a, b) => (t.get(a.id) == null) - (t.get(b.id) == null) || (t.get(b.id) || 0) - (t.get(a.id) || 0) || byName(a, b));
   }
@@ -166,18 +145,7 @@
 
   // ---------- tiles ----------
   function art(g, width) {
-    const box = h("div", { class: "art" }, [
-      h("span", { class: "art-t", text: g.name }),
-      h("span", { class: "art-c", text: SHORT[g.console] || g.console }),
-    ]);
-    box.style.setProperty("--h", String(hue(g.id)));
-    if (g.imageTag) {
-      const img = h("img", { src: api.coverUrl(g.id, g.imageTag, width), alt: "", loading: "lazy", decoding: "async" });
-      img.addEventListener("error", () => { img.remove(); box.classList.remove("has-cover"); }, { once: true });
-      box.classList.add("has-cover");
-      box.prepend(img);
-    }
-    return box;
+    return window.SC.ui.art(g.id, g.name, SHORT[g.console] || g.console, g.imageTag, width);
   }
 
   function cardMeta(g) {
@@ -200,28 +168,29 @@
     S.q = p.get("q") || "";
   }
 
-  function writeAddress() {
-    const p = new URLSearchParams();
-    if (S.con !== "all") p.set("c", S.con);
-    if (S.q) p.set("q", S.q);
-    const s = p.toString();
-    history.replaceState(history.state, "", location.pathname + (s ? "?" + s : "") + location.hash);
-    $("settings-btn").href = settingsLink();
-  }
-
-  /** Settings page link carrying this view (?c=&q=), so its "Back to library" returns here (D134). */
-  function settingsLink() {
-    return savesLink(null).replace(/^saves-manager/, "settings");
-  }
-
-  /** Saves manager link carrying this view (?c=&q=), so its "Back to library" returns here. */
-  function savesLink(id) {
+  /** This view (?c=&q=) as a query string, "" for All with no search; id goes first when given. */
+  function viewQuery(id) {
     const p = new URLSearchParams();
     if (id) p.set("id", id);
     if (S.con !== "all") p.set("c", S.con);
     if (S.q) p.set("q", S.q);
     const s = p.toString();
-    return "saves-manager" + (s ? "?" + s : "");
+    return s ? "?" + s : "";
+  }
+
+  function writeAddress() {
+    history.replaceState(history.state, "", location.pathname + viewQuery(null) + location.hash);
+    $("settings-btn").href = settingsLink();
+  }
+
+  /** Settings page link carrying this view (?c=&q=), so its "Back to library" returns here (D134). */
+  function settingsLink() {
+    return "settings" + viewQuery(null);
+  }
+
+  /** Saves manager link carrying this view (?c=&q=), so its "Back to library" returns here. */
+  function savesLink(id) {
+    return "saves-manager" + viewQuery(id);
   }
 
   function renderFilters() {
@@ -230,8 +199,7 @@
     // Consoles in platform order (the server lists PS1 after PSP for its own reasons), only those with games.
     const keys = (S.info.consoles || []).map(c => c.key).filter(k => counts.has(k));
     for (const k of counts.keys()) if (!keys.includes(k)) keys.push(k);
-    const rank = k => { const i = PLATFORM_ORDER.indexOf(k); return i < 0 ? PLATFORM_ORDER.length : i; };
-    keys.sort((a, b) => rank(a) - rank(b));
+    keys.sort((a, b) => platformRank(a) - platformRank(b));
 
     // Bar items in platform order: a maker's consoles share one item, placed where its first console is.
     const groups = new Map(), items = [];
@@ -451,7 +419,7 @@
       renderFilters();
       renderGrid();
     } catch (e) {
-      $("sheet-why").textContent = "Couldn't change the star: " + (e && e.message ? e.message : String(e));
+      $("sheet-why").textContent = "Couldn't change the star: " + message(e);
       $("sheet-why").hidden = false;
     } finally {
       S.starBusy = false;
@@ -690,14 +658,12 @@
   function onSheetClosed() {
     closeEditor();
     const g = hashGame();
-    if (g) {
-      setTimeout(() => {
-        if (document.activeElement && document.activeElement !== document.body) return;
-        const c = $("grid").querySelector('[data-open="' + g.id + '"]');
-        if (c) c.focus({ preventScroll: true });
-      }, 0);
-    }
     if (!g) return;
+    setTimeout(() => {
+      if (document.activeElement && document.activeElement !== document.body) return;
+      const c = $("grid").querySelector('[data-open="' + g.id + '"]');
+      if (c) c.focus({ preventScroll: true });
+    }, 0);
     // Closed with Esc or the X: drop the #game from the address too.
     if (S.openedHere) { S.openedHere = false; history.back(); }
     else history.replaceState(history.state, "", location.pathname + location.search);
@@ -730,13 +696,7 @@
       show("library");
       syncSheet();
     } catch (e) {
-      if (e && e.status === 401) {
-        $("signed-out-text").textContent = e.message;
-        show("signed-out");
-      } else {
-        $("failed-text").textContent = e && e.message ? e.message : String(e);
-        show("failed");
-      }
+      window.SC.ui.loadFailed(e, show);
     }
   }
 

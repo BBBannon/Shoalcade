@@ -1,5 +1,6 @@
 package uk.benmarks.shoalcade
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,11 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -102,18 +101,13 @@ private fun LoginScreen(vm: AppViewModel) {
             Text("On a device already signed in to Jellyfin: open your profile → Quick Connect → enter this code.",
                 style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                Text("Waiting for approval…", modifier = Modifier.padding(start = 12.dp))
-            }
+            Waiting("Waiting for approval…")
             Spacer(Modifier.height(16.dp))
             OutlinedButton(onClick = { vm.cancelQuickConnect() }, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
             return@Column
         }
 
-        // Live region: TalkBack reads a login error out as soon as it appears (focus stays on the button).
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }) }
+        LoginError(error)
         if (!usePassword) {
             Spacer(Modifier.height(16.dp))
             Button(
@@ -124,7 +118,7 @@ private fun LoginScreen(vm: AppViewModel) {
             TextButton(onClick = { error = null; usePassword = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("Use username and password instead")
             }
-            Text("HTTPS only.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+            HttpsOnly()
             TextButton(onClick = { about = true }) { Text("About and licences") }
             return@Column
         }
@@ -140,8 +134,7 @@ private fun LoginScreen(vm: AppViewModel) {
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth())
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }) }
+        LoginError(error)
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = { error = null; vm.login(server, user, pw) { error = it } },
@@ -151,9 +144,22 @@ private fun LoginScreen(vm: AppViewModel) {
         TextButton(onClick = { error = null; usePassword = false }, modifier = Modifier.fillMaxWidth()) {
             Text("Use Quick Connect instead")
         }
-        Text("HTTPS only.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+        HttpsOnly()
     }
 }
+
+/** Live region: TalkBack reads a login error out as soon as it appears (focus stays on the button). */
+@Composable
+private fun LoginError(error: String?) {
+    error?.let { LiveText(it, MaterialTheme.colorScheme.error, Modifier.padding(top = 8.dp)) }
+}
+
+@Composable
+private fun HttpsOnly() = Text("HTTPS only.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+
+/** Android 13+: the download and "a save needs your choice" notices need asking for. Downloads work either way. */
+internal fun needsNotificationPermission(ctx: Context) = android.os.Build.VERSION.SDK_INT >= 33 &&
+    ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
 
 /**
  * F3: the settings cog doubles as the server light: green when connected, red with a "!" badge when not (so it's not
@@ -205,11 +211,19 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
     var locked3ds by remember { mutableStateOf(false) }
     fun download(g: Game) {
         if (g.console == Console.N3DS && !N3dsCheck.unlocked(ctx)) { locked3ds = true; return }
-        if (android.os.Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
-            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
+        if (needsNotificationPermission(ctx)) notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         vm.download(g)
+    }
+    /** Play (the row's button and the Continue card, D248): one path, so the launch choice and save checks always run. */
+    fun play(g: Game) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (vm.batch != null) vm.message = "Wait for ${vm.batch!!.way.word} to finish first."
+        else if (now - lastPlay > 1500) {
+            lastPlay = now
+            // D90: a game with a snapshot asks where to start; otherwise straight from the save.
+            if (hasLaunchSnapshot(ctx, g, vm.session!!.userId)) launchGame = g
+            else ctx.startActivity(GameActivity.intent(ctx, g, vm.session!!.userId))
+        }
     }
 
     Scaffold(
@@ -241,26 +255,7 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
                     Text("⚠️ $p", color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(12.dp))
                 }
             }
-
-            // A newer app inside the user's own plugin: the browser's Settings → Phone app page downloads it.
-            var updateHidden by rememberSaveable { mutableStateOf<String?>(null) }
-            vm.appUpdate?.takeIf { it != updateHidden }?.let { v ->
-                Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Shoalcade $v is ready on your Jellyfin.", Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        TextButton(onClick = {
-                            vm.session?.serverUrl?.let { base ->
-                                runCatching {
-                                    ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
-                                        android.net.Uri.parse(base.trimEnd('/') + "/shoalcade/settings#app-s")))
-                                }.onFailure { vm.message = "No web browser to open the download page." }
-                            }
-                        }) { Text("Get it") }
-                        TextButton(onClick = { updateHidden = v }) { Text("Later") }
-                    }
-                }
-            }
+            AppUpdateBanner(vm)
 
             SyncAllProgress(vm) // a running Push all / Pull all stays in sight and stoppable (buttons in Settings, D132)
 
@@ -269,52 +264,9 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
             // The last download removed: the toggle goes off rather than coming back on with the next download (as Favourites).
             LaunchedEffect(onPhone) { if (vm.onPhoneOnly && vm.games.isNotEmpty() && onPhone.isEmpty()) vm.chooseOnPhoneOnly(false) }
 
-            if (vm.games.isNotEmpty()) {
-                // Starts unfocused, so no keyboard on app start; the keyboard's Search key just hides it.
-                val focus = LocalFocusManager.current
-                OutlinedTextField(
-                    value = search, onValueChange = { search = it }, singleLine = true,
-                    placeholder = { Text("Find a game") },
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    trailingIcon = if (search.isEmpty()) null else {
-                        { IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, "Clear search") } }
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
-                        .semantics { contentDescription = "Search games" },
-                )
-            }
-
+            if (vm.games.isNotEmpty()) SearchBox(search) { search = it }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 12.dp)) {
-                    FilterChip(filter == ConsoleFilter.All, { filter = ConsoleFilter.All }, { Text("All") }, Modifier.padding(end = 6.dp))
-                    // On/off, works with the console chips, remembered per user. Hidden with no starred games.
-                    if (vm.games.any { it.favourite }) {
-                        FilterChip(vm.favouritesOnly, { vm.chooseFavouritesOnly(!vm.favouritesOnly) }, { Text(LibraryFilter.FAVOURITES) },
-                            Modifier.padding(end = 6.dp).semantics {
-                                contentDescription = "Show only Favourites, " + if (vm.favouritesOnly) "on" else "off"
-                            })
-                    }
-                    // Same, for games playable offline. Hidden unless some games are on the phone and some aren't.
-                    if (onPhone.isNotEmpty() && onPhone.size < vm.games.size) {
-                        FilterChip(vm.onPhoneOnly, { vm.chooseOnPhoneOnly(!vm.onPhoneOnly) }, { Text(LibraryFilter.ON_PHONE) },
-                            Modifier.padding(end = 6.dp).semantics {
-                                contentDescription = "Show only games on this phone, " + if (vm.onPhoneOnly) "on" else "off"
-                            })
-                    }
-                    // Nintendo ▾ / Sony ▾ menus and plain chips, only consoles that have games.
-                    val bar = remember(vm.games) { ConsoleBar.items(vm.games.mapNotNull { it.console }.toSet()) }
-                    bar.forEach { item ->
-                        when (item) {
-                            is ConsoleBar.Item.Chip -> {
-                                val f = ConsoleFilter.One(item.console)
-                                FilterChip(filter == f, { filter = f }, { Text(item.console.shortName) }, Modifier.padding(end = 6.dp))
-                            }
-                            is ConsoleBar.Item.Menu -> MakerChip(item, filter, vm.games) { filter = it }
-                        }
-                    }
-                }
+                FilterChips(vm, filter, onPhone, Modifier.weight(1f)) { filter = it }
                 SortButton(vm.sort) { vm.chooseSort(it) }
             }
 
@@ -333,19 +285,16 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
             val topKey = lf.topKey(vm.sort, shown)
             var lastTopKey by rememberSaveable { mutableStateOf(topKey) }
             LaunchedEffect(topKey) { if (topKey != lastTopKey) { lastTopKey = topKey; listState.scrollToItem(0) } }
+            // D248: the Continue card (Settings → Show Continue); re-read on return from Settings or a game.
+            val showContinue = remember(vm.diskVersion) { ContinueGame.on(GameSound.store(ctx)) }
+            val continueGame = remember(vm.games, onPhone, search, showContinue, vm.diskVersion) {
+                if (showContinue) ContinueGame.pick(vm.games, onPhone, search) { vm.lastPlayed(it) } else null
+            }
             LazyColumn(Modifier.fillMaxSize(), state = listState) {
+                continueGame?.let { g -> item(key = "continue") { ContinueCard(g, vm.artVersion) { play(g) } } }
                 items(shown, key = { it.id }) { g ->
                     GameRow(g, vm, onDownload = { download(g) },
-                        onPlay = {
-                            val now = android.os.SystemClock.elapsedRealtime()
-                            if (vm.batch != null) vm.message = "Wait for ${vm.batch!!.way.word} to finish first."
-                            else if (now - lastPlay > 1500) {
-                                lastPlay = now
-                                // D90: a game with a snapshot asks where to start; otherwise straight from the save.
-                                if (hasLaunchSnapshot(ctx, g, vm.session!!.userId)) launchGame = g
-                                else ctx.startActivity(GameActivity.intent(ctx, g, vm.session!!.userId))
-                            }
-                        },
+                        onPlay = { play(g) },
                         onUpload = { vm.uploadSave(g) },
                         onGetSave = { getSaveGame = g },
                         onSavesPanel = { savesPanelGame = g },
@@ -376,6 +325,85 @@ private fun LibraryScreen(vm: AppViewModel, onSettings: () -> Unit) {
     }
 }
 
+/** A newer app inside the user's own plugin: the browser's Settings → Phone app page downloads it. */
+@Composable
+private fun AppUpdateBanner(vm: AppViewModel) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var updateHidden by rememberSaveable { mutableStateOf<String?>(null) }
+    val v = vm.appUpdate?.takeIf { it != updateHidden } ?: return
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Shoalcade $v is ready on your Jellyfin.", Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onSecondaryContainer)
+            TextButton(onClick = {
+                vm.session?.serverUrl?.let { base ->
+                    runCatching {
+                        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(base.trimEnd('/') + "/shoalcade/settings#app-s")))
+                    }.onFailure { vm.message = "No web browser to open the download page." }
+                }
+            }) { Text("Get it") }
+            TextButton(onClick = { updateHidden = v }) { Text("Later") }
+        }
+    }
+}
+
+/** Starts unfocused, so no keyboard on app start; the keyboard's Search key just hides it. */
+@Composable
+private fun SearchBox(search: String, onChange: (String) -> Unit) {
+    val focus = LocalFocusManager.current
+    OutlinedTextField(
+        value = search, onValueChange = onChange, singleLine = true,
+        placeholder = { Text("Find a game") },
+        leadingIcon = { Icon(Icons.Default.Search, null) },
+        trailingIcon = if (search.isEmpty()) null else {
+            { IconButton(onClick = { onChange("") }) { Icon(Icons.Default.Close, "Clear search") } }
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            .semantics { contentDescription = "Search games" },
+    )
+}
+
+/** All, the ★ Favourites and ⬇ On phone toggles, then the console bar; scrolls sideways. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterChips(
+    vm: AppViewModel, filter: ConsoleFilter, onPhone: Set<String>, modifier: Modifier, onFilter: (ConsoleFilter) -> Unit,
+) = Row(modifier.horizontalScroll(rememberScrollState()).padding(start = 12.dp)) {
+    FilterChip(filter == ConsoleFilter.All, { onFilter(ConsoleFilter.All) }, { Text("All") }, Modifier.padding(end = 6.dp))
+    // On/off, works with the console chips, remembered per user. Hidden with no starred games.
+    if (vm.games.any { it.favourite }) {
+        FilterChip(vm.favouritesOnly, { vm.chooseFavouritesOnly(!vm.favouritesOnly) }, { Text(LibraryFilter.FAVOURITES) },
+            Modifier.padding(end = 6.dp).semantics {
+                contentDescription = "Show only Favourites, " + if (vm.favouritesOnly) "on" else "off"
+            })
+    }
+    // Same, for games playable offline. Hidden unless some games are on the phone and some aren't.
+    if (onPhone.isNotEmpty() && onPhone.size < vm.games.size) {
+        FilterChip(vm.onPhoneOnly, { vm.chooseOnPhoneOnly(!vm.onPhoneOnly) }, { Text(LibraryFilter.ON_PHONE) },
+            Modifier.padding(end = 6.dp).semantics {
+                contentDescription = "Show only games on this phone, " + if (vm.onPhoneOnly) "on" else "off"
+            })
+    }
+    // Nintendo ▾ / Sony ▾ menus and plain chips, only consoles that have games.
+    val bar = remember(vm.games) { ConsoleBar.items(vm.games.mapNotNull { it.console }.toSet()) }
+    bar.forEach { item ->
+        when (item) {
+            is ConsoleBar.Item.Chip -> {
+                val f = ConsoleFilter.One(item.console)
+                FilterChip(filter == f, { onFilter(f) }, { Text(item.console.shortName) }, Modifier.padding(end = 6.dp))
+            }
+            is ConsoleBar.Item.Menu -> MakerChip(item, filter, vm.games, onFilter)
+        }
+    }
+}
+
+/** A menu row's ✓ when it is the one chosen, else the same space, so the names line up. */
+@Composable
+private fun CheckSlot(on: Boolean) = if (on) Icon(Icons.Default.Check, null) else Spacer(Modifier.size(24.dp))
+
 /** "Nintendo ▾" (or "Nintendo: GBA ▾" while one of its consoles is picked): a menu of All Nintendo and each console, with counts. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -394,7 +422,7 @@ private fun MakerChip(menu: ConsoleBar.Item.Menu, filter: ConsoleFilter, games: 
                 DropdownMenuItem(
                     text = { Text(name) },
                     onClick = { open = false; onPick(f) },
-                    leadingIcon = { if (f == filter) Icon(Icons.Default.Check, null) else Spacer(Modifier.size(24.dp)) },
+                    leadingIcon = { CheckSlot(f == filter) },
                     trailingIcon = { Text("$n", style = MaterialTheme.typography.bodySmall) },
                     modifier = Modifier.semantics { selected = f == filter; contentDescription = "$name, $n ${if (n == 1) "game" else "games"}" },
                 )
@@ -418,7 +446,7 @@ private fun SortButton(sort: GameSort, onChoose: (GameSort) -> Unit) {
                 DropdownMenuItem(
                     text = { Text(s.label) },
                     onClick = { open = false; onChoose(s) },
-                    leadingIcon = { if (s == sort) Icon(Icons.Default.Check, null) else Spacer(Modifier.size(24.dp)) },
+                    leadingIcon = { CheckSlot(s == sort) },
                     modifier = Modifier.semantics { selected = s == sort },
                 )
             }

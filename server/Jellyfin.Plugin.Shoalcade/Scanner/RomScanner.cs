@@ -206,10 +206,7 @@ public static class RomScanner
             var first = cues.Length == 1 && CueFirstBin(cues[0]) is not null ? cues[0] : null;
             if (first is null)
             {
-                var discs = Directory.EnumerateFiles(trimmed)
-                    .Where(f => IsDiscCandidate(f) && ConsoleDetector.ResolveDisc(f) is not null)
-                    .OrderBy(f => f, StringComparer.Ordinal)
-                    .ToList();
+                var discs = DiscsIn(trimmed);
                 first = discs.Count >= 2 ? discs[0] : null;
             }
 
@@ -227,9 +224,17 @@ public static class RomScanner
                     : tag + " games are not played by Shoalcade";
             }
 
-            return console.Key == "ps2" && cues.Length > 0 ? Ps2BinCue
-                : console.TakesDiscSets && cues.Length == 0 ? $"a {console.DisplayName} disc set needs two or more discs in its own formats ({Takes(console)})"
-                : console.FilesOnly ? $"{console.DisplayName} games must be one file ({Takes(console)}), not a .cue sheet or a folder of discs" : null;
+            if (console.Key == "ps2" && cues.Length > 0)
+            {
+                return Ps2BinCue;
+            }
+
+            if (console.TakesDiscSets && cues.Length == 0)
+            {
+                return $"a {console.DisplayName} disc set needs two or more discs in its own formats ({Takes(console)})";
+            }
+
+            return console.FilesOnly ? $"{console.DisplayName} games must be one file ({Takes(console)}), not a .cue sheet or a folder of discs" : null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -382,10 +387,7 @@ public static class RomScanner
         }
 
         // Rule: two or more discs -> the folder is one game.
-        var discs = Directory.EnumerateFiles(trimmed)
-            .Where(f => IsDiscCandidate(f) && ConsoleDetector.ResolveDisc(f) is not null)
-            .OrderBy(f => f, StringComparer.Ordinal)
-            .ToList();
+        var discs = DiscsIn(trimmed);
         if (discs.Count < 2)
         {
             return null;
@@ -408,6 +410,13 @@ public static class RomScanner
         var hash = string.Equals(Path.GetExtension(discs[0]), ".cue", StringComparison.OrdinalIgnoreCase) ? CueFirstBin(discs[0]) ?? discs[0] : discs[0];
         return new ScannedRom(path, ConsoleDetector.CleanName(dirName), discConsole, FirstRegion(trimmed) ?? FirstRegion(discs[0]), SeriesFor(trimmed), false, true, hash);
     }
+
+    /// <summary>The files in a folder that are discs of a known console, in name order (the "two or more discs" rule).</summary>
+    private static List<string> DiscsIn(string folder) =>
+        Directory.EnumerateFiles(folder)
+            .Where(f => IsDiscCandidate(f) && ConsoleDetector.ResolveDisc(f) is not null)
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
 
     private static ScannedRom? ResolveFile(string path)
     {
@@ -637,8 +646,7 @@ public static class RomScanner
 
         var file = Path.GetFileName(path);
         return Directory.EnumerateFiles(dir, "*.m3u")
-            .Any(m => ReadList(m, cue: false).Any(r => string.Equals(Path.GetFileName(r), file, StringComparison.OrdinalIgnoreCase))
-                && Resolve(m, false) is not null);
+            .Any(m => ListNames(m, file) && Resolve(m, false) is not null);
     }
 
     private static bool IsListedByJ3u(string path)
@@ -651,8 +659,12 @@ public static class RomScanner
 
         var file = Path.GetFileName(path);
         return Directory.EnumerateFiles(dir, "*.j3u")
-            .Any(j => J3uFiles(j).Any(r => string.Equals(Path.GetFileName(r), file, StringComparison.OrdinalIgnoreCase)));
+            .Any(j => ListNames(j, file));
     }
+
+    /// <summary>True if a .m3u or .j3u list names <paramref name="file"/> (by file name).</summary>
+    private static bool ListNames(string listPath, string file) =>
+        ReadList(listPath, cue: false).Any(r => string.Equals(Path.GetFileName(r), file, StringComparison.OrdinalIgnoreCase));
 
     private static string? FirstRegion(string path)
     {

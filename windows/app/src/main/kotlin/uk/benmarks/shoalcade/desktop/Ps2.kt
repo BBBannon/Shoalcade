@@ -31,8 +31,6 @@ object Ps2 {
         "sends it anywhere: it stays on this PC."
     const val BIOS_MISSING = "This PS2 game needs a BIOS file. Choose one in Settings → PS2 BIOS file…"
     const val BIOS_BAD = "That file isn't a PS2 BIOS. Choose the BIOS file you copied from your PlayStation 2."
-    /** Short state on a PS2 game's sheet instead of Play. */
-    const val NEEDS_BIOS = "Needs a PS2 BIOS"
 
     const val MIN_SIZE = 4L * 1024 * 1024
     const val MAX_SIZE = 8L * 1024 * 1024

@@ -484,8 +484,6 @@ RgbaImage Video::capture() {
     return img;
 }
 
-void Video::toggle_fullscreen() { set_fullscreen(!fullscreen()); }
-
 void Video::set_fullscreen(bool on) {
     fullscreen_ = on;
     if (headless_ || !window_) return;

@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -55,8 +53,8 @@ fun PlayingView(name: String, phase: PlaySession.Phase, notes: List<String>, onC
     Row(Modifier.fillMaxSize().background(Pocket.Stage)) {
         PocketRail(Modifier.fillMaxHeight(), top = {
             PocketRailButton(Icons.Default.Close, "Close Game", { onClose(false) }, enabled = open)
-            PocketRailButton(Icons.Default.CloudUpload, "Close Game (and Upload)", { onClose(true) }, enabled = open)
-            if (onCheats != null) PocketRailButton(Icons.Outlined.Code, "Cheats", onCheats, enabled = phase == PlaySession.Phase.PLAYING)
+            PocketRailButton(PocketIcons.CloudUpload, "Close Game (and Upload)", { onClose(true) }, enabled = open)
+            if (onCheats != null) PocketRailButton(PocketIcons.Code, "Cheats", onCheats, enabled = phase == PlaySession.Phase.PLAYING)
         })
         Box(Modifier.weight(1f).fillMaxHeight().padding(32.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {

@@ -156,11 +156,20 @@ object GameMenu {
             TouchMode.entries.map { MenuItem.Choice(touchId(it), it.label, "touch", c.touch == it) }
     }
 
-    /** PSP and N64 are always landscape with one screen, so they have nothing to choose here. */
-    val DISPLAY_SECTION = MenuSection("display", DISPLAY, visible = { !it.console.isLandscape }) { c ->
+    // D245: Smooth picture, per console (the Windows player's words). Changes the picture at once, mid-game too.
+    const val SMOOTH = "Smooth picture"
+    const val ID_SMOOTH = "display.smooth"
+
+    /**
+     * PSP and N64 are always landscape with one screen, so they have no Screen choices, only Smooth picture (D245).
+     */
+    val DISPLAY_SECTION = MenuSection("display", DISPLAY) { c ->
         buildList {
-            add(MenuItem.Heading("screen", SCREEN))
-            ScreenMode.entries.forEach { add(MenuItem.Choice(screenId(it), it.label, "screen", c.screen == it)) }
+            if (!c.console.isLandscape) {
+                add(MenuItem.Heading("screen", SCREEN))
+                ScreenMode.entries.forEach { add(MenuItem.Choice(screenId(it), it.label, "screen", c.screen == it)) }
+            }
+            add(MenuItem.Toggle(ID_SMOOTH, SMOOTH, c.smooth))
             if (c.console.isDualScreen) {
                 add(MenuItem.Heading("ds", DS_SCREENS))
                 DsLayout.entries.forEach { add(MenuItem.Choice(dsId(it), it.label, "ds", c.ds == it)) }
@@ -212,6 +221,8 @@ data class MenuContext(
     /** D-8: discs the core has (2+ for a disc set's .m3u; 0 otherwise) and the one in now (from 0). */
     val discCount: Int = 0,
     val disc: Int = 0,
+    /** D245: Smooth picture is on for this console (on = the default look). */
+    val smooth: Boolean = true,
 )
 
 /** One cheat as the menu shows it. */

@@ -690,12 +690,12 @@
     return [what + (pct === undefined ? "…" : " (" + pct + "%)"), pct, pct === undefined ? undefined : 100];
   }
 
-  /** A big game (a PS1 disc) is held in the browser's memory while it plays: say so, so a phone that runs out isn't a mystery. */
   /** A disc set (D-8) in the browser: only disc 1 is here, and where to play the rest. */
   function discsNote(n) {
     return "This game has " + n + " discs. The browser plays disc 1 only; play it in the Windows app or the phone app to change discs.";
   }
 
+  /** A big game (a PS1 disc) is held in the browser's memory while it plays: say so, so a phone that runs out isn't a mystery. */
   function bigGameNote(bytes) {
     return "This is a big game (" + Math.round(bytes / (1024 * 1024)) + " MB). It is kept in this browser's memory while you play, so on a phone it may be slow to start or not start. The phone app plays it straight from storage.";
   }
@@ -706,10 +706,11 @@
    * and silently do nothing; such a line gets its space back ("80300010 00FF"), the same rule as the app.
    */
   function cheatForCore(consoleKey, code) {
+    const spaced = (lines, re) => lines.map(l => re.test(l) ? l.trim().slice(0, 8) + " " + l.trim().slice(8) : l);
     let lines = code.split("\n");
-    if (consoleKey === "n64") lines = lines.map(l => /^\s*[0-9A-Fa-f]{12}\s*$/.test(l) ? l.trim().slice(0, 8) + " " + l.trim().slice(8) : l);
+    if (consoleKey === "n64") lines = spaced(lines, /^\s*[0-9A-Fa-f]{12}\s*$/);
     // GBA: mGBA reads "XXXXXXXX YYYYYYYY" / "XXXXXXXX YYYY" lines; with no space it reads past the line end and the cheat does nothing.
-    if (consoleKey === "gba") lines = lines.map(l => /^\s*([0-9A-Fa-f]{12}|[0-9A-Fa-f]{16})\s*$/.test(l) ? l.trim().slice(0, 8) + " " + l.trim().slice(8) : l);
+    if (consoleKey === "gba") lines = spaced(lines, /^\s*([0-9A-Fa-f]{12}|[0-9A-Fa-f]{16})\s*$/);
     return lines.join("+");
   }
 
@@ -1219,8 +1220,8 @@
     statePath(slot) { return "/shoalcade/state/" + encodeURIComponent(this.itemId) + (slot ? "/" + encodeURIComponent(slot) : ""); }
 
     /** { enabled, snapshots: [{ slot, size, created, core, hasImage }] } */
-    async snapshots() {
-      return (await api.request(this.statePath())).json();
+    snapshots() {
+      return api.snapshots(this.itemId);
     }
 
     /**
@@ -1426,17 +1427,19 @@
 
     async editCheat(id, changes) {
       await api.editCheat(this.itemId, id, changes);
-      this.cheats = await api.cheats(this.itemId);
-      if (this.cheats.active.includes(id)) return this.applyCheats();
-      this.emit("cheats", this.cheats);
-      return false;
+      return this.reloadCheats(doc => doc.active.includes(id));
     }
 
     async deleteCheat(id) {
       const wasOn = !!this.cheats && this.cheats.active.includes(id);
       await api.deleteCheat(this.itemId, id);
+      return this.reloadCheats(() => wasOn);
+    }
+
+    /** Reads the list again after a change; applies the cheats if apply(list) says the change touched one that is on. */
+    async reloadCheats(apply) {
       this.cheats = await api.cheats(this.itemId);
-      if (wasOn) return this.applyCheats();
+      if (apply(this.cheats)) return this.applyCheats();
       this.emit("cheats", this.cheats);
       return false;
     }
@@ -1461,7 +1464,7 @@
     }
 
     async deleteSnapshot(slot) {
-      await api.request(this.statePath(slot), { method: "DELETE" });
+      await api.deleteSnapshot(this.itemId, slot);
     }
 
     /** The snapshot's picture as a Blob (the image route needs the login header, so no plain URL). */

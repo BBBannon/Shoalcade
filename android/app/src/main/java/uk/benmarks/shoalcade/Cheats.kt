@@ -62,29 +62,36 @@ object CheatRules {
      * author=, description=, [sections], // notes) are left out.
      */
     fun normalise(console: Console?, code: String): String = when (console) {
-        Console.N64 -> tidyCode(code).split('\n').joinToString("\n") { line ->
-            line.split('+').joinToString("+") { p -> p.trim().let { if (N64_RUN.matches(it)) it.substring(0, 8) + " " + it.substring(8) else it } }
-        }
+        Console.N64 -> spaceParts(code) { N64_RUN.matches(it) }
         // GBA: mGBA's libretro reader takes each line as "XXXXXXXX YYYYYYYY" (or CodeBreaker "XXXXXXXX YYYY"); without the
         // space it reads 17 characters at a time, eating the next line's first, so the whole cheat silently does nothing.
-        Console.GBA -> tidyCode(code).split('\n').joinToString("\n") { line ->
-            line.split('+').joinToString("+") { p -> p.trim().let { if (HEX16.matches(it) || N64_RUN.matches(it)) it.substring(0, 8) + " " + it.substring(8) else it } }
-        }
+        Console.GBA -> spaceParts(code) { HEX16.matches(it) || N64_RUN.matches(it) }
         // Review S10: a PS2 cheat that can't be converted safely is left as typed, so [problem] can say why.
         Console.PS2 -> if (pnachProblem(code) != null) tidyCode(code) else normaliseWindows(console, code)
         Console.GC, Console.WII -> normaliseWindows(console, code)
         else -> code
     }
 
+    /** Each line's "+"-joined parts, trimmed; a part [needsSpace] says is one run gets its space after 8 characters. */
+    private fun spaceParts(code: String, needsSpace: (String) -> Boolean): String =
+        tidyCode(code).split('\n').joinToString("\n") { line ->
+            line.split('+').joinToString("+") { p -> p.trim().let { if (needsSpace(it)) spaced(it) else it } }
+        }
+
+    private fun spaced(run: String) = run.substring(0, 8) + " " + run.substring(8)
+
+    /** Every line and "+"-joined part of [body], trimmed, blanks left out. */
+    private fun parts(body: String) = body.split('\n').flatMap { it.split('+') }.map { it.trim() }.filter { it.isNotEmpty() }
+
     private fun normaliseWindows(console: Console, code: String): String {
-            val (prefix, body) = splitPrefix(console, tidyCode(code))
-            val lines = body.split('\n').flatMap { it.split('+') }.map { it.trim() }.filter { it.isNotEmpty() }
-                .filterNot { console == Console.PS2 && PNACH_META.containsMatchIn(it) }
-                .map { l ->
-                    val p = if (console == Console.PS2) pnachToRaw(l) ?: l else l
-                    if (HEX16.matches(p)) p.substring(0, 8) + " " + p.substring(8) else p
-                }
-            return prefix + lines.joinToString("\n")
+        val (prefix, body) = splitPrefix(console, tidyCode(code))
+        val lines = parts(body)
+            .filterNot { console == Console.PS2 && PNACH_META.containsMatchIn(it) }
+            .map { l ->
+                val p = if (console == Console.PS2) pnachToRaw(l) ?: l else l
+                if (HEX16.matches(p)) spaced(p) else p
+            }
+        return prefix + lines.joinToString("\n")
     }
 
     /**
@@ -156,7 +163,7 @@ object CheatRules {
      */
     private fun windowsProblem(console: Console, code: String): String? {
         val (prefix, body) = splitPrefix(console, code)
-        val lines = body.split('\n').flatMap { it.split('+') }.map { it.trim() }.filter { it.isNotEmpty() }
+        val lines = parts(body)
         if (lines.isEmpty()) return "Type the cheat code."
         if (console == Console.PS2) pnachProblem(code)?.let { return it }
         return when (console) {

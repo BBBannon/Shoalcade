@@ -43,8 +43,7 @@ button { cursor: pointer; }
 .top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .brand { margin: 0; font: 700 1.9rem/1 var(--cond); font-stretch: condensed; letter-spacing: -.01em; display: flex; align-items: center; gap: 12px; }
 /* Pixel Jellyfin mark (web/jellyfin-pixel.svg): back to Jellyfin's home screen. Drawn 2 px per pixel so it stays crisp. */
-.brand .jf-home { display: grid; place-items: center; flex: none; padding: 3px; margin: -3px; border-radius: var(--r-m); }
-.brand .jf-home { grid-auto-flow: column; gap: 4px; padding: 4px 8px 4px 6px; font: 600 .85rem/1 var(--cond); letter-spacing: 0; color: var(--muted); border: 1px solid var(--line); }
+.brand .jf-home { display: grid; place-items: center; flex: none; margin: -3px; border-radius: var(--r-m); grid-auto-flow: column; gap: 4px; padding: 4px 8px 4px 6px; font: 600 .85rem/1 var(--cond); letter-spacing: 0; color: var(--muted); border: 1px solid var(--line); }
 .brand .jf-home .ico { width: 18px; height: 18px; }
 .brand-logo { display: block; width: 32px; height: 32px; flex: none; }
 .jf-home:hover { background: var(--accent-soft); color: var(--ink); }
@@ -89,9 +88,8 @@ h2.sec { font: 700 1.05rem var(--cond); margin: 0 0 12px; display: flex; gap: 8p
 .seg button[aria-pressed=true] { background: var(--ink); color: var(--bg); }
 .tog { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 8px 0; font-size: .92rem; cursor: pointer; }
 .tog input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.tog-ui { flex: none; width: 40px; height: 24px; border-radius: 12px; background: var(--p-line); position: relative; transition: .15s; }
+.tog-ui { flex: none; width: 40px; height: 24px; border-radius: 12px; background: var(--p-line); position: relative; transition: .15s; box-shadow: inset 0 0 0 2px var(--p-muted); }
 .tog-ui::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: .15s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
-.tog-ui { box-shadow: inset 0 0 0 2px var(--p-muted); }
 .tog input:checked + .tog-ui { background: var(--led); box-shadow: none; }
 .tog input:checked + .tog-ui::after { left: 19px; }
 .tog input:focus-visible + .tog-ui { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -101,17 +99,15 @@ h2.sec { font: 700 1.05rem var(--cond); margin: 0 0 12px; display: flex; gap: 8p
 .strip { display: flex; margin: 22px 0; border: 2px solid var(--ink); border-radius: var(--r-m); overflow-x: auto; scrollbar-width: thin; }
 .chip { flex: 1 0 auto; display: flex; align-items: baseline; justify-content: center; gap: 6px; border: 0; border-right: 2px solid var(--ink); background: none; padding: 10px 16px; font: 600 1rem var(--cond); white-space: nowrap; }
 .chip:last-child { border-right: 0; }
-.chip[aria-pressed=true] { background: var(--ink); color: var(--bg); }
+.chip[aria-pressed=true], .chip[data-on] { background: var(--ink); color: var(--bg); }
 .chip-k { font-size: .8rem; opacity: .7; }
 /* A maker's group (Nintendo ▾, Sony ▾): a menu button in the bar, its menu fixed under it (the bar scrolls sideways). */
 .con-grp { flex: 1 0 auto; display: flex; border-right: 2px solid var(--ink); }
 .con-grp:last-child { border-right: 0; }
 .con-grp > .chip { flex: 1 0 auto; border-right: 0; }
-.chip[data-on] { background: var(--ink); color: var(--bg); }
 .chip-v { font-size: .8rem; }
 .con-menu { position: fixed; z-index: 30; min-width: 210px; max-width: calc(100vw - 16px); margin: 0; padding: 4px; list-style: none;
   background: var(--surface); border: 2px solid var(--ink); border-radius: var(--r-m); box-shadow: 4px 4px 0 var(--ink); }
-.con-menu[hidden] { display: none; }
 .con-menu button { display: flex; width: 100%; align-items: baseline; justify-content: space-between; gap: 16px; border: 0; background: none;
   padding: 10px 12px; min-height: 44px; border-radius: 4px; font: 600 1rem var(--cond); text-align: left; }
 .con-menu button:hover { background: var(--line); }
@@ -160,8 +156,9 @@ aside.recent { background: var(--surface); border: 2px solid var(--ink); border-
 .loading { color: var(--muted); padding: 24px 0; }
 
 /* ---------- game sheet (dialog); a bottom sheet on phones ---------- */
-.sheet { border: 2px solid var(--ink); padding: 0; max-width: min(640px, calc(100vw - 32px)); width: 100%; background: var(--p-bg); color: var(--p-ink); border-radius: var(--r-l); }
-.sheet::backdrop { background: rgba(10, 14, 24, .55); }
+.sheet { border: 2px solid var(--ink); padding: 0; max-width: min(640px, calc(100vw - 32px)); width: 100%; background: var(--p-bg); color: var(--p-ink); border-radius: var(--r-l);
+  max-height: calc(100svh - 32px); overflow: auto; overscroll-behavior: contain; }
+.sheet::backdrop, .ask::backdrop { background: rgba(10, 14, 24, .55); }
 .sheet-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 22px; padding: 22px; }
 .sheet-txt h2 { margin: 0 34px 4px 0; font: 700 1.5rem/1.15 var(--cond); overflow-wrap: anywhere; }
 .sheet-b { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
@@ -285,14 +282,13 @@ aside.recent { background: var(--surface); border: 2px solid var(--ink); border-
 .movebox label { display: block; font-weight: 650; font-size: .9rem; margin-bottom: 6px; }
 .movebox-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .movebox select { flex: 1 1 220px; min-width: 0; min-height: 40px; border: 2px solid var(--ink); border-radius: var(--r-m); background: var(--p-raise); padding: 6px 8px; }
-.sg-err { background: #F1CBD1; border-left: 6px solid var(--danger); }
+.sg-err, .pt-warn { background: #F1CBD1; border-left: 6px solid var(--danger); }
 .saves-page .sv-when time { font-weight: 650; }
 .saves-page .sv-meta { overflow-wrap: anywhere; }
 .saves-page .svs .sv:last-child { border-bottom: 0; }
 
 /* in-page confirm dialog */
 .ask { border: 2px solid var(--ink); border-radius: var(--r-l); background: var(--p-bg); color: var(--p-ink); padding: 20px 22px; width: min(480px, calc(100vw - 32px)); }
-.ask::backdrop { background: rgba(10, 14, 24, .55); }
 .ask h2 { margin: 0 0 8px; font: 700 1.3rem/1.2 var(--cond); }
 .ask-text p { margin: 0 0 10px; overflow-wrap: anywhere; }
 .ask-field { display: flex; flex-direction: column; gap: 4px; font-weight: 650; font-size: .9rem; margin: 6px 0 4px; }
@@ -315,7 +311,6 @@ aside.recent { background: var(--surface); border: 2px solid var(--ink); border-
 .sort { display: flex; align-items: center; gap: 8px; font-size: .85rem; font-weight: 600; color: var(--muted); }
 .sort select { min-height: 36px; border: 2px solid var(--ink); border-radius: var(--r-m); background: var(--p-raise); color: var(--ink); padding: 4px 8px; font-weight: 600; }
 .btn:disabled { opacity: .55; cursor: default; box-shadow: none; }
-.sheet { max-height: calc(100svh - 32px); overflow: auto; overscroll-behavior: contain; }
 .editor { border-top: 2px solid var(--ink); padding: 18px 22px 22px; }
 .editor h3 { margin: 0 0 4px; font: 700 1.2rem/1.2 var(--cond); }
 .editor .fine { margin-top: 4px; }
@@ -338,7 +333,6 @@ aside.recent { background: var(--surface); border: 2px solid var(--ink); border-
 .editor .note { margin: 12px 0 0; }
 .ed-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; margin-top: 14px; }
 @media (max-width: 760px) {
-  .sheet { max-height: 90svh; }
   .editor { padding: 14px 16px 22px; }
   .ed-results { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
@@ -377,7 +371,6 @@ aside.recent { background: var(--surface); border: 2px solid var(--ink); border-
 .pt-label { display: block; font-weight: 700; margin: 0 0 6px; }
 .pt-field input[type=file] { max-width: 100%; padding: 8px; background: var(--p-raise); border: 2px solid var(--ink); border-radius: var(--r-m); }
 .pt-field .fine { margin-top: 6px; overflow-wrap: anywhere; }
-.pt-warn { background: #F1CBD1; border-left: 6px solid var(--danger); }
 .pt-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 0; }
 .pt-status { margin: 12px 0 0; font-weight: 650; min-height: 1.5em; overflow-wrap: anywhere; }
 @media (max-width: 760px) {

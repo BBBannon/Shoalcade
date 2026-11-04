@@ -175,7 +175,8 @@ internal fun isGamepadButton(code: Int) =
  */
 class ControllerMap(val console: Console, private val binds: Map<GameButton, List<PadInput>>) {
 
-    val buttons: List<GameButton> get() = GameButton.forConsole(console)
+    /** Fixed for the map's console, so worked out once ([PadTranslator] reads it on every controller event). */
+    val buttons: List<GameButton> = GameButton.forConsole(console)
 
     fun inputs(b: GameButton): List<PadInput> = binds[b].orEmpty()
 

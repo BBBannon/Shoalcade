@@ -1,6 +1,7 @@
 package uk.benmarks.shoalcade.desktop
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -8,6 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -16,27 +18,35 @@ import uk.benmarks.shoalcade.AutoUpload
 import uk.benmarks.shoalcade.BuildConfig
 import uk.benmarks.shoalcade.CheatSyncCore
 import uk.benmarks.shoalcade.Compat
-import uk.benmarks.shoalcade.SaveSyncCore
-import uk.benmarks.shoalcade.SaveVersion
-import uk.benmarks.shoalcade.SyncAll
-import uk.benmarks.shoalcade.SyncRename
-import uk.benmarks.shoalcade.SyncResult
-import uk.benmarks.shoalcade.SyncStore
-import uk.benmarks.shoalcade.WaitingSaves
-import androidx.compose.runtime.mutableStateListOf
-import kotlinx.coroutines.NonCancellable
+import uk.benmarks.shoalcade.Console
 import uk.benmarks.shoalcade.Game
 import uk.benmarks.shoalcade.GameSort
 import uk.benmarks.shoalcade.HttpException
 import uk.benmarks.shoalcade.JellyfinClient
 import uk.benmarks.shoalcade.LibraryPrefs
+import uk.benmarks.shoalcade.LinkLobby
+import uk.benmarks.shoalcade.LinkPrefs
+import uk.benmarks.shoalcade.LinkRules
 import uk.benmarks.shoalcade.N3dsCheck
 import uk.benmarks.shoalcade.Notices
+import uk.benmarks.shoalcade.OrphanSave
+import uk.benmarks.shoalcade.OrphanView
 import uk.benmarks.shoalcade.PlayTimeQueue
+import uk.benmarks.shoalcade.RelayHttp
+import uk.benmarks.shoalcade.RelayWire
+import uk.benmarks.shoalcade.SaveSyncCore
+import uk.benmarks.shoalcade.SaveVersion
+import uk.benmarks.shoalcade.Screenshot
 import uk.benmarks.shoalcade.ServerStatus
 import uk.benmarks.shoalcade.Session
 import uk.benmarks.shoalcade.SessionStore
 import uk.benmarks.shoalcade.Storage
+import uk.benmarks.shoalcade.SyncAll
+import uk.benmarks.shoalcade.SyncRename
+import uk.benmarks.shoalcade.SyncResult
+import uk.benmarks.shoalcade.SyncStore
+import uk.benmarks.shoalcade.WaitingSaves
+import java.io.File
 import java.io.IOException
 
 /**
@@ -106,6 +116,10 @@ class AppModel(
         private set
     var hasFavourites by mutableStateOf(false)
         private set
+    /** Settings → Display → Show Continue (D248), kept on this PC: the library's Continue card. */
+    var showContinue by mutableStateOf(ContinueCard.on(DesktopStorage.context()))
+        private set
+    fun chooseShowContinue(on: Boolean) { showContinue = on; ContinueCard.set(DesktopStorage.context(), on) }
     private var serverFeatures: List<String>? = null
 
     /** Game id → 0..1 while downloading. */
@@ -131,10 +145,15 @@ class AppModel(
         SaveSource.install()
         AutoUpload.kick = { scope.launch { uploadWaiting() } }
         session?.let { loadPrefs(it.userId) }
-        DesktopStorage.readGameList().let { games = it ?: emptyList(); gamesKnown = it != null }
+        loadCachedList()
         if (session != null) refresh()
         // D184: waiting saves go up while Shoalcade is open (every minute) and once more on exit ([beforeExit]).
         scope.launch { while (true) { delay(uploadEveryMs); uploadWaiting() } }
+    }
+
+    /** The game list kept on this PC (none yet = not known, so "Not in your library" waits for the server's). */
+    private fun loadCachedList() {
+        DesktopStorage.readGameList().let { games = it ?: emptyList(); gamesKnown = it != null }
     }
 
     private fun loadPrefs(userId: String) {
@@ -170,7 +189,7 @@ class AppModel(
         synchronized(listLock) { epoch++ }
         session = s
         loadPrefs(s.userId)
-        DesktopStorage.readGameList().let { games = it ?: emptyList(); gamesKnown = it != null }
+        loadCachedList()
         refresh()
     }
 
@@ -354,7 +373,7 @@ class AppModel(
     // ---- Downloads (Downloads.kt: progress, Cancel, the same messages) ----
 
     /** A PS2 game with no PS2 BIOS on this PC yet: the sheet says so instead of Play (plan §7). */
-    fun needsBios(g: Game) = g.console == uk.benmarks.shoalcade.Console.PS2 && Ps2.installed(DesktopStorage.context(), DesktopStorage.paths.systemDir) == null
+    fun needsBios(g: Game) = g.console == Console.PS2 && Ps2.installed(DesktopStorage.context(), DesktopStorage.paths.systemDir) == null
 
     fun canDownload(g: Game) = !offline && serverProblem == null && g.canDownload && DesktopStorage.playableHere(g.console)
 
@@ -538,11 +557,14 @@ class AppModel(
             val refused = SaveSource.refusedByPlugin(r)
             // A plugin older than 0.10.0.0 refuses Windows saves (S1): the save is fine and waits to go up.
             if (refused) session?.let { waitingSaves.add(it.userId, g) }
-            message = PcWords.of(r.message) + if (refused) " " + SaveSource.REFUSED_NOTE else ""
+            message = said(r)
             if (r is SyncResult.Conflict) conflictPrompt = ConflictAsk(g, r.server)
             diskVersion++; refreshMarks()
         }
     }
+
+    /** [r]'s words for this PC; a save the plugin refused (S1) also says it waits to go up. */
+    private fun said(r: SyncResult): String = PcWords.of(r.message) + if (SaveSource.refusedByPlugin(r)) " " + SaveSource.REFUSED_NOTE else ""
 
     /** "Upload save to Jellyfin": the version check; a conflict opens the question. */
     fun uploadSave(g: Game) = saveOp(g) { upload(g) }
@@ -647,7 +669,10 @@ class AppModel(
     /** A question before the game starts (Jellyfin's save changed) or after it closes (the upload needs a choice). */
     sealed class PlayAsk(val game: Game) {
         /** Before: Jellyfin has a different save and this PC's changed too, or bringing it would replace a newer one. */
-        class Before(game: Game, val result: SyncResult) : PlayAsk(game)
+        class Before(game: Game, val result: SyncResult) : PlayAsk(game) {
+            /** Jellyfin's save in use, as [result] found it. */
+            val server get() = (result as? SyncResult.NeedsConfirm)?.server ?: (result as? SyncResult.Conflict)?.server
+        }
         class AfterNewer(game: Game, val result: SyncResult.NeedsConfirm) : PlayAsk(game)
         class AfterBoth(game: Game, val result: SyncResult.Conflict) : PlayAsk(game)
     }
@@ -689,13 +714,13 @@ class AppModel(
         playAsk = null
         val c = core() ?: return
         scope.launch {
-            val server = (ask.result as? SyncResult.NeedsConfirm)?.server ?: (ask.result as? SyncResult.Conflict)?.server
+            val server = ask.server
             val r = when (choice) {
                 SyncAll.Choice.KEEP_PHONE -> if (ask.result is SyncResult.Conflict) c.keepPhone(ask.game, SaveSyncCore.Shown(server)) else null
                 SyncAll.Choice.KEEP_SERVER -> c.keepServer(ask.game, SaveSyncCore.Shown(server))
                 SyncAll.Choice.LATER -> null
             }
-            r?.let { message = PcWords.of(it.message) + if (SaveSource.refusedByPlugin(it)) " " + SaveSource.REFUSED_NOTE else "" }
+            r?.let { message = said(it) }
             refreshMarks(); diskVersion++
             // A refused or failed choice changed nothing: the game still starts from this PC's save, as offline.
             chooseStart(ask.game)
@@ -747,24 +772,39 @@ class AppModel(
     fun runCheck() {
         if (playing != null) { checkNote = "Close the game first."; return }
         if (n3dsJob?.isActive == true) return
-        checkNote = null
-        checkLine = "3DS check: getting ready…"
+        runCheckJob("3DS check: getting ready…", { N3dsCheckPc.store(ctx) },
+            { tick -> N3dsCheckRun(setupFor(), File(DesktopStorage.paths.dataDir, "n3ds/check"), playerArgs = playerArgs, log = playerLog()).run(tick) },
+            { "${it.result.label}. ${N3dsCheckPc.detail(it.result)} ${N3dsCheck.speedLine(it.fps)}" },
+        ) { checkNote = it }
+    }
+
+    /**
+     * One check in its own player window (the 3DS check, or the GameCube / Wii one): [ready] in the corner until the
+     * player's own lines come, a measured result kept in [store] (re-checked after an app update), and the words
+     * for it ([describe]) or the reason it stopped told through [tell] (null first: the last run's words go).
+     */
+    private fun runCheckJob(
+        ready: String,
+        store: () -> SyncStore,
+        run: suspend (onTick: (String) -> Unit) -> N3dsCheckRun.Outcome,
+        describe: (N3dsCheckRun.Outcome.Measured) -> String,
+        tell: (String?) -> Unit,
+    ) {
+        tell(null)
+        checkLine = ready
         n3dsJob = scope.launch {
-            val dir = java.io.File(DesktopStorage.paths.dataDir, "n3ds/check")
-            val run = N3dsCheckRun(setupFor(), dir, playerArgs = playerArgs, log = java.io.File(DesktopStorage.paths.logsDir, "player.log"))
-            val out = try { run.run { line -> scope.launch { checkLine = line } } } finally { checkLine = null }
-            checkNote = when (out) {
+            val out = try { run { line -> scope.launch { checkLine = line } } } finally { checkLine = null }
+            tell(when (out) {
                 is N3dsCheckRun.Outcome.Measured -> {
                     withContext(Dispatchers.IO) {
-                        N3dsCheck.save(N3dsCheckPc.store(DesktopStorage.context()), out.result, android.os.Build.FINGERPRINT,
-                            BuildConfig.VERSION_CODE.toLong(), System.currentTimeMillis())
+                        N3dsCheck.save(store(), out.result, android.os.Build.FINGERPRINT, BuildConfig.VERSION_CODE.toLong(), System.currentTimeMillis())
                     }
                     checkVersion++
-                    "${out.result.label}. ${N3dsCheckPc.detail(out.result)} ${N3dsCheck.speedLine(out.fps)}"
+                    describe(out)
                 }
                 N3dsCheckRun.Outcome.Cancelled -> N3dsCheckPc.CANCELLED
                 is N3dsCheckRun.Outcome.Failed -> out.why
-            }
+            })
         }
     }
 
@@ -774,30 +814,15 @@ class AppModel(
     var gcCheckNote by mutableStateOf<String?>(null)
         private set
 
-    fun gcCheckSaved(c: uk.benmarks.shoalcade.Console): N3dsCheck.Saved = N3dsCheck.read(GcCheckPc.store(DesktopStorage.context(), c))
+    fun gcCheckSaved(c: Console): N3dsCheck.Saved = N3dsCheck.read(GcCheckPc.store(DesktopStorage.context(), c))
 
-    fun runGcCheck(c: uk.benmarks.shoalcade.Console) {
+    fun runGcCheck(c: Console) {
         if (playing != null) { gcCheckNote = "Close the game first."; return }
         if (n3dsJob?.isActive == true || checkRunning) return
-        gcCheckNote = null
-        checkLine = "${GcCheckPc.name(c)} check: getting ready…"
-        n3dsJob = scope.launch {
-            val dir = java.io.File(DesktopStorage.paths.dataDir, "gc-check/${c.key}")
-            val run = GcCheckRun(setupFor(), dir, c, playerArgs = playerArgs, log = java.io.File(DesktopStorage.paths.logsDir, "player.log"))
-            val out = try { run.run { line -> scope.launch { checkLine = line } } } finally { checkLine = null }
-            gcCheckNote = when (out) {
-                is N3dsCheckRun.Outcome.Measured -> {
-                    withContext(Dispatchers.IO) {
-                        N3dsCheck.save(GcCheckPc.store(DesktopStorage.context(), c), out.result, android.os.Build.FINGERPRINT,
-                            BuildConfig.VERSION_CODE.toLong(), System.currentTimeMillis())
-                    }
-                    checkVersion++
-                    "${out.result.label}. ${GcCheckPc.detail(c, out.result)} ${GcCheckPc.speedLine(out.fps, GcCheckPc.targetFps(c))}"
-                }
-                N3dsCheckRun.Outcome.Cancelled -> N3dsCheckPc.CANCELLED
-                is N3dsCheckRun.Outcome.Failed -> out.why
-            }
-        }
+        runCheckJob("${GcCheckPc.name(c)} check: getting ready…", { GcCheckPc.store(ctx, c) },
+            { tick -> GcCheckRun(setupFor(), File(DesktopStorage.paths.dataDir, "gc-check/${c.key}"), c, playerArgs = playerArgs, log = playerLog()).run(tick) },
+            { "${it.result.label}. ${GcCheckPc.detail(c, it.result)} ${GcCheckPc.speedLine(it.fps, GcCheckPc.targetFps(c))}" },
+        ) { gcCheckNote = it }
     }
 
     // ---- Link play (docs/windows/phase5-link.md) ----
@@ -806,8 +831,8 @@ class AppModel(
     var linkGame by mutableStateOf<Game?>(null)
 
     /** Internet link (GBA): only when the plugin has `link-relay` and Jellyfin can be reached (the phone's rule). */
-    fun linkRelay(): uk.benmarks.shoalcade.RelayHttp? =
-        if (serverFeatures?.contains(uk.benmarks.shoalcade.RelayWire.FEATURE) == true && !offline && session != null) client().linkRelay() else null
+    fun linkRelay(): RelayHttp? =
+        if (serverFeatures?.contains(RelayWire.FEATURE) == true && !offline && session != null) client().linkRelay() else null
 
     /**
      * Why this game can't link now, or null. The phone's LinkDialog rule: GBA link plays on gpSP, which always writes a
@@ -816,11 +841,11 @@ class AppModel(
     fun linkProblem(g: Game): String? {
         val s = session ?: return "Log in first."
         val console = g.console ?: return "Unknown console."
-        if (!uk.benmarks.shoalcade.LinkRules.supports(console)) return "Link play is for GBA and DS games."
+        if (!LinkRules.supports(console)) return "Link play is for GBA and DS games."
         val rom = Storage.romFile(g) ?: return "Download the game first."
-        if (console != uk.benmarks.shoalcade.Console.GBA) return null
-        val code = runCatching { uk.benmarks.shoalcade.LinkRules.gbaGameCode(uk.benmarks.shoalcade.LinkLobby.romHeader(rom)) }.getOrNull()
-        return uk.benmarks.shoalcade.LinkRules.gbaSaveProblem(code, Storage.readSave(s.userId, g)?.size)
+        if (console != Console.GBA) return null
+        val code = runCatching { LinkRules.gbaGameCode(LinkLobby.romHeader(rom)) }.getOrNull()
+        return LinkRules.gbaSaveProblem(code, Storage.readSave(s.userId, g)?.size)
     }
 
     /** The link is made (the lobby's [PcLinkLobby.take]): the game starts linked, from its save. */
@@ -842,11 +867,11 @@ class AppModel(
         val setup = setupFor()
         lateinit var p: Playing
         val ps = PlaySession(g, s.userId, c, syncStore, waitingSaves, snaps, setup,
-            java.io.File(DesktopStorage.paths.dataDir, "play/${s.userId}"), screenshotDir(),
+            File(DesktopStorage.paths.dataDir, "play/${s.userId}"), screenshotDir(),
             autoUpload = { AutoUpload.on(autoStore) && session != null },
-            cheatSync = if (hasCheats && !offline) client().let { cl -> CheatSyncCore(cl) { Compat.ensure(cl, s.serverUrl) } } else null,
+            cheatSync = cheatSync(s),
             scope = scope, onNote = { n -> scope.launch { p.notes += n; message = n } },
-            link = link, dsMac = uk.benmarks.shoalcade.LinkPrefs.dsMac(DesktopStorage.context()))
+            link = link, dsMac = LinkPrefs.dsMac(DesktopStorage.context()))
         p = Playing(g, ps)
         playing = p
         scope.launch {
@@ -854,7 +879,7 @@ class AppModel(
                 val prep = ps.prepare(snapshot, snapshotsEnabled, offered)
                 prep.notes.forEach { message = it }
                 val player = withContext(Dispatchers.IO) {
-                    PlayerClient.launch(setup.player, playerArgs, log = java.io.File(DesktopStorage.paths.logsDir, "player.log"))
+                    PlayerClient.launch(setup.player, playerArgs, log = playerLog())
                 }
                 val watch = launch { while (true) { p.phase = ps.phase; delay(100) } }
                 try { ps.run(player, prep) } finally { watch.cancel(); p.phase = PlaySession.Phase.ENDED }
@@ -889,9 +914,13 @@ class AppModel(
         val console = g.console?.takeIf { CheatEditor.allowed(it) } ?: return null
         val s = session ?: return null
         playing?.takeIf { it.game.id == g.id }?.let { p -> return p.session.cheatHost?.let { CheatEditor(console, it) } }
-        val sync = if (hasCheats && !offline) client().let { cl -> CheatSyncCore(cl) { Compat.ensure(cl, s.serverUrl) } } else null
+        val sync = cheatSync(s)
         return CheatEditor(console, PcCheatHost(s.userId, g.id, scope, sync))
     }
+
+    /** Cheat sync with Jellyfin, with the version check (null = offline or no cheats on the server). */
+    private fun cheatSync(s: Session): CheatSyncCore? =
+        if (hasCheats && !offline) client().let { cl -> CheatSyncCore(cl) { Compat.ensure(cl, s.serverUrl) } } else null
 
     /** Close Game / Close Game (and Upload) from the shell's bar while a game is open. */
     fun closeGame(upload: Boolean) { playing?.session?.requestClose(upload) }
@@ -906,7 +935,7 @@ class AppModel(
                 SyncAll.Choice.KEEP_SERVER -> c.keepServer(ask.game)
                 SyncAll.Choice.LATER -> null
             }
-            message = r?.let { PcWords.of(it.message) + if (SaveSource.refusedByPlugin(it)) " " + SaveSource.REFUSED_NOTE else "" }
+            message = r?.let { said(it) }
                 ?: if (ask is PlayAsk.AfterBoth) "Not uploaded. Your save is kept on this PC; tap ⚠️ in the library to choose."
                 else "Not uploaded. Your save is kept on this PC."
             if (r != null && SaveSource.refusedByPlugin(r)) session?.let { waitingSaves.add(it.userId, ask.game) }
@@ -914,17 +943,19 @@ class AppModel(
         }
     }
 
-    private fun screenshotDir(): java.io.File = java.io.File(System.getProperty("user.home") ?: ".", "Pictures/${uk.benmarks.shoalcade.Screenshot.FOLDER}")
+    private fun playerLog() = File(DesktopStorage.paths.logsDir, "player.log")
+
+    private fun screenshotDir(): File = File(System.getProperty("user.home") ?: ".", "Pictures/${Screenshot.FOLDER}")
 
     // ---- Not in your library (B9): saves on this PC for games no longer listed; and Jellyfin's removed games ----
 
-    suspend fun orphanSaves(): uk.benmarks.shoalcade.OrphanView {
+    suspend fun orphanSaves(): OrphanView {
         val c = core()
         val listed = games.map { it.id }.toSet()
-        return withContext(Dispatchers.IO) { uk.benmarks.shoalcade.OrphanView.load(gamesKnown, c?.let { core -> { core.orphanSaves(listed) } }) }
+        return withContext(Dispatchers.IO) { OrphanView.load(gamesKnown, c?.let { core -> { core.orphanSaves(listed) } }) }
     }
 
-    fun uploadOrphan(o: uk.benmarks.shoalcade.OrphanSave, target: Game, mode: String, done: (SyncResult) -> Unit) {
+    fun uploadOrphan(o: OrphanSave, target: Game, mode: String, done: (SyncResult) -> Unit) {
         val c = core() ?: return done(SyncResult.Failed("Not logged in."))
         scope.launch { val r = c.uploadOrphan(o, target, mode); diskVersion++; refreshMarks(); done(r) }
     }

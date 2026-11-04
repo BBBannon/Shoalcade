@@ -137,6 +137,11 @@ interface DisplayChoices {
     fun setDs(landscape: Boolean, layout: DsLayout)
     fun swap(landscape: Boolean): Boolean
     fun setSwap(landscape: Boolean, on: Boolean)
+    /**
+     * D245 Smooth picture, per console. On (the default) is LibretroDroid's own default look, which is already
+     * smoothed (bilinear), so nothing changes for anyone who never touches it; off shows crisp pixels.
+     */
+    var smooth: Boolean
 }
 
 class InMemoryDisplay : DisplayChoices {
@@ -147,4 +152,5 @@ class InMemoryDisplay : DisplayChoices {
     override fun setDs(landscape: Boolean, layout: DsLayout) { ds[landscape] = layout }
     override fun swap(landscape: Boolean) = swap[landscape] ?: false
     override fun setSwap(landscape: Boolean, on: Boolean) { swap[landscape] = on }
+    override var smooth = true
 }

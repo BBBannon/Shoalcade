@@ -304,21 +304,7 @@ public abstract class ShoalcadeControllerBase : ControllerBase
 
     /// <summary>Deletes a temp file if it is still there (a failure is left for the next tidy-up).</summary>
     /// <param name="path">File.</param>
-    protected static void TryDeleteFile(string path)
-    {
-        try
-        {
-            System.IO.File.Delete(path);
-        }
-        catch (IOException)
-        {
-            // Left for the next tidy-up.
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // Left for the next tidy-up.
-        }
-    }
+    protected static void TryDeleteFile(string path) => AtomicFile.TryDelete(path);
 
     private ObjectResult TooBig() => Fail(StatusCodes.Status413PayloadTooLarge, "too_big", "That file is too big.");
 

@@ -2,9 +2,7 @@ package uk.benmarks.shoalcade.desktop
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import uk.benmarks.shoalcade.BuildConfig
 import uk.benmarks.shoalcade.Console
 import uk.benmarks.shoalcade.N3dsCheck
@@ -99,22 +97,9 @@ class GcCheckRun(private val setup: PlayerSetup, private val dir: File, private 
         val start = StartRequest(console = console.key, core = core, rom = scene, saveFolder = File(dir, "save"),
             systemDir = setup.systemDir, title = "$name check", check = StartRequest.Check(warmUp, measure, target),
             snapshotsAllowed = false, cheatsAllowed = false, canUpload = false)
-        val p = withContext(Dispatchers.IO) { PlayerClient.launch(setup.player, playerArgs, log = log) }
-        var result: PlayerEvent.Message? = null
-        var fatal: String? = null
-        try {
-            p.events.collect { e ->
-                if (e !is PlayerEvent.Message) return@collect
-                when (e.type) {
-                    "hello" -> p.start(start)
-                    "checkTick" -> onTick(if (e.string("phase") == "warmUp") "$name check: warming up… ${e.long("left") ?: 0} s"
-                        else "$name check: measuring… ${e.long("left") ?: 0} s · ${e.long("fps") ?: 0} fps")
-                    "checkResult" -> result = e
-                    "error" -> if (e.bool("fatal") == true) fatal = e.string("message")
-                }
-            }
-        } finally {
-            withContext(NonCancellable) { withTimeoutOrNull(10_000) { p.close() } }
+        val (result, fatal) = runCheckPlayer(setup, playerArgs, log, start) { e ->
+            onTick(if (e.string("phase") == "warmUp") "$name check: warming up… ${e.long("left") ?: 0} s"
+                else "$name check: measuring… ${e.long("left") ?: 0} s · ${e.long("fps") ?: 0} fps")
         }
         val r = result ?: return N3dsCheckRun.Outcome.Failed("The $name engine couldn't start on this PC. Nothing changed." +
             (fatal?.let { " ($it)" } ?: ""))

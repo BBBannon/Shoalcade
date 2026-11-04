@@ -25,8 +25,7 @@ object ConsoleBar {
 
     /** Bar items in platform order ([GameSort.PLATFORM_ORDER]) for the consoles in [have]; a maker's menu sits where its first console is. */
     fun items(have: Collection<Console>): List<Item> {
-        val shown = Console.entries.filter { it in have }
-            .sortedBy { GameSort.PLATFORM_ORDER.indexOf(it).let { i -> if (i < 0) Int.MAX_VALUE else i } }
+        val shown = Console.entries.filter { it in have }.sortedBy { GameSort.platformRank(it) }
         val out = mutableListOf<Item>()
         val seen = mutableSetOf<Maker>()
         for (c in shown) {
@@ -50,8 +49,9 @@ object ConsoleBar {
     /** TalkBack: what the chip shows now and that it opens a list. */
     fun description(menu: Item.Menu, filter: ConsoleFilter): String {
         val m = menu.maker.label
+        val p = picked(menu, filter)
         return when {
-            picked(menu, filter) != null -> "$m consoles, showing ${picked(menu, filter)!!.shortName}. Tap to choose another."
+            p != null -> "$m consoles, showing ${p.shortName}. Tap to choose another."
             filter == ConsoleFilter.Group(menu.maker) -> "$m consoles, showing all $m games. Tap to choose a console."
             else -> "$m consoles. Tap to choose."
         }

@@ -8,6 +8,7 @@
   "use strict";
 
   const api = window.SC.api;
+  const message = window.SC.ui.message;
   const $ = id => document.getElementById(id);
   const BIG = 300 * 1024 * 1024;
 
@@ -45,7 +46,7 @@
         $("signed-out-text").textContent = e.message;
         show("signed-out");
       } else {
-        $("failed-text").textContent = e && e.message ? e.message : String(e);
+        $("failed-text").textContent = message(e);
         show("failed");
       }
     }
@@ -133,7 +134,7 @@
     if (code === "xdelta_bad" || code === "xz_bad") return "This xdelta patch looks damaged or incomplete. Try downloading it again.";
     if (code === "Target ROM checksum mismatch") return "The patched game didn't match what the patch expects, so it wasn't saved. Check you picked the game file the patch was made for (the same version and region).";
     if (e instanceof RangeError || (e && e.name === "RangeError")) return "Your browser ran out of memory. Close other tabs and try again, or use a computer with more memory.";
-    return "Couldn't patch the game: " + (e && e.message ? e.message : String(e));
+    return "Couldn't patch the game: " + message(e);
   }
 
   async function run(force) {

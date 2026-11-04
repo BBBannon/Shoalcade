@@ -80,13 +80,7 @@ object AutoUpload {
     // --- Android wiring -----------------------------------------------------------------------
 
     /** Per-phone store: the switch and the waiting saves. Not secret (no token, only game ids and names). */
-    fun store(ctx: Context): SyncStore = object : SyncStore {
-        private val prefs = ctx.applicationContext.getSharedPreferences("autoupload", Context.MODE_PRIVATE)
-        override fun get(key: String): String? = try { prefs.getString(key, null) } catch (_: ClassCastException) { null }
-        override fun set(key: String, value: String?) {
-            prefs.edit().apply { if (value == null) remove(key) else putString(key, value) }.apply()
-        }
-    }
+    fun store(ctx: Context): SyncStore = prefsStore(ctx, "autoupload")
 
     fun on(ctx: Context) = on(store(ctx))
 

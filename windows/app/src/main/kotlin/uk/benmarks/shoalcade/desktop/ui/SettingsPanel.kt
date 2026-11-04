@@ -22,11 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.Monitor
-import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.Speed
-import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -68,8 +63,10 @@ import uk.benmarks.shoalcade.Game
 import uk.benmarks.shoalcade.ServerStatus
 import uk.benmarks.shoalcade.SettingsModel
 import uk.benmarks.shoalcade.desktop.AppModel
+import uk.benmarks.shoalcade.desktop.ContinueCard
 import uk.benmarks.shoalcade.desktop.DesktopStorage
 import uk.benmarks.shoalcade.desktop.N3dsCheckPc
+import uk.benmarks.shoalcade.desktop.PadSettings
 import uk.benmarks.shoalcade.desktop.PictureSize
 import uk.benmarks.shoalcade.desktop.Ps2
 
@@ -79,11 +76,11 @@ import uk.benmarks.shoalcade.desktop.Ps2
  */
 enum class SettingsTab(val label: String, val icon: ImageVector) {
     ACCOUNT(SettingsModel.ACCOUNT, Icons.Outlined.AccountCircle),
-    SAVES("Saves", Icons.Outlined.Save),
-    DISPLAY("Display", Icons.Outlined.Monitor),
-    PS2("PS2", Icons.Outlined.SportsEsports),
-    LINK(CelioText.HEADING, Icons.Outlined.Link),
-    CHECK(N3dsCheckPc.TITLE, Icons.Outlined.Speed),
+    SAVES("Saves", PocketIcons.Save),
+    DISPLAY("Display", PocketIcons.Monitor),
+    PS2("PS2", PocketIcons.SportsEsports),
+    LINK(CelioText.HEADING, PocketIcons.Link),
+    CHECK(N3dsCheckPc.TITLE, PocketIcons.Speed),
     ABOUT("About", Icons.Outlined.Info),
 }
 
@@ -140,7 +137,7 @@ fun SettingsPanel(vm: AppModel, connected: Boolean, tab: SettingsTab, onTab: (Se
                             PocketButton({ onClose(); vm.logout() }, Modifier.padding(top = 8.dp)) { Text(SettingsModel.LOG_OUT) }
                         }
                         SettingsTab.SAVES -> PanelSection("Saves") { SavesSettingsContent(vm, onOpenSaves, onClose) }
-                        SettingsTab.DISPLAY -> PanelSection(PictureSize.TITLE) { PictureSizeRows() }
+                        SettingsTab.DISPLAY -> DisplaySettings(vm)
                         SettingsTab.PS2 -> Ps2Settings()
                         SettingsTab.LINK -> PanelSection(CelioText.HEADING) { LinkSettingsContent() }
                         SettingsTab.CHECK -> PanelSection(N3dsCheckPc.TITLE) { N3dsCheckContent(vm) }
@@ -179,6 +176,29 @@ private fun PanelSection(title: String?, content: @Composable ColumnScope.() -> 
         if (title != null) Text(title, modifier = Modifier.padding(bottom = 4.dp).semantics { heading() },
             style = MaterialTheme.typography.bodyLarge.copy(fontSize = Pocket.rem(0.88f), fontWeight = FontWeight.SemiBold))
         content()
+    }
+}
+
+/**
+ * Display: Picture size; the library's Continue card (D248); the controller's rumble (D246) and shortcuts (D247).
+ * All kept on this PC; the controller switches count from the next game started.
+ */
+@Composable
+private fun DisplaySettings(vm: AppModel) {
+    val ctx = remember { DesktopStorage.context() }
+    var version by remember { mutableIntStateOf(0) }
+    PanelSection(PictureSize.TITLE) { PictureSizeRows() }
+    PanelSection("Library") {
+        PocketToggleRow(ContinueCard.SETTING, vm.showContinue, { vm.chooseShowContinue(it) })
+        Text(ContinueCard.HELP, style = MaterialTheme.typography.bodySmall, color = Pocket.PMuted)
+    }
+    PanelSection(PadSettings.TITLE) {
+        val rumble = remember(version) { PadSettings.rumble(ctx) }
+        val shortcuts = remember(version) { PadSettings.shortcuts(ctx) }
+        PocketToggleRow(PadSettings.RUMBLE, rumble, { PadSettings.setRumble(ctx, it); version++ })
+        Text(PadSettings.RUMBLE_HELP, style = MaterialTheme.typography.bodySmall, color = Pocket.PMuted)
+        PocketToggleRow(PadSettings.SHORTCUTS, shortcuts, { PadSettings.setShortcuts(ctx, it); version++ })
+        Text(PadSettings.SHORTCUTS_LIST, style = MaterialTheme.typography.bodySmall, color = Pocket.PMuted)
     }
 }
 

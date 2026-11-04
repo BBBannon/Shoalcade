@@ -110,28 +110,8 @@
     trash: ["M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"],
     pad: ["M6 8h12a4 4 0 0 1 4 4v1a4 4 0 0 1-7 2.6L14 14h-4l-1 1.6A4 4 0 0 1 2 13v-1a4 4 0 0 1 4-4z", "M7 10.5v3M5.5 12h3"],
   };
-  function icon(name) {
-    const NS = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(NS, "svg");
-    svg.setAttribute("class", "ico");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("aria-hidden", "true");
-    for (const d of ICONS[name]) {
-      const p = document.createElementNS(NS, "path");
-      p.setAttribute("d", d);
-      svg.append(p);
-    }
-    return svg;
-  }
-
-  let toastTimer = 0;
-  function toast(msg) {
-    const t = $("toast");
-    t.textContent = msg;
-    t.classList.add("on");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove("on"), 2800);
-  }
+  const icon = name => window.SC.ui.icon(ICONS[name]);
+  const toast = msg => window.SC.ui.toast(msg, 2800);
 
   function when(iso) {
     const d = new Date(iso);
@@ -370,22 +350,20 @@
   async function screenshot() {
     try {
       const png = await player.screenshot();
-      if (api.inFrame) {
-        // M3: a sandboxed frame can't download; the player page saves it (PNG only).
-        const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
-        const name = (player.game ? player.game.name : "game").replace(/[\\/:*?"<>|]+/g, "").trim().slice(0, 80) || "game";
-        api.shell.post({ t: "download", name: name + " " + stamp + ".png", bytes: png instanceof Uint8Array ? png : new Uint8Array(png) });
-        toast("Screenshot saved to your downloads.");
-        return;
-      }
-      const url = URL.createObjectURL(new Blob([png], { type: "image/png" }));
       const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
       const name = (player.game ? player.game.name : "game").replace(/[\\/:*?"<>|]+/g, "").trim().slice(0, 80) || "game";
-      const a = h("a", { href: url, download: name + " " + stamp + ".png", hidden: true });
-      body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      const file = name + " " + stamp + ".png";
+      if (api.inFrame) {
+        // M3: a sandboxed frame can't download; the player page saves it (PNG only).
+        api.shell.post({ t: "download", name: file, bytes: png instanceof Uint8Array ? png : new Uint8Array(png) });
+      } else {
+        const url = URL.createObjectURL(new Blob([png], { type: "image/png" }));
+        const a = h("a", { href: url, download: file, hidden: true });
+        body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      }
       toast("Screenshot saved to your downloads.");
     } catch (e) { toast("Couldn't take a screenshot: " + e.message); }
   }
@@ -639,18 +617,20 @@
     const list = $("snaps");
     const msg = $("snap-msg");
     const say = text => { msg.textContent = text; msg.hidden = !text; };
-    if (!player.itemId || !player.info) { say("Loading…"); list.replaceChildren(); return; }
-    if (!snapsOn()) { say("Snapshots are off for this console. Your normal save still works."); list.replaceChildren(); return; }
-    if (playing() && !player.supportsSnapshots) { say("This emulator can't make snapshots of this game."); list.replaceChildren(); return; }
+    const none = text => { say(text); list.replaceChildren(); };
+    const OFF = "Snapshots are off for this console. Your normal save still works.";
+    if (!player.itemId || !player.info) { none("Loading…"); return; }
+    if (!snapsOn()) { none(OFF); return; }
+    if (playing() && !player.supportsSnapshots) { none("This emulator can't make snapshots of this game."); return; }
     let data;
     try {
       data = await player.snapshots();
     } catch (e) {
-      if (seq === snapSeq) { say("Couldn't load your snapshots: " + e.message); list.replaceChildren(); }
+      if (seq === snapSeq) none("Couldn't load your snapshots: " + e.message);
       return;
     }
     if (seq !== snapSeq) return;
-    if (!data.enabled) { say("Snapshots are off for this console. Your normal save still works."); list.replaceChildren(); return; }
+    if (!data.enabled) { none(OFF); return; }
     // D81/D221: Game Boy snapshots from the old gambatte core can never load in mGBA. They show in their slot with a
     // note and are kept (the server never replaces them) until deleted on purpose.
     const all = data.snapshots || [];
@@ -672,17 +652,22 @@
     return !!(s && typeof s.core === "string" && /^gambatte/i.test(s.core));
   }
 
+  function snapLabel(slot) { return slot === "auto" ? "Automatic" : "Slot " + slot; }
+
+  /** Fills pic with a snapshot's picture once it has loaded (the object URL is freed on the next list). */
+  function snapPicture(pic, slot, failed) {
+    player.snapshotImage(slot).then(blob => {
+      const url = URL.createObjectURL(blob);
+      S.snapUrls.push(url);
+      pic.replaceChildren(h("img", { src: url, alt: "" }));
+    }).catch(failed || (() => {}));
+  }
+
   function snapRow(slot, info) {
-    const label = slot === "auto" ? "Automatic" : "Slot " + slot;
+    const label = snapLabel(slot);
     const damaged = !!(info && info.damaged);
     const pic = h("div", { class: "snap-pic" }, damaged ? "Damaged" : info ? null : "Empty");
-    if (info && info.hasImage && !damaged) {
-      player.snapshotImage(slot).then(blob => {
-        const url = URL.createObjectURL(blob);
-        S.snapUrls.push(url);
-        pic.replaceChildren(h("img", { src: url, alt: "" }));
-      }).catch(() => {});
-    }
+    if (info && info.hasImage && !damaged) snapPicture(pic, slot);
     const otherCore = info && info.core && info.core !== player.snapshotCore;
     const oldEngine = isOldGambatte(info);
     const meta = !info ? (slot === "auto" ? "Taken when you leave the game or switch to another tab" : "Empty")
@@ -952,8 +937,9 @@
   for (const b of document.querySelectorAll("[data-ctab]")) {
     b.addEventListener("click", () => { S.ctlTab = b.dataset.ctab; stopListening(); renderControls(); });
   }
-  window.addEventListener("gamepadconnected", () => { if (panelOpen() && S.tab === "controls" && S.ctlTab === "pad") renderControls(); });
-  window.addEventListener("gamepaddisconnected", () => { if (panelOpen() && S.tab === "controls" && S.ctlTab === "pad") renderControls(); });
+  const padChanged = () => { if (panelOpen() && S.tab === "controls" && S.ctlTab === "pad") renderControls(); };
+  window.addEventListener("gamepadconnected", padChanged);
+  window.addEventListener("gamepaddisconnected", padChanged);
 
   $("ctl-reset").addEventListener("click", async () => {
     const scope = S.ctlConsole;
@@ -1270,21 +1256,13 @@
   });
 
   // ----- Launch choice (D90): "Continue from save" (default) or one of the game's snapshots -----
-  function snapLabel(slot) { return slot === "auto" ? "Automatic" : "Slot " + slot; }
-
   function renderLaunch() {
     const snaps = player.launchSnapshots || [];
     $("sc-start-lbl").textContent = snaps.length ? "Continue from save" : "Play";
     $("launch").hidden = snaps.length === 0;
     $("launch-snaps").replaceChildren(...snaps.map(info => {
       const pic = h("span", { class: "snap-pic", "aria-hidden": "true" }, info.hasImage ? null : "No picture");
-      if (info.hasImage) {
-        player.snapshotImage(info.slot).then(blob => {
-          const url = URL.createObjectURL(blob);
-          S.snapUrls.push(url);
-          pic.replaceChildren(h("img", { src: url, alt: "" }));
-        }).catch(() => { pic.textContent = "No picture"; });
-      }
+      if (info.hasImage) snapPicture(pic, info.slot, () => { pic.textContent = "No picture"; });
       const label = snapLabel(info.slot);
       const time = when(info.created);
       const b = h("button", { type: "button", class: "launch-snap", "aria-label": "Load snapshot: " + label + ", " + time },

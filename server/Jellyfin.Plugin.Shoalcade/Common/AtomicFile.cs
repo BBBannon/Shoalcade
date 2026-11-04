@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -96,19 +97,37 @@ internal static class AtomicFile
         }
     }
 
-    private static void TryDelete(string path)
+    /// <summary>
+    /// Moves a damaged file aside as <c>{path}.damaged-{yyyyMMddHHmmss}</c> (then <c>-2</c>, <c>-3</c>… if taken), so the
+    /// store can start afresh while the old contents are kept. An earlier kept copy is never replaced.
+    /// </summary>
+    /// <param name="path">The damaged file.</param>
+    /// <param name="now">Time for the copy's name.</param>
+    /// <returns>Where the copy was kept.</returns>
+    public static string KeepDamaged(string path, DateTimeOffset now)
+    {
+        var stamp = now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+        var keep = path + ".damaged-" + stamp;
+        for (var n = 2; File.Exists(keep); n++)
+        {
+            keep = path + ".damaged-" + stamp + "-" + n.ToString(CultureInfo.InvariantCulture);
+        }
+
+        File.Move(path, keep);
+        return keep;
+    }
+
+    /// <summary>Deletes a file if it can; a failure (e.g. a file held open by antivirus) is ignored and left for the next tidy-up.</summary>
+    /// <param name="path">File.</param>
+    public static void TryDelete(string path)
     {
         try
         {
             File.Delete(path);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Left for the next CleanTemps.
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // Left for the next CleanTemps.
+            // Left for the next tidy-up.
         }
     }
 }

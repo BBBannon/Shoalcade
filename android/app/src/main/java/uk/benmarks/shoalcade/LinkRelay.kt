@@ -219,7 +219,7 @@ class RelayHttp(
             if (code !in 200..299) {
                 val (_, message) = error(c)
                 throw RelayRefusedException(when {
-                    code == 401 -> "Your login has expired. Please log in again."
+                    code == 401 -> LOGIN_EXPIRED
                     message != null && code in listOf(404, 409, 410, 422, 429, 503) -> message
                     code == 404 -> "This Jellyfin's Shoalcade plugin can't do internet link play. Update the plugin."
                     else -> "Jellyfin refused the link (error $code)."
@@ -247,7 +247,7 @@ class RelayHttp(
         when (code) {
             429 -> throw RelayBusyException()
             404, 409, 410 -> throw RelayGoneException(message ?: RelayWire.ENDED)
-            401 -> throw RelayGoneException("Your login has expired. Please log in again.")
+            401 -> throw RelayGoneException(LOGIN_EXPIRED)
             else -> throw IOException("Jellyfin error $code ${err ?: ""}".trim())
         }
     }
@@ -256,6 +256,10 @@ class RelayHttp(
         val o = JSONObject(c.errorStream?.bufferedReader()?.use { it.readText() } ?: "{}")
         o.optString("error").ifEmpty { null } to o.optString("message").ifEmpty { null }
     }.getOrDefault(null to null)
+
+    private companion object {
+        const val LOGIN_EXPIRED = "Your login has expired. Please log in again."
+    }
 }
 
 /** Timings for [RelayPipe] (tests shrink them). */
@@ -384,7 +388,7 @@ class RelayPipe(
             synchronized(lock) {
                 lost?.let { throw IOException(it) }
                 if (closed) throw IOException(RelayWire.ENDED)
-                if (outQ.size() + len > timings.maxQueued) { loseLocked("The link was too slow, so it stopped."); throw IOException(lost) }
+                if (outQ.size() + len > timings.maxQueued) { loseLocked(TOO_SLOW); throw IOException(lost) }
                 outQ.write(b, off, len)
                 lock.notifyAll()
             }
@@ -459,7 +463,7 @@ class RelayPipe(
         when (r.type) {
             RelayWire.DATA -> synchronized(lock) {
                 if (inEnded) return true // the joiner it came from has left
-                if (inBytes + r.payload.size > timings.maxQueued) { loseLocked("The link was too slow, so it stopped."); return false }
+                if (inBytes + r.payload.size > timings.maxQueued) { loseLocked(TOO_SLOW); return false }
                 inQ.addLast(r.payload)
                 inBytes += r.payload.size
                 lock.notifyAll()
@@ -544,6 +548,11 @@ class RelayPipe(
             }
         }
         return null
+    }
+
+    private companion object {
+        /** The other side stopped reading: more than [RelayTimings.maxQueued] bytes waiting either way. */
+        const val TOO_SLOW = "The link was too slow, so it stopped."
     }
 }
 

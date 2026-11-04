@@ -18,11 +18,10 @@
 
 #include "console.h"
 #include "nlohmann/json.hpp"
+#include "pad_shortcuts.h"
 #include "remap.h"
 
 namespace sc {
-enum class Hotkey { None, Pause, FastForward, QuickSave, QuickLoad, Screenshot, Fullscreen, Rewind, Menu, Flip };
-
 class Input {
 public:
     static constexpr int kPorts = 4;
@@ -35,7 +34,10 @@ public:
     /** Called from the core's input_poll. `game` = the picture's place in window coordinates (mouse = touch). */
     void poll(SDL_FRect game, bool window_focused);
     int16_t state(unsigned port, unsigned device, unsigned index, unsigned id) const;
+    /** False (and no rumble) when the person switched Controller rumble off (D246), or on the N64. */
     bool rumble(unsigned port, unsigned effect, uint16_t strength);
+    bool rumble_on() const { return rumble_on_; }
+    bool pad_shortcuts_on() const { return pad_shortcuts_; }
     /** Test hook: hold a button on a port (button = Shoalcade name, e.g. "A") until released. */
     bool force_button(unsigned port, const std::string &name, bool on);
     /** Test hook: the mouse held at window (x, y), button down or up, instead of the real mouse; off = real mouse. */
@@ -49,7 +51,6 @@ public:
     };
     PointerSeen pointer_seen() const { return seen_; }
     int ports() const { return players_; }
-    bool pressure_cross() const { return pressure_cross_; }
     void close();
 
     /**
@@ -80,8 +81,6 @@ public:
     /** The words for one game button on this console ("Cross", "C-stick up"), or for a shortcut. */
     std::string button_words(const std::string &name) const;
     std::string shortcut_words(const std::string &name) const;
-    bool is_button(const std::string &name) const { return targets_.count(name) > 0; }
-    bool is_shortcut(const std::string &name) const;
     /** One result of a change, for the note the menu shows. `taken` = words for what lost it ("B", "pause"). */
     struct Change {
         bool ok = false;
@@ -104,9 +103,8 @@ public:
     /** A controller button / axis as a `controls.gamepad` name ("south", "l2", "a0-"), or "" for one that can't be used. */
     static std::string pad_input_of_button(SDL_GamepadButton b);
     static std::string pad_input_of_axis(SDL_GamepadAxis a, bool positive);
-    /** The plain words for a key ("Z", "Up arrow") and a controller input ("right button"). */
+    /** The plain words for a key ("Z", "Up arrow"). */
     static std::string key_words(const std::string &code);
-    static std::string pad_words(const std::string &input);
 
 private:
     struct Target {
@@ -133,12 +131,19 @@ private:
         int slot = 0;
         uint16_t strong = 0, weak = 0;
         std::string model, name;
+        PadCombo combo;                                     // D247: Select + R1 / L1 / R2 / L2
         std::map<std::string, std::vector<PadSource>> map; // this controller model's buttons
         Names names;                                        // the same, as configured (for the words)
     };
 
+    /** The player a controller plays as (N64: its own slot; every other console: player 1). */
+    int port_of(const Pad &p) const { return players_ > 1 ? p.slot : 0; }
     float key_level(const std::vector<SDL_Scancode> &keys, const bool *ks) const;
-    float pad_level(const std::vector<PadSource> &srcs, SDL_Gamepad *pad, bool analog) const;
+    float pad_level(const std::vector<PadSource> &srcs, const Pad &pad, bool analog) const;
+    /** A source the game doesn't get now: a shoulder or trigger held for a controller shortcut (D247). */
+    static bool kept_from_game(const Pad &pad, const PadSource &src);
+    /** D247: a shoulder / trigger change on a controller; returns the shortcut it fires. */
+    Hotkey pad_combo(SDL_JoystickID id, PadCombo::Part part, float level);
     void add_pad(SDL_JoystickID id);
     void remove_pad(SDL_JoystickID id);
     /** keys_ / hotkeys_ from key_names_ / hot_names_ (after configure and every change). */
@@ -162,6 +167,8 @@ private:
     SDL_JoystickID shown_pad_ = 0;     // the controller the Controls list shows (0 = the newest connected)
     bool blocked_ = false, pointer_blocked_ = false;
     bool pressure_cross_ = false; // P4b: the right trigger is a pressure-sensitive Cross (B)
+    bool rumble_on_ = true;       // D246: `controls.rumble` (Settings → Display → Controller rumble)
+    bool pad_shortcuts_ = true;   // D247: `controls.padShortcuts` (Settings → Display → Controller shortcuts)
     std::map<Hotkey, std::vector<SDL_Scancode>> hotkeys_;
     std::vector<bool> hotkey_scancode_; // keys used by shortcuts never reach the game
     std::vector<Pad> pads_;

@@ -229,20 +229,9 @@ public sealed class StorageReport
         // Saves: everything under the user's folder counts (same as the quota check); game folders are broken down.
         var userSaves = Path.Combine(_saves, key);
         long saveBytes = Walk(userSaves, ref unreadable).Sum(f => f.Length);
-        foreach (var dir in Dirs(userSaves, ref unreadable))
+        foreach (var (item, dir, files, walkBad) in GameFolders(userSaves, ref unreadable))
         {
-            if (!Guid.TryParseExact(Path.GetFileName(dir), "N", out var item))
-            {
-                continue;
-            }
-
-            var bad = false;
-            var files = Walk(dir, ref bad);
-            if (files.Count == 0 && !bad)
-            {
-                continue;
-            }
-
+            var bad = walkBad;
             var g = Game(item);
             g.Unreadable |= bad;
             unreadable |= bad;
@@ -264,20 +253,8 @@ public sealed class StorageReport
         // Snapshots (+ pictures, info files and the previous snapshot kept as .bak).
         var userStates = Path.Combine(_states, key);
         long snapshotBytes = Walk(userStates, ref unreadable).Sum(f => f.Length);
-        foreach (var dir in Dirs(userStates, ref unreadable))
+        foreach (var (item, _, files, bad) in GameFolders(userStates, ref unreadable))
         {
-            if (!Guid.TryParseExact(Path.GetFileName(dir), "N", out var item))
-            {
-                continue;
-            }
-
-            var bad = false;
-            var files = Walk(dir, ref bad);
-            if (files.Count == 0 && !bad)
-            {
-                continue;
-            }
-
             var g = Game(item);
             g.Unreadable |= bad;
             unreadable |= bad;
@@ -291,24 +268,8 @@ public sealed class StorageReport
             .Select(x => new SettingsStorageDto(x.Key, x.Sum(f => f.Length)))
             .OrderBy(s => s.Scope, StringComparer.Ordinal)
             .ToList();
-        if (_cheats is not null)
-        {
-            var cheatBytes = Walk(Path.Combine(_cheats, key), ref unreadable).Sum(f => f.Length);
-            if (cheatBytes > 0)
-            {
-                settings.Add(new SettingsStorageDto("cheats", cheatBytes));
-            }
-        }
-
-        if (_playTime is not null)
-        {
-            var playBytes = Walk(Path.Combine(_playTime, key), ref unreadable).Sum(f => f.Length);
-            if (playBytes > 0)
-            {
-                settings.Add(new SettingsStorageDto("play time", playBytes));
-            }
-        }
-
+        AddGroup(_cheats, "cheats", ref unreadable);
+        AddGroup(_playTime, "play time", ref unreadable);
         long settingsBytes = settings.Sum(s => s.Bytes);
 
         if (saveBytes + snapshotBytes + settingsBytes == 0 && games.Count == 0 && !unreadable)
@@ -354,6 +315,44 @@ public sealed class StorageReport
             gameList,
             settings,
             unreadable);
+
+        // One more settings group (cheats D143, play time) when that store is set up and holds anything for this user.
+        void AddGroup(string? root, string scope, ref bool bad)
+        {
+            if (root is null)
+            {
+                return;
+            }
+
+            var bytes = Walk(Path.Combine(root, key), ref bad).Sum(f => f.Length);
+            if (bytes > 0)
+            {
+                settings.Add(new SettingsStorageDto(scope, bytes));
+            }
+        }
+    }
+
+    /// <summary>Each game folder (named by its item id) under a user's folder that holds anything, or couldn't be fully read.</summary>
+    private static List<(Guid Item, string Dir, List<(string Name, long Length)> Files, bool Bad)> GameFolders(string userDir, ref bool unreadable)
+    {
+        var found = new List<(Guid, string, List<(string, long)>, bool)>();
+        foreach (var dir in Dirs(userDir, ref unreadable))
+        {
+            if (!Guid.TryParseExact(Path.GetFileName(dir), "N", out var item))
+            {
+                continue;
+            }
+
+            var (files, ok) = Files(dir, FileWalk);
+            if (files.Count == 0 && ok)
+            {
+                continue;
+            }
+
+            found.Add((item, dir, files, !ok));
+        }
+
+        return found;
     }
 
     /// <summary>

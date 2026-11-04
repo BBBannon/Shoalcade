@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -106,14 +105,7 @@ public sealed class PrefsStore
                 return bytes;
             }
 
-            var stamp = _clock.GetUtcNow().ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
-            var keep = path + ".damaged-" + stamp;
-            for (var n = 2; File.Exists(keep); n++)
-            {
-                keep = path + ".damaged-" + stamp + "-" + n.ToString(CultureInfo.InvariantCulture);
-            }
-
-            File.Move(path, keep);
+            var keep = AtomicFile.KeepDamaged(path, _clock.GetUtcNow());
             _logger.LogWarning("Settings file {Path} was damaged ({Reason}); kept it as {Copy} and started that group afresh", path, err, keep);
             return "{}"u8.ToArray();
         }

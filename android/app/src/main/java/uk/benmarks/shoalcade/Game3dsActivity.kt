@@ -25,41 +25,10 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.swordfish.libretrodroid3ds.GLRetroView
 import com.swordfish.libretrodroid3ds.GLRetroViewData
+import com.swordfish.libretrodroid3ds.ShaderConfig
 import com.swordfish.libretrodroid3ds.Variable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import uk.benmarks.shoalcade.Area
-import uk.benmarks.shoalcade.AxisRest
-import uk.benmarks.shoalcade.Console
-import uk.benmarks.shoalcade.ControlPrefs
-import uk.benmarks.shoalcade.ControllerInfo
-import uk.benmarks.shoalcade.ControlsFlow
-import uk.benmarks.shoalcade.ControlsScreen
-import uk.benmarks.shoalcade.ControlsState
-import uk.benmarks.shoalcade.DrawerNav
-import uk.benmarks.shoalcade.DrawerState
-import uk.benmarks.shoalcade.DsLayout
-import uk.benmarks.shoalcade.GameDrawer
-import uk.benmarks.shoalcade.GameMenu
-import uk.benmarks.shoalcade.GameSound
-import uk.benmarks.shoalcade.GamepadView
-import uk.benmarks.shoalcade.HapticsGate
-import uk.benmarks.shoalcade.HintSpot
-import uk.benmarks.shoalcade.MenuContext
-import uk.benmarks.shoalcade.MenuItem
-import uk.benmarks.shoalcade.MenuKeys
-import uk.benmarks.shoalcade.MenuSection
-import uk.benmarks.shoalcade.PadButton
-import uk.benmarks.shoalcade.PadOut
-import uk.benmarks.shoalcade.PadSpec
-import uk.benmarks.shoalcade.PadTranslator
-import uk.benmarks.shoalcade.ScreenMode
-import uk.benmarks.shoalcade.TouchAutoHide
-import uk.benmarks.shoalcade.TouchMode
-import uk.benmarks.shoalcade.controllerInfo
-import uk.benmarks.shoalcade.isGameController
-import uk.benmarks.shoalcade.isGamepadSource
-import uk.benmarks.shoalcade.screenOrientation
 import java.io.File
 import kotlin.concurrent.thread
 import kotlin.math.min
@@ -128,11 +97,19 @@ class Game3dsActivity : ComponentActivity() {
     private fun setLayout(l: Boolean, v: N3dsLayout) = displayPrefs.edit().putString(if (l) "layout.land" else "layout.port", v.key).apply()
     private fun swap(l: Boolean) = displayPrefs.getBoolean(if (l) "swap.land" else "swap.port", false)
     private fun setSwap(l: Boolean, v: Boolean) = displayPrefs.edit().putBoolean(if (l) "swap.land" else "swap.port", v).apply()
+    /**
+     * D245 Smooth picture (kept with the other consoles' in DisplayPrefs): this LibretroDroid copy draws the core's
+     * Vulkan picture through the same shaders, so on = its default look (bilinear, as before), off = crisp pixels.
+     */
+    private fun shaderFor(smooth: Boolean): ShaderConfig = if (smooth) ShaderConfig.Default else ShaderConfig.Sharp
 
     // --- Controllers ---
     private val controlPrefs by lazy { ControlPrefs.of(this) }
     private val autoHide = TouchAutoHide()
     private val translators = mutableMapOf<String, PadTranslator>()
+    /** D247: each controller's shortcut spotter (device id → pad); none while Controller shortcuts is off or in the 3DS check. */
+    private val shortcutPads = mutableMapOf<Int, ShortcutPad>()
+    private val shortcutsOn by lazy { !check && ControllerShortcuts.on(soundStore) }
     private val axisRest = AxisRest()
     private var lastDevice = -1
     private var lastController: ControllerInfo? = null
@@ -147,7 +124,7 @@ class Game3dsActivity : ComponentActivity() {
         }
         override fun onInputDeviceRemoved(id: Int) {
             autoHide.controllerDisconnected(id); axisRest.forget(id); lastController = null
-            releaseControllers(); applyTouchVisibility()
+            releaseControllers(); shortcutPads.remove(id); applyTouchVisibility()
         }
         override fun onInputDeviceChanged(id: Int) {}
     }
@@ -222,6 +199,7 @@ class Game3dsActivity : ComponentActivity() {
             variables = options().map { (k, v) -> Variable(k, v) }.toTypedArray()
             preferVulkan = on(VULKAN) // PowerVR GPUs: OpenGL glitches, Vulkan works (D151)
             preferLowLatencyAudio = false // F4 (as the other consoles): low latency loses sound after a call
+            shader = shaderFor(display.smooth) // D245
         }
         retroView = GLRetroView(this, data).apply { isFocusable = true; isFocusableInTouchMode = true }
         lifecycle.addObserver(retroView)
@@ -506,6 +484,7 @@ class Game3dsActivity : ComponentActivity() {
         buildList {
             add(MenuItem.Heading("screen", GameMenu.SCREEN))
             ScreenMode.entries.forEach { add(MenuItem.Choice(GameMenu.screenId(it), it.label, "screen", screen == it)) }
+            add(MenuItem.Toggle(GameMenu.ID_SMOOTH, GameMenu.SMOOTH, display.smooth))
             add(MenuItem.Heading("n3ds", SCREENS))
             N3dsLayout.entries.forEach { add(MenuItem.Choice(layoutId(it), it.label, "n3ds", layout(land) == it)) }
             add(MenuItem.Toggle(ID_SWAP, GameMenu.DS_SWAP, swap(land)))
@@ -539,12 +518,12 @@ class Game3dsActivity : ComponentActivity() {
         if (check) { endCheck(REASON_CANCELLED); return } // no menu during the 3DS check: Home / Back stop it
         if (controlsOpen || drawer.open) return
         releaseControllers()
-        cancelTouches()
+        cancelTouches(root)
         refreshDrawer(resetFocus = true)
         nav.reset(axisRest.last(lastDevice))
         val view = drawerView ?: ComposeView(this).also { v ->
             v.setContent { HapticsGate { GameDrawer(drawer, onPick = { menuPick(it) }, onClose = { closeDrawer() }) } }
-            root.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            root.addFullSize(v)
             drawerView = v
         }
         view.bringToFront()
@@ -590,26 +569,12 @@ class Game3dsActivity : ComponentActivity() {
         if (drawer.open) refreshDrawer()
     }
 
-    /** Menu → Game → Screenshot: the drawer is closed first, then one frame later the picture is taken. */
-    private fun takeScreenshot() {
-        val name = game?.name?.ifBlank { null } ?: rom.nameWithoutExtension
-        root.postOnAnimation {
-            root.postOnAnimation {
-                if (isFinishing || isDestroyed) return@postOnAnimation
-                Screenshot.take(this, retroView, name) { err -> toast(if (err == null) Screenshot.SAVED else Screenshot.FAILED + err) }
-            }
-        }
-    }
+    /** Menu → Game → Screenshot (the drawer is closed first). */
+    private fun takeScreenshot() =
+        screenshotNextFrame(root, retroView, game?.name?.ifBlank { null } ?: rom.nameWithoutExtension) { toast(it) }
 
     private fun applySound() {
         retroView.audioEnabled = GameSound.enabled(menuOpen = drawer.open || controlsOpen, muted = muted, fast = fastOn)
-    }
-
-    private fun cancelTouches() {
-        val now = android.os.SystemClock.uptimeMillis()
-        val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
-        root.dispatchTouchEvent(cancel)
-        cancel.recycle()
     }
 
     private fun navResult(r: DrawerNav.Result) {
@@ -633,6 +598,7 @@ class Game3dsActivity : ComponentActivity() {
             GameMenu.ID_SCREENSHOT -> { closeDrawer(); takeScreenshot() }
             GameMenu.ID_FAST_FORWARD -> toggleFastForward()
             ID_SWAP -> { setSwap(land, !swap(land)); applyCoreLayout(); refreshDrawer() }
+            GameMenu.ID_SMOOTH -> { display.smooth = !display.smooth; retroView.shader = shaderFor(display.smooth); refreshDrawer() }
             else -> {
                 GameMenu.touchOf(id)?.let { m ->
                     autoHide.mode = m; controlPrefs.setTouchMode(console, m); applyTouchVisibility(); refreshDrawer()
@@ -682,42 +648,13 @@ class Game3dsActivity : ComponentActivity() {
         lifecycleScope.launch {
             val sync = SaveSync(this@Game3dsActivity)
             toast("Uploading your save to Jellyfin…")
+            val ask = CloseQuestions(this@Game3dsActivity) { toast(it) }
             when (val r = sync.uploadLatest(g, snapshotNoSave = false)) {
-                is SyncResult.NeedsConfirm -> askReplaceNewer(sync, g, r)
-                is SyncResult.Conflict -> askConflict(sync, g, r)
+                is SyncResult.NeedsConfirm -> ask.replaceNewer(sync, g, r)
+                is SyncResult.Conflict -> ask.conflict(sync, g, userId!!, r, elsewhere = "another phone")
                 else -> { toast(CloseSave.uploadNote(false, false) + r.message); finish() }
             }
         }
-    }
-
-    private fun askReplaceNewer(sync: SaveSync, g: Game, r: SyncResult.NeedsConfirm) {
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Replace a newer save?")
-            .setMessage(r.message)
-            .setCancelable(false)
-            .setPositiveButton("Upload anyway") { _, _ -> finishWith { sync.keepPhone(g) } }
-            .setNegativeButton("Don't upload") { _, _ -> toast("Not uploaded. Your save is kept on the phone."); finish() }
-            .show()
-    }
-
-    /** Both changed (D35): never settled silently; the other copy is always kept. */
-    private fun askConflict(sync: SaveSync, g: Game, r: SyncResult.Conflict) {
-        val (phone, jf) = SavePlan.dateLines(Storage.saveTime(userId!!, g), r.server)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Which save should be in use?")
-            .setMessage("${g.name} has a different save on this phone and on Jellyfin (maybe from another phone).\n\n" +
-                "$phone\n$jf\n\nNothing is lost either way: the other save is kept in Jellyfin's history and in the phone's backups.")
-            .setCancelable(false)
-            .setPositiveButton("Keep the phone's") { _, _ -> finishWith { sync.keepPhone(g) } }
-            .setNeutralButton("Decide later") { _, _ ->
-                toast("Not uploaded. Your save is kept on the phone; tap ⚠️ in the library to choose."); finish()
-            }
-            .apply { if (r.server != null) setNegativeButton("Keep Jellyfin's") { _, _ -> finishWith { sync.keepServer(g) } } }
-            .show()
-    }
-
-    private fun finishWith(op: suspend () -> SyncResult) {
-        lifecycleScope.launch { toast(op().message); finish() }
     }
 
     // --- Controls screen (shared with the other consoles, 3DS buttons) --------------------------
@@ -735,7 +672,7 @@ class Game3dsActivity : ComponentActivity() {
                 ControlsScreen(f.state, onPick = { f.startListening(it, axisRest.last(lastDevice)) }, onReset = { f.reset() },
                     onDone = { closeControls() })
             } }
-            root.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            root.addFullSize(v)
             controlsView = v
         }
         view.bringToFront()
@@ -776,6 +713,7 @@ class Game3dsActivity : ComponentActivity() {
 
     private fun releaseControllers() {
         for (t in translators.values) send(t.releaseAll())
+        shortcutPads.values.forEach { it.reset() }
         if (sentC != 0f to 0f) { sentC = 0f to 0f; retroView.sendMotionEvent(GLRetroView.MOTION_SOURCE_ANALOG_RIGHT, 0f, 0f) }
     }
 
@@ -786,6 +724,32 @@ class Game3dsActivity : ComponentActivity() {
             is PadOut.Stick -> retroView.sendMotionEvent(GLRetroView.MOTION_SOURCE_ANALOG_LEFT, o.x, o.y)
             is PadOut.CStick -> {}
             PadOut.Menu -> openDrawer()
+        }
+    }
+
+    private fun shortcutPad(deviceId: Int): ShortcutPad? = if (shortcutsOn) shortcutPads.getOrPut(deviceId) { ShortcutPad() } else null
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) shortcutPads.values.forEach { it.reset() }
+    }
+
+    /** D247 Select + R1 / L1 / R2 / L2, through the same paths as the menu's Snapshots, Speed and Screenshot. */
+    private fun shortcut(s: PadShortcut) {
+        if (quitting) return
+        val c = menuContext()
+        when (s) {
+            PadShortcut.QUICK_SAVE -> if (c.states) saveState() else toast(ControllerShortcuts.NO_SNAPSHOTS)
+            PadShortcut.QUICK_LOAD -> when {
+                !c.states -> toast(ControllerShortcuts.NO_SNAPSHOTS)
+                !c.hasState -> toast(ControllerShortcuts.NO_SNAPSHOT)
+                else -> loadState()
+            }
+            PadShortcut.FAST_FORWARD -> {
+                toggleFastForward()
+                Toast.makeText(applicationContext, ControllerShortcuts.fastForward(fastOn), Toast.LENGTH_SHORT).show()
+            }
+            PadShortcut.SCREENSHOT -> takeScreenshot()
         }
     }
 
@@ -816,6 +780,10 @@ class Game3dsActivity : ComponentActivity() {
         }
         if (down && event.repeatCount == 0) controllerUsed()
         if (down && event.repeatCount == 0 && MenuKeys.isMenu(event.keyCode)) { openDrawer(); return true }
+        shortcutPad(event.deviceId)?.key(event.keyCode, down)?.let { r ->
+            if (down && event.repeatCount == 0) r.fired?.let { shortcut(it) }
+            if (!r.pass) return true
+        }
         send(translatorFor(info).key(event.keyCode, down, event.repeatCount))
         return true
     }
@@ -833,7 +801,9 @@ class Game3dsActivity : ComponentActivity() {
         if (controlsOpen && f != null) { f.motion(info, values, moved); return true }
         if (drawer.open) { navResult(nav.motion(values)); return true }
         if (moved) controllerUsed()
-        send(translatorFor(info).motion(values))
+        val sc = shortcutPad(event.deviceId)?.motion(values)
+        sc?.fired?.forEach { shortcut(it) }
+        send(translatorFor(info).motion(sc?.values ?: values))
         // New 3DS C-stick = the controller's right stick, straight through.
         fun dz(v: Float) = if (kotlin.math.abs(v) < PadTranslator.DEAD_ZONE) 0f else v
         val c = dz(event.getAxisValue(MotionEvent.AXIS_Z)) to dz(event.getAxisValue(MotionEvent.AXIS_RZ))
@@ -885,19 +855,8 @@ class Game3dsActivity : ComponentActivity() {
         return false
     }
 
-    /** TalkBack mustn't wander onto the game and touch buttons hidden behind the menu or the Controls screen. */
-    private fun setGameAccessible(on: Boolean) {
-        val mode = if (on) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-        pad.importantForAccessibility = mode
-        menuHandle.importantForAccessibility = mode
-        ffButton.importantForAccessibility = mode
-        retroView.importantForAccessibility = mode
-    }
-
-    private fun hits(v: View, ev: MotionEvent): Boolean {
-        val at = IntArray(2).also { v.getLocationOnScreen(it) }
-        return ev.rawX >= at[0] && ev.rawX < at[0] + v.width && ev.rawY >= at[1] && ev.rawY < at[1] + v.height
-    }
+    /** Hidden from TalkBack behind the menu or the Controls screen. */
+    private fun setGameAccessible(on: Boolean) = setGameAccessible(on, pad, menuHandle, ffButton, retroView)
 
     // --- Speed readout (dev) --------------------------------------------------------------------
 
@@ -930,7 +889,7 @@ class Game3dsActivity : ComponentActivity() {
         root.postDelayed({
             if (loading !== state || isFinishing) return@postDelayed
             val v = ComposeView(this).apply { setContent { GameLoading(state) } }
-            root.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            root.addFullSize(v)
             menuHandle.bringToFront() // the Menu (and Back) still work while it loads
             loadingView = v
         }, LoadingWords.SHOW_AFTER_MS)
@@ -941,22 +900,9 @@ class Game3dsActivity : ComponentActivity() {
         }
     }
 
-    /** Looks at a small copy of the game until it shows something that isn't black (FirstPicture), then drops the screen. */
+    /** Drops the loading screen once the game shows something that isn't black. */
     private suspend fun watchFirstPicture() {
-        val bmp = android.graphics.Bitmap.createBitmap(64, 48, android.graphics.Bitmap.Config.ARGB_8888)
-        val px = IntArray(64 * 48)
-        val t0 = System.currentTimeMillis()
-        while (loading != null) {
-            val done = kotlinx.coroutines.CompletableDeferred<Boolean>()
-            val asked = runCatching {
-                android.view.PixelCopy.request(retroView, bmp, { r -> done.complete(r == android.view.PixelCopy.SUCCESS) },
-                    Handler(Looper.getMainLooper()))
-            }.isSuccess
-            val got = asked && kotlinx.coroutines.withTimeoutOrNull(2_000) { done.await() } == true
-            if (got) bmp.getPixels(px, 0, 64, 0, 0, 64, 48)
-            if ((got && FirstPicture.lit(px)) || System.currentTimeMillis() - t0 > LOADING_SAFETY_MS) break
-            kotlinx.coroutines.delay(250)
-        }
+        awaitFirstPicture(retroView, LOADING_SAFETY_MS) { loading != null }
         loading = null
         loadingView?.let { root.removeView(it) }
         loadingView = null

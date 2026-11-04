@@ -34,6 +34,18 @@ object SettingsModel {
     /** F6: one switch for every buzz the app makes, the touch buttons included. */
     const val HAPTICS = "Haptics (vibrate on touch)"
     const val ID_HAPTICS = "app.haptics"
+    /** D246: games that rumble shake the controller, never the phone. On by default, kept on this phone. */
+    const val RUMBLE = "Controller rumble"
+    const val RUMBLE_HELP = "Games with rumble (Game Boy family, DS) shake your controller, never the phone."
+    const val ID_RUMBLE = "app.rumble"
+    /** D247: Select + a shoulder button on a controller. On by default, kept on this phone. */
+    const val SHORTCUTS = "Controller shortcuts"
+    const val SHORTCUTS_HELP = "Hold Select, then: R1 quick snapshot · L1 load snapshot · R2 fast-forward · L2 screenshot."
+    const val ID_SHORTCUTS = "app.shortcuts"
+    /** D248: the Continue card at the top of the games list. On by default, kept on this phone. */
+    const val SHOW_CONTINUE = "Show Continue"
+    const val SHOW_CONTINUE_HELP = "The last game you played on this phone, at the top of your games."
+    const val ID_SHOW_CONTINUE = "app.continue"
     const val SERVER = "Server"
     const val ACCOUNT = "Account"
     const val LOG_OUT = "Log out"
@@ -66,6 +78,8 @@ object SettingsModel {
                     MenuItem.Toggle(swapId(land), GameMenu.DS_SWAP, display.swap(land))
             }))
         }
+        // D245: the game menu's own Smooth picture switch, for every console.
+        add(ShownSection("picture", GameMenu.DISPLAY, listOf(MenuItem.Toggle(GameMenu.ID_SMOOTH, GameMenu.SMOOTH, display.smooth))))
         // Step 10: the same "Controls" section as the game menu, with the same rows in the same order.
         add(ShownSection("controls", GameMenu.CONTROLS,
             listOf(MenuItem.Action(GameMenu.ID_CONTROLS, GameMenu.CONTROLLER_BUTTONS, GameMenu.CONTROLS_HINT),
@@ -77,6 +91,7 @@ object SettingsModel {
     fun pick(id: String, console: Console, display: DisplayChoices, controls: ControlPrefs): Boolean {
         GameMenu.screenOf(id)?.let { if (console.isLandscape) return false; display.screen = it; return true }
         GameMenu.touchOf(id)?.let { controls.setTouchMode(console, it); return true }
+        if (id == GameMenu.ID_SMOOTH) { display.smooth = !display.smooth; return true }
         if (!console.isDualScreen) return false
         for (land in listOf(false, true)) {
             if (id == swapId(land)) { display.setSwap(land, !display.swap(land)); return true }

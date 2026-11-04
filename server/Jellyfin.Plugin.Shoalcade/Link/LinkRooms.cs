@@ -444,10 +444,7 @@ public sealed class LinkRooms
             log[user] = q;
         }
 
-        while (q.Count > 0 && now - q.Peek() >= window)
-        {
-            q.Dequeue();
-        }
+        DropExpired(q, window, now);
 
         if (q.Count >= max)
         {
@@ -462,15 +459,20 @@ public sealed class LinkRooms
     {
         foreach (var (user, q) in log.ToList())
         {
-            while (q.Count > 0 && now - q.Peek() >= window)
-            {
-                q.Dequeue();
-            }
+            DropExpired(q, window, now);
 
             if (q.Count == 0)
             {
                 log.Remove(user);
             }
+        }
+    }
+
+    private static void DropExpired(Queue<DateTimeOffset> q, TimeSpan window, DateTimeOffset now)
+    {
+        while (q.Count > 0 && now - q.Peek() >= window)
+        {
+            q.Dequeue();
         }
     }
 

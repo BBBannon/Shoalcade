@@ -89,10 +89,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
-        session?.let {
-            sort = library.sort(it.userId); favouritesOnly = library.favouritesOnly(it.userId); onPhoneOnly = library.onPhoneOnly(it.userId)
-        }
-        readCache().let { games = it ?: emptyList(); gamesKnown = it != null }
+        session?.let { loadLibraryPrefs(it.userId) }
+        loadCache()
         refreshConflicts()
         if (session != null) refresh()
     }
@@ -151,11 +149,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun completeLogin(s: Session) {
         store.save(s)
         session = s
-        sort = library.sort(s.userId)
-        favouritesOnly = library.favouritesOnly(s.userId)
-        onPhoneOnly = library.onPhoneOnly(s.userId)
-        readCache().let { games = it ?: emptyList(); gamesKnown = it != null }
+        loadLibraryPrefs(s.userId)
+        loadCache()
         refresh()
+    }
+
+    private fun loadLibraryPrefs(userId: String) {
+        sort = library.sort(userId)
+        favouritesOnly = library.favouritesOnly(userId)
+        onPhoneOnly = library.onPhoneOnly(userId)
+    }
+
+    private fun loadCache() {
+        val cached = readCache()
+        games = cached ?: emptyList()
+        gamesKnown = cached != null
     }
 
     /** The code to show while waiting for Quick Connect approval; null when not waiting. */
@@ -274,10 +282,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** [list] in the chosen order. Last played = the later of this phone's last start and Jellyfin's (browser play). */
-    fun sorted(list: List<Game>): List<Game> {
-        val uid = session?.userId
-        return GameSort.sort(list, sort) { g -> GameSort.lastPlayed(uid?.let { library.lastLaunch(it, g.id) }, g.serverPlayed) }
-    }
+    fun sorted(list: List<Game>): List<Game> = GameSort.sort(list, sort) { lastPlayed(it) }
+
+    /** When [g] was last played: this phone's last launch or the server's last play, whichever is newer (null = never). */
+    fun lastPlayed(g: Game): Long? = GameSort.lastPlayed(session?.userId?.let { library.lastLaunch(it, g.id) }, g.serverPlayed)
 
     /** Runs in [DownloadService], so it carries on with the app closed. */
     fun download(game: Game) = Downloads.start(getApplication(), game)
@@ -285,7 +293,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelDownload(game: Game) = Downloads.cancel(getApplication(), game.id)
 
     /** On return to the library (e.g. from a game whose upload hit a conflict): recheck badges and ⚠️ marks. */
-    fun diskVersionBump() { localDiskVersion++; refreshConflicts(); flushPlayTime() }
+    fun diskVersionBump() { diskChanged(); flushPlayTime() }
 
     // ---- Play time (D172): sessions queued by the players, sent here; the total counts phone and browser ----
     private val playQueue by lazy { PlayTimeQueue(getApplication<Application>()) }
@@ -304,8 +312,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val totals = runCatching { withContext(Dispatchers.IO) { playQueue.flush(c, s.userId, features) } }.getOrDefault(emptyMap())
             if (totals.isEmpty()) return@launch
             games = games.map { g -> totals[g.id]?.let { g.copy(playSeconds = it) } ?: g }
-            val list = games
-            withContext(Dispatchers.IO) { writeCache(list) }
+            saveCache()
         }
     }
 
@@ -331,8 +338,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 games = games.map { if (it.id == game.id) it.copy(favourite = on) else it }
                 // The last star removed: the toggle goes off rather than coming back on with the next star.
                 if (games.none { it.favourite }) chooseFavouritesOnly(false)
-                val list = games
-                withContext(Dispatchers.IO) { writeCache(list) }
+                saveCache()
             } catch (e: Exception) {
                 message = "Couldn't change the star: ${e.message ?: e.javaClass.simpleName}"
             }
@@ -384,6 +390,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun show(r: SyncResult, game: Game) {
         message = r.message
         if (r is SyncResult.Conflict) conflictPrompt = game to r.server
+        diskChanged()
+    }
+
+    /** Files on the phone may have changed: "downloaded" badges and ⚠️ marks recompute. */
+    private fun diskChanged() {
         localDiskVersion++
         refreshConflicts()
     }
@@ -452,7 +463,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 batchReport = report
             } finally {
                 batch = null; batchStopping = false
-                localDiskVersion++; refreshConflicts()
+                diskChanged()
             }
         }
     }
@@ -478,7 +489,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (next != null && i >= 0) batchAsks[i] = next
                 else r?.let { batchSettled[ask.game.id] = it.message }
             } finally {
-                settling = null; localDiskVersion++; refreshConflicts()
+                settling = null; diskChanged()
             }
         }
     }
@@ -520,14 +531,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun restore(game: Game, version: Int, base: Int, done: (SyncResult) -> Unit) = viewModelScope.launch {
         val r = saves.core()?.restore(game, version, base) ?: SyncResult.Failed("Not logged in.")
-        message = r.message; localDiskVersion++; refreshConflicts(); done(r)
+        message = r.message; diskChanged(); done(r)
     }
 
     fun replace(game: Game, bytes: ByteArray, base: Int, mode: String, allowBlank: Boolean, done: (SyncResult) -> Unit) =
         viewModelScope.launch {
             val r = saves.core()?.replace(game, bytes, base, mode, allowBlank) ?: SyncResult.Failed("Not logged in.")
             if (r !is SyncResult.Conflict) message = r.message
-            localDiskVersion++; refreshConflicts(); done(r)
+            diskChanged(); done(r)
         }
 
     // ---- Not in your library (B9) ----
@@ -549,7 +560,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun uploadOrphan(o: OrphanSave, target: Game, mode: String, done: (SyncResult) -> Unit) = viewModelScope.launch {
         val r = saves.core()?.uploadOrphan(o, target, mode) ?: SyncResult.Failed("Not logged in.")
         if (r !is SyncResult.Conflict) message = r.message
-        localDiskVersion++; refreshConflicts(); done(r)
+        diskChanged(); done(r)
     }
 
     /** F9 "Remove download": deletes only the phone's downloaded copy of a game no longer listed. Saves, backups and snapshots stay. */
@@ -589,6 +600,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         done(err?.let { it.message ?: it.javaClass.simpleName })
     }
 
+    /** Writes the list as it is now to the offline copy, off the main thread. */
+    private suspend fun saveCache() {
+        val list = games
+        withContext(Dispatchers.IO) { writeCache(list) }
+    }
+
     private fun writeCache(list: List<Game>) {
         val arr = JSONArray()
         list.forEach { arr.put(GameJson.toJson(it)) }
@@ -605,13 +622,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }.getOrNull()
 }
 
+private const val CHECK_GAP_MS = 5_000L
+
 /**
  * L1: snackbar messages take turns instead of replacing each other, so a once-only notice (the orphan saves, item D)
  * can't be overwritten by another message before it shows. The same text already showing or waiting isn't added twice.
  * Plain Kotlin, so the JVM tests run exactly this code.
  */
-private const val CHECK_GAP_MS = 5_000L
-
 class Notices {
     private val waiting = ArrayDeque<String>()
     private var current: String? = null

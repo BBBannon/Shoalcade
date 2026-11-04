@@ -15,39 +15,15 @@
   const $ = id => document.getElementById(id);
   const NEW_CODE_MS = 9 * 60 * 1000; // a fresh code before the 10-minute ticket runs out
 
-  const S = { info: null, prefs: {}, app: null, link: null, codeTimer: 0 };
+  const { h, toast, message } = window.SC.ui;
 
-  function h(tag, attrs, kids) {
-    const e = document.createElement(tag);
-    for (const k in attrs || {}) {
-      const v = attrs[k];
-      if (v === undefined || v === null || v === false) continue;
-      if (k === "class") e.className = v;
-      else if (k === "text") e.textContent = v;
-      else e.setAttribute(k, v === true ? "" : String(v));
-    }
-    for (const c of kids || []) if (c) e.append(c);
-    return e;
-  }
+  const S = { info: null, prefs: {}, app: null, link: null, codeTimer: 0 };
 
   function size(n) {
     n = Number(n) || 0;
     if (n < 1024 * 1024) return Math.max(1, Math.round(n / 1024)) + " KB";
     if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1).replace(/\.0$/, "") + " MB";
     return (n / 1024 / 1024 / 1024).toFixed(1).replace(/\.0$/, "") + " GB";
-  }
-
-  let toastTimer = 0;
-  function toast(msg) {
-    const t = $("toast");
-    t.textContent = msg;
-    t.classList.add("on");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove("on"), 4000);
-  }
-
-  function message(e) {
-    return e && e.message ? e.message : String(e);
   }
 
   function show(which) {
@@ -90,13 +66,7 @@
       const want = location.hash.slice(1);
       if (["saves-s", "app-s", "win-s", "player-s", "patch-s"].includes(want) && !$(want).hidden) $(want).scrollIntoView();
     } catch (e) {
-      if (e && e.status === 401) {
-        $("signed-out-text").textContent = e.message;
-        show("signed-out");
-      } else {
-        $("failed-text").textContent = message(e);
-        show("failed");
-      }
+      window.SC.ui.loadFailed(e, show);
     }
   }
 
@@ -127,12 +97,7 @@
     b.disabled = true;
     try {
       const f = await api.exportSaves();
-      const url = URL.createObjectURL(f.blob);
-      const a = h("a", { href: url, download: f.name || "Shoalcade saves.zip", class: "sr" });
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      window.SC.ui.download(f.blob, f.name || "Shoalcade saves.zip");
       toast("Downloading all your saves (" + size(f.blob.size) + ").");
     } catch (e) {
       toast("Couldn't download your saves: " + message(e));
@@ -222,11 +187,7 @@
     const b = $("app-dl");
     b.disabled = true;
     try {
-      const url = await getLink();
-      const a = h("a", { href: url, download: "Shoalcade.apk", class: "sr" });
-      document.body.append(a);
-      a.click();
-      a.remove();
+      window.SC.ui.download(await getLink(), "Shoalcade.apk");
       toast("Downloading the phone app (" + size(S.app.size) + ").");
     } catch (e) {
       appError(e);

@@ -48,4 +48,4 @@ Build steps: see [Building from source](README.md#building-from-source).
 - Adding a new library or emulator core? Say so in the pull request, with its licence and source, so the credits in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) stay correct.
 
 <!-- Discord invite: change it here only. -->
-[discord]: https://discord.gg/SRDBXwhre
+[discord]: https://discord.gg/8jZQXTRCEj

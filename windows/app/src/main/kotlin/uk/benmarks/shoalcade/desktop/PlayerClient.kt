@@ -205,6 +205,9 @@ data class StartRequest(
     val controllers: List<String> = emptyList(),
     /** PS2 (P4b, PROTOCOL.md `controls.pressureCross`): the right trigger also presses Cross with its real level. */
     val pressureCross: Boolean? = null,
+    /** D246 / D247 (PROTOCOL.md `controls.rumble`, `controls.padShortcuts`): false = switched off; null = on (the default). */
+    val rumble: Boolean? = null,
+    val padShortcuts: Boolean? = null,
     /** PROTOCOL.md `controls` `{keyboard, hotkeys, gamepads}`: the buttons changed in the game menu ([ControlsStore]). */
     val controls: JSONObject? = null,
 ) {
@@ -214,7 +217,10 @@ data class StartRequest(
     data class Check(val warmUp: Int, val measure: Int, val targetFps: Int? = null)
     /** [token] is a one-time word for the local link stream only (never the Jellyfin token). */
     data class LinkStart(val port: Int, val host: Boolean, val token: String, val cable: Boolean, val dsMac: String?, val peer: String)
-    data class CheatItem(val id: String, val name: String, val code: String, val enabled: Boolean)
+    data class CheatItem(val id: String, val name: String, val code: String, val enabled: Boolean) {
+        /** As `start.cheats` and `cheats.set` carry it. */
+        fun toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("code", code).put("enabled", enabled)
+    }
     /** [path] = the state file the menu's Load uses (null = none here); [loadable] false = another core build's. */
     data class SlotView(val slot: String, val `when`: String?, val png: File?, val path: File?, val loadable: Boolean, val note: String?, val empty: Boolean)
 
@@ -232,9 +238,7 @@ data class StartRequest(
         title?.let { put("title", it) }
         if (options.isNotEmpty()) put("options", JSONObject(options))
         snapshot?.let { put("snapshot", it.absolutePath) }
-        if (cheatItems.isNotEmpty()) put("cheats", JSONArray(cheatItems.map {
-            JSONObject().put("id", it.id).put("name", it.name).put("code", it.code).put("enabled", it.enabled)
-        }))
+        if (cheatItems.isNotEmpty()) put("cheats", JSONArray(cheatItems.map { it.toJson() }))
         else if (cheats.isNotEmpty()) put("cheats", JSONArray(cheats))
         snapshotsAllowed?.let { put("snapshotsAllowed", it) }
         autoSnapshotOnClose?.let { put("autoSnapshotOnClose", it) }
@@ -254,8 +258,10 @@ data class StartRequest(
         dsLayout?.let { put("layout", JSONObject().put("ds", it.layout).put("swap", it.swap)) }
         check?.let { put("check", JSONObject().put("warmUp", it.warmUp).put("measure", it.measure).apply { it.targetFps?.let { t -> put("targetFps", t) } }) }
         if (controllers.isNotEmpty()) put("controllers", JSONArray(controllers))
-        if (controls != null || pressureCross != null) put("controls", JSONObject(controls?.toString() ?: "{}").apply {
+        if (controls != null || pressureCross != null || rumble != null || padShortcuts != null) put("controls", JSONObject(controls?.toString() ?: "{}").apply {
             pressureCross?.let { put("pressureCross", it) }
+            rumble?.let { put("rumble", it) }
+            padShortcuts?.let { put("padShortcuts", it) }
         })
         link?.let { l ->
             put("link", JSONObject().put("port", l.port).put("role", if (l.host) "host" else "join").put("token", l.token)

@@ -603,17 +603,7 @@ public sealed class StateStore
     private static Task WriteInfoAsync(string dir, StateInfo info, CancellationToken cancellationToken) =>
         AtomicFile.WriteAsync(Path.Combine(dir, info.Slot + ".json"), InfoBytes(info), true, cancellationToken);
 
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Not important (e.g. a file held open by antivirus).
-        }
-    }
+    private static void TryDelete(string path) => AtomicFile.TryDelete(path);
 
     internal string Dir(Guid user, Guid item) => Path.Combine(_root, user.ToString("N"), item.ToString("N"));
 }

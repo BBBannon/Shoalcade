@@ -76,22 +76,37 @@ fun ConflictDialog(vm: AppModel, ask: AppModel.ConflictAsk) {
         title = { Text("Which save should be in use?") },
         text = {
             Column {
-                Text(PcWords.of("${g.name} has a different save on this phone and on Jellyfin (maybe from the browser or another phone)."))
+                Text(differentSaves(g.name))
                 Spacer(Modifier.height(8.dp))
                 Text("This PC: ${pc?.let { formatTime(it) } ?: "none"}", fontWeight = FontWeight.Bold)
                 Text("Jellyfin: ${ask.server?.let { describeVersion(it) } ?: "no save in use"}", fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
-                Text(PcWords.of("Nothing is lost either way: the other save is kept in Jellyfin's history and in the phone's backups."))
+                Text(NOTHING_LOST)
             }
         },
         confirmButton = {
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                PocketButton(onClick = { vm.resolveConflict(g, keepPc = true) }) { Text(PcWords.of("Keep the phone's")) }
-                PocketButton(enabled = ask.server != null, onClick = { vm.resolveConflict(g, keepPc = false) }) { Text("Keep Jellyfin's") }
-                PocketButton(onClick = { vm.conflictPrompt = null }) { Text("Decide later") }
-            }
+            KeepChoices({ vm.resolveConflict(g, keepPc = true) }, { vm.resolveConflict(g, keepPc = false) }, ask.server != null) { vm.conflictPrompt = null }
         },
     )
+}
+
+/** The phone's words for a game whose save is different here and on Jellyfin. */
+private fun differentSaves(name: String) =
+    PcWords.of("$name has a different save on this phone and on Jellyfin (maybe from the browser or another phone).")
+
+private val NOTHING_LOST = PcWords.of("Nothing is lost either way: the other save is kept in Jellyfin's history and in the phone's backups.")
+
+/**
+ * The answers to "which save?", in the phone's order: Keep the phone's (when [onPc] is given), Keep Jellyfin's (shown
+ * when [onServer] is given, usable when [serverUsable]: there is a Jellyfin save), then Decide later.
+ */
+@Composable
+private fun KeepChoices(onPc: (() -> Unit)?, onServer: (() -> Unit)?, serverUsable: Boolean = true, onLater: () -> Unit) {
+    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (onPc != null) PocketButton(onClick = onPc) { Text(PcWords.of("Keep the phone's")) }
+        if (onServer != null) PocketButton(enabled = serverUsable, onClick = onServer) { Text("Keep Jellyfin's") }
+        PocketButton(onClick = onLater) { Text("Decide later") }
+    }
 }
 
 /** "Get save from Jellyfin?": both dates first (the newer one marked); confirm waits for the check. */
@@ -134,27 +149,24 @@ fun PlayAskDialog(vm: AppModel, ask: AppModel.PlayAsk) {
         is AppModel.PlayAsk.Before -> {
             val r = ask.result
             val conflict = r is SyncResult.Conflict
-            val server = (r as? SyncResult.NeedsConfirm)?.server ?: (r as? SyncResult.Conflict)?.server
+            val server = ask.server
             val (pcLine, jfLine) = SavePlan.dateLines(vm.pcSaveTime(g), server)
             PocketDialog(
                 onDismissRequest = {},
                 title = { Text(if (conflict) "Which save should be in use?" else "Jellyfin's save changed") },
                 text = {
                     Column {
-                        Text(if (conflict) PcWords.of("${g.name} has a different save on this phone and on Jellyfin (maybe from the browser or another phone).")
+                        Text(if (conflict) differentSaves(g.name)
                             else PcWords.of(r.message))
                         if (conflict) { Spacer(Modifier.height(8.dp)); Text(PcWords.of(pcLine)); Text(jfLine) }
                         Spacer(Modifier.height(8.dp))
-                        Text(PcWords.of("Nothing is lost either way: the other save is kept in Jellyfin's history and in the phone's backups.") +
+                        Text(NOTHING_LOST +
                             " Decide later plays the save on this PC and changes nothing.", style = MaterialTheme.typography.bodySmall)
                     }
                 },
                 confirmButton = {
-                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (conflict) PocketButton(onClick = { vm.answerBefore(ask, SyncAll.Choice.KEEP_PHONE) }) { Text(PcWords.of("Keep the phone's")) }
-                        PocketButton(enabled = server != null, onClick = { vm.answerBefore(ask, SyncAll.Choice.KEEP_SERVER) }) { Text("Keep Jellyfin's") }
-                        PocketButton(onClick = { vm.answerBefore(ask, SyncAll.Choice.LATER) }) { Text("Decide later") }
-                    }
+                    KeepChoices(if (conflict) ({ vm.answerBefore(ask, SyncAll.Choice.KEEP_PHONE) }) else null,
+                        { vm.answerBefore(ask, SyncAll.Choice.KEEP_SERVER) }, server != null) { vm.answerBefore(ask, SyncAll.Choice.LATER) }
                 },
             )
         }
@@ -173,11 +185,8 @@ fun PlayAskDialog(vm: AppModel, ask: AppModel.PlayAsk) {
                 text = { Text(PcWords.of("${g.name} has a different save on this phone and on Jellyfin (maybe from the browser or another phone).\n\n" +
                     "$pcLine\n$jfLine\n\nNothing is lost either way: the other save is kept in Jellyfin's history and in the phone's backups.")) },
                 confirmButton = {
-                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PocketButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.KEEP_PHONE) }) { Text(PcWords.of("Keep the phone's")) }
-                        if (ask.result.server != null) PocketButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.KEEP_SERVER) }) { Text("Keep Jellyfin's") }
-                        PocketButton(onClick = { vm.answerAfter(ask, SyncAll.Choice.LATER) }) { Text("Decide later") }
-                    }
+                    KeepChoices({ vm.answerAfter(ask, SyncAll.Choice.KEEP_PHONE) },
+                        if (ask.result.server != null) ({ vm.answerAfter(ask, SyncAll.Choice.KEEP_SERVER) }) else null) { vm.answerAfter(ask, SyncAll.Choice.LATER) }
                 },
             )
         }

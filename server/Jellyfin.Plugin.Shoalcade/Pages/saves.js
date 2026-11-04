@@ -14,8 +14,8 @@
   "use strict";
 
   const api = window.SC.api;
+  const { h, SHORT, toast, message, download } = window.SC.ui;
   const $ = id => document.getElementById(id);
-  const SHORT = { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP", gc: "GC", wii: "Wii", ps2: "PS2" };
   const SOURCE = {
     browser: "the browser player",
     app: "the phone app",
@@ -42,38 +42,7 @@
   };
 
   // ---------- helpers ----------
-  function h(tag, attrs, kids) {
-    const e = document.createElement(tag);
-    for (const k in attrs || {}) {
-      const v = attrs[k];
-      if (v === undefined || v === null || v === false) continue;
-      if (k === "class") e.className = v;
-      else if (k === "text") e.textContent = v;
-      else e.setAttribute(k, v === true ? "" : String(v));
-    }
-    for (const c of kids || []) if (c) e.append(c);
-    return e;
-  }
-
-  function ico(name) {
-    const NS = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(NS, "svg");
-    svg.setAttribute("class", "ico");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("aria-hidden", "true");
-    for (const d of ICON[name]) {
-      const p = document.createElementNS(NS, "path");
-      p.setAttribute("d", d);
-      svg.append(p);
-    }
-    return svg;
-  }
-
-  function hue(id) {
-    let n = 0;
-    for (let i = 0; i < id.length; i++) n = (n * 31 + id.charCodeAt(i)) % 360;
-    return n;
-  }
+  const ico = name => window.SC.ui.icon(ICON[name]);
 
   function consoleInfo(key) {
     return (S.info && S.info.consoles || []).find(x => x.key === key) || null;
@@ -112,46 +81,27 @@
     return isNaN(d.getTime()) ? "" : d.toLocaleString("en-GB", { dateStyle: "full", timeStyle: "medium" });
   }
 
-  /** This page's own address, keeping the library's view (c, q). */
-  function addr(p) {
+  /** The library's view (c, q) as a query string, after id when given. */
+  function viewQuery(id) {
     const s = new URLSearchParams();
-    if (p.id) s.set("id", p.id);
+    if (id) s.set("id", id);
     if (S.c) s.set("c", S.c);
     if (S.q) s.set("q", S.q);
     const t = s.toString();
-    return "saves-manager" + (t ? "?" + t : "");
+    return t ? "?" + t : "";
+  }
+
+  /** This page's own address, keeping the library's view (c, q). */
+  function addr(p) {
+    return "saves-manager" + viewQuery(p.id);
   }
 
   function libraryLink(gameId) {
-    const s = new URLSearchParams();
-    if (S.c) s.set("c", S.c);
-    if (S.q) s.set("q", S.q);
-    const t = s.toString();
-    return "./" + (t ? "?" + t : "") + (gameId ? "#game=" + gameId : "");
+    return "./" + viewQuery(null) + (gameId ? "#game=" + gameId : "");
   }
 
   function art(id, name, consoleKey, imageTag, width) {
-    const box = h("div", { class: "art" }, [
-      h("span", { class: "art-t", text: name }),
-      h("span", { class: "art-c", text: SHORT[consoleKey] || consoleKey || "?" }),
-    ]);
-    box.style.setProperty("--h", String(hue(id)));
-    if (imageTag) {
-      const img = h("img", { src: api.coverUrl(id, imageTag, width), alt: "", loading: "lazy", decoding: "async" });
-      img.addEventListener("error", () => { img.remove(); box.classList.remove("has-cover"); }, { once: true });
-      box.classList.add("has-cover");
-      box.prepend(img);
-    }
-    return box;
-  }
-
-  let toastTimer = 0;
-  function toast(msg) {
-    const t = $("toast");
-    t.textContent = msg;
-    t.classList.add("on");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove("on"), 4000);
+    return window.SC.ui.art(id, name, SHORT[consoleKey] || consoleKey || "?", imageTag, width);
   }
 
   // A message that must survive a page change (the move jumps to the target game). Per-tab, cleared once shown.
@@ -173,10 +123,6 @@
     $("err").textContent = msg || "";
     $("err").hidden = !msg;
     if (msg) $("err").scrollIntoView({ block: "nearest" });
-  }
-
-  function message(e) {
-    return e && e.message ? e.message : String(e);
   }
 
   // ---------- in-page dialog (never window.confirm) ----------
@@ -265,13 +211,7 @@
   }
 
   function failed(e) {
-    if (e && e.status === 401) {
-      $("signed-out-text").textContent = e.message;
-      show("signed-out");
-    } else {
-      $("failed-text").textContent = message(e);
-      show("failed");
-    }
+    window.SC.ui.loadFailed(e, show);
   }
 
   // ---------- list of every save ----------
@@ -353,6 +293,11 @@
     renderGame();
   }
 
+  /** The game's name from the library, else the one its saves remember (undefined if neither knows). */
+  function gameName() {
+    return (S.game && S.game.name) || (S.entries[0] && S.entries[0].gameName);
+  }
+
   function playable() {
     const g = S.game;
     return !!(g && S.info.browserPlayer && g.browserPlayable && S.info.user && S.info.user.canDownload);
@@ -361,7 +306,7 @@
   function renderGame() {
     const g = S.game;
     const e0 = S.entries[0];
-    const name = (g && g.name) || (e0 && e0.gameName) || "Unknown game";
+    const name = gameName() || "Unknown game";
     document.title = name + " saves · Shoalcade";
     $("g-art").replaceChildren(art(S.id, name, S.console, g ? g.imageTag : e0 && e0.imageTag, 400));
     $("g-title").textContent = name;
@@ -468,13 +413,7 @@
 
   async function doSnapDownload(st) {
     const blob = await api.snapshotFile(S.id, st.slot);
-    const url = URL.createObjectURL(blob);
-    const name = (S.game && S.game.name) || (S.entries[0] && S.entries[0].gameName) || "game";
-    const a = h("a", { href: url, download: name + " snapshot " + st.slot + ".state", hidden: true });
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    download(blob, (gameName() || "game") + " snapshot " + st.slot + ".state");
     toast("Downloading the snapshot");
   }
 
@@ -539,12 +478,7 @@
 
   async function doDownload(v) {
     const f = await api.saveFile(S.id, v.version);
-    const url = URL.createObjectURL(f.blob);
-    const a = h("a", { href: url, download: f.name || "save v" + v.version + ".sav", hidden: true });
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    download(f.blob, f.name || "save v" + v.version + ".sav");
     toast("Downloading version " + v.version);
   }
 
@@ -816,7 +750,7 @@
     const res = await api.moveSave(S.id, to, S.console ? null : key);
     // The page reloads for the target game, so the message is handed over and shown there (see showFlash).
     // The game's browser snapshots move too (B9); the server says which, and any that stayed behind.
-    const from = (S.game && S.game.name) || (S.entries[0] && S.entries[0].gameName);
+    const from = gameName();
     const notes = (res && Array.isArray(res.warnings)) ? res.warnings.filter(w => typeof w === "string") : [];
     const what = n ? "Save" : "Snapshots";
     setFlash(to, [from ? what + " moved here from “" + from + "”." : what + " moved here."].concat(notes).join(" "));

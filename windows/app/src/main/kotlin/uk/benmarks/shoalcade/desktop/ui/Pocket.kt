@@ -46,8 +46,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -148,6 +146,9 @@ fun Modifier.hardShadow(on: Boolean, by: Dp = 3.dp, radius: Dp = Pocket.RM, colo
         drawRoundRect(colour, topLeft = Offset(by.toPx(), by.toPx()), size = size, cornerRadius = CornerRadius(radius.toPx()))
     }
 
+/** .btn:disabled and the like: 55 % opacity while not [enabled]. */
+private fun Modifier.dimmedUnless(enabled: Boolean): Modifier = alpha(if (enabled) 1f else 0.55f)
+
 // ---------- buttons (.btn, .btn.primary, .btn.danger, .mini) ----------
 
 /**
@@ -171,7 +172,7 @@ fun PocketButton(
     val fg = when { danger -> Color.White; primary -> Pocket.AccentInk; else -> Pocket.PInk }
     Row(
         modifier
-            .alpha(if (enabled) 1f else 0.55f)
+            .dimmedUnless(enabled)
             .hardShadow(hovered && enabled)
             .defaultMinSize(minHeight = 40.dp)
             .background(bg, shape)
@@ -193,7 +194,7 @@ fun PocketMini(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Bool
     val shape = RoundedCornerShape(Pocket.RS)
     val fg = if (danger) Pocket.Danger else Pocket.PInk
     Row(
-        modifier.alpha(if (enabled) 1f else 0.55f).defaultMinSize(minHeight = 32.dp)
+        modifier.dimmedUnless(enabled).defaultMinSize(minHeight = 32.dp)
             .background(if (pressed) Pocket.AccentSoft else Pocket.PWell, shape)
             .clickable(remember { MutableInteractionSource() }, PocketIndication, enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 9.dp, vertical = 6.dp),
@@ -210,7 +211,7 @@ fun PocketIconButton(onClick: () -> Unit, description: String?, modifier: Modifi
     val src = remember { MutableInteractionSource() }
     val hovered by src.collectIsHoveredAsState()
     Box(
-        modifier.size(40.dp).alpha(if (enabled) 1f else 0.55f)
+        modifier.size(40.dp).dimmedUnless(enabled)
             .background(if (hovered && enabled) Pocket.AccentSoft else Color.Transparent, CircleShape)
             .hoverable(src, enabled)
             .clickable(src, PocketIndication, enabled = enabled, role = Role.Button, onClick = onClick)
@@ -226,7 +227,7 @@ fun PocketBadge(text: String, modifier: Modifier = Modifier, pin: Boolean = fals
         modifier = modifier.background(if (pin) Pocket.Ink else Pocket.Led, RoundedCornerShape(2.dp)).padding(horizontal = 8.dp, vertical = 2.dp))
 }
 
-// ---------- controls: segmented, switch, check box, range ----------
+// ---------- controls: segmented, switch, check box ----------
 
 /** .seg: one bordered bar of choices; the picked one is ink with light text. */
 @Composable
@@ -253,7 +254,7 @@ fun PocketSwitch(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?, modifi
     val x by animateDpAsState(if (checked) 19.dp else 3.dp, if (Pocket.reducedMotion) snap() else tween(150), label = "tog")
     val m = if (onCheckedChange == null) modifier else
         modifier.toggleable(checked, remember { MutableInteractionSource() }, PocketIndication, enabled, Role.Switch, onCheckedChange)
-    Box(m.alpha(if (enabled) 1f else 0.55f).size(40.dp, 24.dp).background(if (checked) Pocket.Led else Pocket.PLine, RoundedCornerShape(12.dp))) {
+    Box(m.dimmedUnless(enabled).size(40.dp, 24.dp).background(if (checked) Pocket.Led else Pocket.PLine, RoundedCornerShape(12.dp))) {
         Box(Modifier.offset(x = x, y = 3.dp).size(18.dp).drawBehind {
             drawCircle(Color(0x4D000000), center = center.copy(y = center.y + 1.dp.toPx()))
         }.background(Color.White, CircleShape))
@@ -278,19 +279,11 @@ fun PocketToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) 
 fun PocketCheckbox(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?, modifier: Modifier = Modifier, enabled: Boolean = true) {
     val m = if (onCheckedChange == null) modifier else
         modifier.toggleable(checked, remember { MutableInteractionSource() }, PocketIndication, enabled, Role.Checkbox, onCheckedChange)
-    Box(m.padding(10.dp).alpha(if (enabled) 1f else 0.55f).size(20.dp)
+    Box(m.padding(10.dp).dimmedUnless(enabled).size(20.dp)
         .background(if (checked) Pocket.Accent else Pocket.PRaise, RoundedCornerShape(Pocket.RS))
         .border(2.dp, Pocket.Ink, RoundedCornerShape(Pocket.RS)), contentAlignment = Alignment.Center) {
         if (checked) Icon(Icons.Default.Check, null, tint = Pocket.AccentInk, modifier = Modifier.size(16.dp))
     }
-}
-
-/** .range: a slider in the accent colour. */
-@Composable
-fun PocketRange(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = Modifier, range: ClosedFloatingPointRange<Float> = 0f..1f, steps: Int = 0) {
-    Slider(value, onValueChange, modifier.fillMaxWidth(), valueRange = range, steps = steps,
-        colors = SliderDefaults.colors(thumbColor = Pocket.Accent, activeTrackColor = Pocket.Accent, inactiveTrackColor = Pocket.PLine,
-            activeTickColor = Pocket.AccentInk, inactiveTickColor = Pocket.Muted))
 }
 
 // ---------- text fields (.ask-field input, .ed-line input) ----------
@@ -353,17 +346,7 @@ fun PocketTextField(
     }
 }
 
-// ---------- notices, notes, boxes ----------
-
-/** .notice: the centred card for signed-out and error pages; [title] is its h2. */
-@Composable
-fun PocketNotice(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.widthIn(max = 520.dp).fillMaxWidth().background(Pocket.Surface, RoundedCornerShape(Pocket.RL))
-        .border(2.dp, Pocket.Ink, RoundedCornerShape(Pocket.RL)).padding(22.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 6.dp).semantics { heading() })
-        content()
-    }
-}
+// ---------- notes, boxes ----------
 
 /** .note (the yellow note); [error] = .note.sg-err (pink with a red edge). */
 @Composable
@@ -484,13 +467,13 @@ fun PocketStrip(modifier: Modifier = Modifier, content: @Composable () -> Unit) 
         Box(Modifier.clip(RoundedCornerShape(2.dp)).horizontalScroll(rememberScrollState())) {
             Layout(content) { measurables, c ->
                 val natural = measurables.map { it.maxIntrinsicWidth(c.maxHeight) }
-                val dividers = 2.dp.roundToPx() * (measurables.size - 1).coerceAtLeast(0)
+                val d = 2.dp.roundToPx()
+                val dividers = d * (measurables.size - 1).coerceAtLeast(0)
                 val spare = (min - natural.sum() - dividers).coerceAtLeast(0)
                 val extra = if (measurables.isEmpty()) 0 else spare / measurables.size
                 val widths = natural.map { it + extra }
                 val h = measurables.mapIndexed { i, m -> m.minIntrinsicHeight(widths[i]) }.maxOrNull() ?: 0
                 val placeables = measurables.mapIndexed { i, m -> m.measure(androidx.compose.ui.unit.Constraints.fixed(widths[i], h)) }
-                val d = 2.dp.roundToPx()
                 val total = widths.sum() + dividers
                 layout(maxOf(total, min), h) {
                     var x = 0
@@ -530,7 +513,7 @@ fun PocketMenuItem(text: String, onClick: () -> Unit, checked: Boolean = false, 
     val hovered by src.collectIsHoveredAsState()
     val fg = if (checked) Pocket.Bg else Pocket.Ink
     Row(
-        Modifier.widthIn(min = 210.dp).fillMaxWidth().padding(horizontal = 4.dp).alpha(if (enabled) 1f else 0.55f)
+        Modifier.widthIn(min = 210.dp).fillMaxWidth().padding(horizontal = 4.dp).dimmedUnless(enabled)
             .background(if (checked) Pocket.Ink else if (hovered) Pocket.Line else Color.Transparent, RoundedCornerShape(4.dp))
             .hoverable(src, enabled)
             .clickable(src, PocketIndication, enabled = enabled, role = Role.Button, onClick = onClick)
@@ -540,12 +523,6 @@ fun PocketMenuItem(text: String, onClick: () -> Unit, checked: Boolean = false, 
         Text(text, color = fg, style = MaterialTheme.typography.labelLarge.copy(fontSize = Pocket.rem(1f)), modifier = Modifier.weight(1f))
         if (trailing != null) Text(trailing, color = fg, style = MaterialTheme.typography.labelLarge.copy(fontSize = Pocket.rem(0.8f)))
     }
-}
-
-/** A plain line of menu text (not clickable): muted, like .meta. */
-@Composable
-fun PocketMenuText(text: String) {
-    Text(text, style = MaterialTheme.typography.bodySmall, color = Pocket.Muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
 }
 
 // ---------- toolbar rail (.toolbar, .tb-btn) ----------
@@ -572,7 +549,7 @@ fun PocketRailButton(icon: ImageVector, label: String, onClick: () -> Unit, enab
     val bg = when { set -> Pocket.AccentSoft; (hovered && enabled) || pressed -> Pocket.Accent; else -> Color.Transparent }
     val fg = if (set) Pocket.Ink else Pocket.Bg
     Column(
-        Modifier.width(56.dp).alpha(if (enabled) 1f else 0.55f).background(bg, RoundedCornerShape(Pocket.RM))
+        Modifier.width(56.dp).dimmedUnless(enabled).background(bg, RoundedCornerShape(Pocket.RM))
             .hoverable(src, enabled).clickable(src, PocketIndication, enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(vertical = 7.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp),

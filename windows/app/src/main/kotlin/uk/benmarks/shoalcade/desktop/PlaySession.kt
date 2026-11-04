@@ -202,10 +202,7 @@ class PlaySession(
         val noCheats = !cheatsAllowed
         PcCheatHost.handOver(userId, game.id) // review S9: the game sheet's editor stops before the list is read
         book = if (noCheats) CheatBook() else CheatStore.read(userId, game.id).first
-        if (!noCheats) cheatSync?.let { cs ->
-            val holder = object : CheatSyncCore.Holder { override var book: CheatBook get() = this@PlaySession.book; set(v) = setBook(v) }
-            withTimeoutOrNull(5_000) { cs.sync(game.id, holder) }
-        }
+        if (!noCheats) cheatSync?.let { cs -> withTimeoutOrNull(5_000) { cs.sync(game.id, cheatHolder) } }
         var snapFile: File? = null
         if (snapshot != null) {
             snapFile = snapshots.fetch(game, snapshot) // refuses another core build's snapshot
@@ -249,6 +246,9 @@ class PlaySession(
             dsLayout = if (console == Console.NDS) dsDisplay.let { StartRequest.DsLayoutStart(it.layout, it.swap) } else null,
             controllers = if (console == Console.WII) wiiControllers.get(game.id) else emptyList(),
             pressureCross = if (console == Console.PS2 && Ps2.pressureCross(DesktopStorage.context())) true else null,
+            // Settings → Display → Controller (D246, D247): sent only when switched off.
+            rumble = if (PadSettings.rumble(DesktopStorage.context())) null else false,
+            padShortcuts = if (PadSettings.shortcuts(DesktopStorage.context())) null else false,
             controls = controlsStore.start(console.key),
         ), notes)
     }
@@ -499,9 +499,7 @@ class PlaySession(
     private fun sendCheats() {
         val items = cheatItems()
         sentCheats = items
-        player?.send(org.json.JSONObject().put("type", "cheats.set").put("cheats", org.json.JSONArray(items.map {
-            org.json.JSONObject().put("id", it.id).put("name", it.name).put("code", it.code).put("enabled", it.enabled)
-        })))
+        player?.send(org.json.JSONObject().put("type", "cheats.set").put("cheats", org.json.JSONArray(items.map { it.toJson() })))
     }
 
     private val cheatHolder = object : CheatSyncCore.Holder {
@@ -631,11 +629,11 @@ class PlaySession(
     suspend fun closeResult(o: Outcome): Close {
         if (o.crashed) return Close.Said(STOPPED)
         val upload = o.mode == CloseMode.UPLOAD
-        if (!upload && !(autoUpload() && !o.pluginRefused)) {
+        // Close Game with no auto upload now, or with a choice already waiting: nothing goes up.
+        if (!upload && (!(autoUpload() && !o.pluginRefused) || o.needsChoice)) {
             return Close.Said(PcWords.of(CloseSave.closedText(o.savingOff, o.mayMiss)) +
                 if (o.needsChoice) " $CHOOSE_LATER" else "")
         }
-        if (!upload && o.needsChoice) return Close.Said(PcWords.of(CloseSave.closedText(o.savingOff, o.mayMiss)) + " $CHOOSE_LATER")
         val r = withContext(NonCancellable) { sync.uploadLatest(game, o.snapshotNoSave) }
         val note = PcWords.of(CloseSave.uploadNote(o.savingOff, o.mayMiss))
         return when {

@@ -24,6 +24,9 @@ enum class GameSort(val key: String, val label: String) {
         val PLATFORM_ORDER = listOf(Console.GB, Console.GBC, Console.GBA, Console.N64, Console.GC, Console.NDS, Console.WII,
             Console.N3DS, Console.PSX, Console.PS2, Console.PSP)
 
+        /** Where [c] sits in [PLATFORM_ORDER]; a console not in it (or none) goes last. */
+        internal fun platformRank(c: Console?): Int = PLATFORM_ORDER.indexOf(c).let { i -> if (i < 0) Int.MAX_VALUE else i }
+
         private val collator: Collator = Collator.getInstance(Locale.UK).apply { strength = Collator.PRIMARY }
         private val byName = Comparator<Game> { a, b -> collator.compare(a.name, b.name) }.thenBy { it.id }
 
@@ -32,9 +35,7 @@ enum class GameSort(val key: String, val label: String) {
             NAME -> games.sortedWith(byName)
             // Newest first; no year last.
             YEAR -> games.sortedWith(compareBy<Game> { it.year == null }.thenByDescending { it.year ?: 0 }.then(byName))
-            PLATFORM -> games.sortedWith(compareBy<Game> {
-                PLATFORM_ORDER.indexOf(it.console).let { i -> if (i < 0) Int.MAX_VALUE else i }
-            }.then(byName))
+            PLATFORM -> games.sortedWith(compareBy<Game> { platformRank(it.console) }.then(byName))
             LAST_PLAYED -> {
                 val t = games.associate { it.id to played(it) }
                 games.sortedWith(compareBy<Game> { t[it.id] == null }.thenByDescending { t[it.id] ?: 0L }.then(byName))

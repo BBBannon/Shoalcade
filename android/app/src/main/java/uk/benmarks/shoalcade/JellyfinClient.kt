@@ -59,11 +59,11 @@ object GameJson {
     fun fromJson(o: JSONObject) = Game(
         id = o.getString("id"),
         name = o.getString("name"),
-        console = o.optString("console").takeIf { it.isNotEmpty() && it != "null" }
+        console = o.optText("console")
             ?.let { runCatching { Console.valueOf(it) }.getOrNull() },
         fileName = o.optString("file", ""),
         canDownload = o.optBoolean("dl", true),
-        imageTag = o.optString("img").takeIf { it.isNotEmpty() && it != "null" },
+        imageTag = o.optText("img"),
         year = if (o.has("year") && !o.isNull("year")) o.optInt("year") else null,
         serverPlayed = if (o.has("played") && !o.isNull("played")) o.optLong("played") else null,
         favourite = o.optBoolean("fav", false),
@@ -79,7 +79,6 @@ data class QuickConnectCode(val serverUrl: String, val code: String, val secret:
 
 open class HttpException(val code: Int, message: String) : IOException(message)
 
-/** The server answered, but not with Shoalcade JSON (e.g. a Wi-Fi sign-in page). Treated like being offline. */
 /**
  * F3: no answer from the server at all (no network, server down, wrong address, or it took longer than
  * [JellyfinClient.Timeouts.call]). [nothingSent] says whether the request certainly never arrived: after a timeout or a
@@ -91,6 +90,7 @@ class ServerUnreachableException(timedOut: Boolean, cause: Throwable? = null) :
     val nothingSent: Boolean = !timedOut && (cause is ConnectException || cause is NoRouteToHostException || cause is UnknownHostException)
 }
 
+/** The server answered, but not with Shoalcade JSON (e.g. a Wi-Fi sign-in page). Treated like being offline. */
 class BadReplyException : IOException("The server sent a reply the app doesn't understand. If this Wi-Fi needs you to sign in, do that first.")
 
 /**
@@ -156,8 +156,7 @@ class JellyfinClient(
         // Password is left alone: spaces there can be real.
         val body = JSONObject().put("Username", user.trim()).put("Pw", password).toString()
         conn.outputStream.use { it.write(body.toByteArray()) }
-        val json = JSONObject(conn.checkOk().inputStream.bufferedReader().use { it.readText() })
-        conn.disconnect()
+        val json = JSONObject(conn.readOk())
         sessionFrom(base, json, user)
     }
 
@@ -184,8 +183,7 @@ class JellyfinClient(
             conn.disconnect()
             throw HttpException(401, "Quick Connect is turned off on the server (Dashboard → General → Quick Connect).")
         }
-        val json = JSONObject(conn.checkOk().inputStream.bufferedReader().use { it.readText() })
-        conn.disconnect()
+        val json = JSONObject(conn.readOk())
         QuickConnectCode(base, json.getString("Code"), json.getString("Secret"))
     }
 
@@ -197,8 +195,7 @@ class JellyfinClient(
             conn.disconnect()
             throw HttpException(404, "The Quick Connect code expired. Please try again.")
         }
-        val json = JSONObject(conn.checkOk().inputStream.bufferedReader().use { it.readText() })
-        conn.disconnect()
+        val json = JSONObject(conn.readOk())
         json.optBoolean("Authenticated", false)
     }
 
@@ -208,8 +205,7 @@ class JellyfinClient(
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/json")
         conn.outputStream.use { it.write(JSONObject().put("Secret", qc.secret).toString().toByteArray()) }
-        val json = JSONObject(conn.checkOk().inputStream.bufferedReader().use { it.readText() })
-        conn.disconnect()
+        val json = JSONObject(conn.readOk())
         sessionFrom(qc.serverUrl, json)
     }
 
@@ -247,23 +243,21 @@ class JellyfinClient(
 
     /** Version of the phone app inside the plugin (`/shoalcade/app/info`). Null if the admin turned it off or it isn't included. */
     suspend fun serverAppVersion(): String? = plugin {
-        val conn = open(url("/shoalcade/app/info"))
-        if (conn.responseCode == 404) { conn.disconnect(); return@plugin null }
+        val conn = openFound(url("/shoalcade/app/info")) ?: return@plugin null
         val o = JSONObject(conn.readOk())
         o.optString("version").takeIf { o.optBoolean("available") && it.isNotEmpty() && it != "null" }
     }
 
     /** One game with its current save(s). Null if hidden, removed or not a ROM. */
     suspend fun game(itemId: String): RemoteGame? = plugin {
-        val conn = open(url("/shoalcade/games/${id(itemId)}"))
-        if (conn.responseCode == 404) { conn.disconnect(); return@plugin null }
+        val conn = openFound(url("/shoalcade/games/${id(itemId)}")) ?: return@plugin null
         RemoteGame.parse(JSONObject(conn.readOk()), true)
     }
 
     /** Box art as JPEG bytes, scaled down by the server. Null if the game has no picture. */
     suspend fun boxArt(itemId: String, tag: String): ByteArray? = plugin {
-        val conn = open("${s.serverUrl}/Items/${id(itemId)}/Images/Primary?tag=${enc(tag)}&maxHeight=240&quality=85&format=Jpg")
-        if (conn.responseCode == 404) { conn.disconnect(); return@plugin null }
+        val conn = openFound("${s.serverUrl}/Items/${id(itemId)}/Images/Primary?tag=${enc(tag)}&maxHeight=240&quality=85&format=Jpg")
+            ?: return@plugin null
         val bytes = conn.checkOk().inputStream.use { it.readBytes() }
         conn.disconnect()
         bytes
@@ -281,21 +275,7 @@ class JellyfinClient(
             val dest = File(dir, safeFileName(contentDispositionName(conn.getHeaderField("Content-Disposition")), fallbackName))
             val part = File(dir, dest.name + ".part")
             dir.mkdirs()
-            conn.inputStream.use { input ->
-                part.outputStream().use { out ->
-                    val buf = ByteArray(64 * 1024)
-                    var done = 0L
-                    while (true) {
-                        ensureActive() // lets Cancel stop a big download mid-way
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        done += n
-                        if (total > 0) onProgress(done.toFloat() / total)
-                    }
-                }
-            }
-            conn.disconnect()
+            streamTo(conn, part, total, onProgress)
             if (!part.renameTo(dest)) throw IOException("Couldn't save the download.")
             dest
         }
@@ -327,21 +307,7 @@ class JellyfinClient(
             val dest = File(dir, disc.name)
             val part = File(dir, disc.name + ".part")
             dir.mkdirs()
-            var done = 0L
-            conn.inputStream.use { input ->
-                part.outputStream().use { out ->
-                    val buf = ByteArray(64 * 1024)
-                    while (true) {
-                        ensureActive()
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        done += n
-                        if (total > 0) onProgress(done.toFloat() / total)
-                    }
-                }
-            }
-            conn.disconnect()
+            val done = streamTo(conn, part, total, onProgress)
             if (disc.size >= 0 && done != disc.size) { part.delete(); throw IOException("The disc didn't download completely.") }
             if (dest.exists() && !dest.delete()) throw IOException("Couldn't replace the old disc file.")
             if (!part.renameTo(dest)) throw IOException("Couldn't save the download.")
@@ -399,10 +365,7 @@ class JellyfinClient(
         if (afterSnapshot) q.append("&afterSnapshot=true") // D90: the game saved this after a snapshot was loaded
         if (cheats) q.append("&cheats=true") // D143: made while cheats were on (the first one pins "Before cheats")
         val conn = open(url("/shoalcade/save/${id(itemId)}$q"), "PUT")
-        conn.doOutput = true
-        conn.setRequestProperty("Content-Type", "application/octet-stream")
-        conn.setFixedLengthStreamingMode(bytes.size)
-        conn.outputStream.use { it.write(bytes) }
+        conn.sendBody(bytes, "application/octet-stream")
         withCurrent(writeResult(conn), itemId)
     }
 
@@ -426,12 +389,8 @@ class JellyfinClient(
         val body = JSONObject()
         if (pinned != null) body.put("pinned", pinned)
         if (label != null) body.put("label", cleanLabel(label, maxLabel))
-        val bytes = body.toString().toByteArray(Charsets.UTF_8)
         val conn = open(url("/shoalcade/save/${id(itemId)}/versions/$version"), "PATCH")
-        conn.doOutput = true
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.setFixedLengthStreamingMode(bytes.size)
-        conn.outputStream.use { it.write(bytes) }
+        conn.sendBody(body.toString().toByteArray(Charsets.UTF_8), "application/json")
         (writeResult(conn) as? PutResult.Stored)?.version
     }
 
@@ -467,6 +426,16 @@ class JellyfinClient(
     }
 
     /** Deletes a cheat (and takes it off the active list). 404 ApiException "no_cheat" if it's already gone. */
+    suspend fun deleteCheat(itemId: String, cheatId: String): Unit = plugin {
+        open(url("/shoalcade/cheats/${id(itemId)}/${cheatId(cheatId)}"), "DELETE").checkOk().disconnect()
+    }
+
+    /** Sets the in-game save's active list. Unknown ids are dropped by the server. Returns the whole list. */
+    suspend fun setActiveCheats(itemId: String, ids: List<String>): CheatDoc = plugin {
+        ids.forEach { cheatId(it) }
+        CheatDoc.parse(JSONObject(sendJson("/shoalcade/cheats/${id(itemId)}/active", "PUT", JSONObject().put("ids", JSONArray(ids)))))
+    }
+
     /** Stars or unstars a game (Jellyfin favourites: the browser library shows the same stars). Needs "favourites". */
     suspend fun setFavourite(itemId: String, on: Boolean): Unit = plugin {
         val conn = open(url("/shoalcade/games/${id(itemId)}/favourite?on=$on"), "POST")
@@ -489,16 +458,6 @@ class JellyfinClient(
         o.getLong("playSeconds")
     }
 
-    suspend fun deleteCheat(itemId: String, cheatId: String): Unit = plugin {
-        open(url("/shoalcade/cheats/${id(itemId)}/${cheatId(cheatId)}"), "DELETE").checkOk().disconnect()
-    }
-
-    /** Sets the in-game save's active list. Unknown ids are dropped by the server. Returns the whole list. */
-    suspend fun setActiveCheats(itemId: String, ids: List<String>): CheatDoc = plugin {
-        ids.forEach { cheatId(it) }
-        CheatDoc.parse(JSONObject(sendJson("/shoalcade/cheats/${id(itemId)}/active", "PUT", JSONObject().put("ids", JSONArray(ids)))))
-    }
-
     /**
      * Internet link play routes (plugin feature "link-relay"). The token goes only in the Authorization header, as for
      * every other call; [RelayHttp] never logs it.
@@ -507,13 +466,17 @@ class JellyfinClient(
 
     /** Sends a JSON body; the answer's text. Refusals become [ApiException] with the server's message. */
     private fun sendJson(path: String, method: String, body: JSONObject): String {
-        val bytes = body.toString().toByteArray(Charsets.UTF_8)
         val conn = open(url(path), method)
-        conn.doOutput = true
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.setFixedLengthStreamingMode(bytes.size)
-        conn.outputStream.use { it.write(bytes) }
+        conn.sendBody(body.toString().toByteArray(Charsets.UTF_8), "application/json")
         return conn.readOk()
+    }
+
+    /** Sends [bytes] as the request body, with its length up front (no chunking). */
+    private fun HttpURLConnection.sendBody(bytes: ByteArray, contentType: String) {
+        doOutput = true
+        setRequestProperty("Content-Type", contentType)
+        setFixedLengthStreamingMode(bytes.size)
+        outputStream.use { it.write(bytes) }
     }
 
     /** Cheat ids go into URLs: only the server's 12 lower-case hex digits are accepted. */
@@ -569,6 +532,33 @@ class JellyfinClient(
     private fun url(path: String) = s.serverUrl + path
 
     private fun getText(path: String): String = open(url(path)).readOk()
+
+    /** [open], or null when the server answers 404 (no such game, picture or app). */
+    private fun openFound(u: String): HttpURLConnection? {
+        val conn = open(u)
+        if (conn.responseCode == 404) { conn.disconnect(); return null }
+        return conn
+    }
+
+    /** Streams the answer into [part]; Cancel stops it mid-way. Returns the bytes written. */
+    private fun CoroutineScope.streamTo(conn: HttpURLConnection, part: File, total: Long, onProgress: (Float) -> Unit): Long {
+        var done = 0L
+        conn.inputStream.use { input ->
+            part.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    ensureActive() // lets Cancel stop a big download mid-way
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    done += n
+                    if (total > 0) onProgress(done.toFloat() / total)
+                }
+            }
+        }
+        conn.disconnect()
+        return done
+    }
 
     private fun HttpURLConnection.readOk(): String {
         checkOk()
@@ -710,6 +700,9 @@ class JellyfinClient(
     }
 }
 
+/** A text field, or null when it is missing, empty or JSON null (org.json reads null as the text "null"). */
+private fun JSONObject.optText(key: String): String? = optString(key).takeIf { it.isNotEmpty() && it != "null" }
+
 /** A game from `/shoalcade/games`, with its current save. */
 data class RemoteGame(val game: Game, val save: SaveVersion?) {
     companion object {
@@ -727,7 +720,7 @@ data class RemoteGame(val game: Game, val save: SaveVersion?) {
                     console = Console.fromKey(o.optString("console")),
                     fileName = "",
                     canDownload = canDownload,
-                    imageTag = o.optString("imageTag").takeIf { it.isNotEmpty() && it != "null" },
+                    imageTag = o.optText("imageTag"),
                     year = year,
                     serverPlayed = GameSort.lastPlayed(lastPlayed, save?.createdMillis),
                     favourite = o.optBoolean("favourite", false),
@@ -774,12 +767,12 @@ data class SaveVersion(
             sha256 = o.optString("sha256").lowercase(),
             created = o.optString("created"),
             source = o.optString("source"),
-            device = o.optString("device").takeIf { it.isNotEmpty() && it != "null" },
+            device = o.optText("device"),
             pinned = o.optBoolean("pinned"),
-            label = o.optString("label").takeIf { it.isNotEmpty() && it != "null" },
+            label = o.optText("label"),
             restoredFrom = if (o.has("restoredFrom") && !o.isNull("restoredFrom")) o.getInt("restoredFrom") else null,
             isCurrent = o.optBoolean("isCurrent"),
-            origin = o.optString("origin").takeIf { it.isNotEmpty() && it != "null" },
+            origin = o.optText("origin"),
             afterSnapshot = o.optBoolean("afterSnapshot"),
             cheats = o.optBoolean("cheats"),
         )

@@ -29,8 +29,7 @@ object Compat {
      */
     fun parse(v: String?): List<Int>? {
         val t = v?.trim()?.removePrefix("a")?.removePrefix("s")?.replace(DEV, "")?.takeIf { it.isNotEmpty() } ?: return null
-        val parts = t.split('.').map { it.toIntOrNull() ?: return null }
-        return parts
+        return t.split('.').map { it.toIntOrNull() ?: return null }
     }
 
     /**

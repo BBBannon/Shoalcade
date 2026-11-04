@@ -239,4 +239,4 @@ Both copies are kept either way.
 | Windows: "Windows protected your PC" | The installer isn't signed yet. **More info → Run anyway** |
 | Windows: saves won't upload | Update the plugin to **0.10.0.0 or newer**, then fully restart Jellyfin |
 
-**Please report bugs on [Discord](https://discord.gg/SRDBXwhre)** — not to the Jellyfin team.
+**Please report bugs on [Discord](https://discord.gg/8jZQXTRCEj)** — not to the Jellyfin team.

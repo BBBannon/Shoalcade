@@ -10,17 +10,14 @@ import uk.benmarks.shoalcade.BadReplyException
 import uk.benmarks.shoalcade.BuildConfig
 import uk.benmarks.shoalcade.JellyfinClient
 import uk.benmarks.shoalcade.SaveVersion
-import uk.benmarks.shoalcade.ServerCheat
 import uk.benmarks.shoalcade.ServerStatus
 import uk.benmarks.shoalcade.ServerUnreachableException
 import uk.benmarks.shoalcade.Session
 import java.io.File
 import java.io.IOException
-import java.net.ConnectException
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
-import java.net.http.HttpConnectTimeoutException
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.net.http.HttpTimeoutException
@@ -75,14 +72,8 @@ class DesktopApi(
     private suspend fun <T> send(req: HttpRequest, body: HttpResponse.BodyHandler<T>): HttpResponse<T> = withContext(Dispatchers.IO) {
         val res = try {
             http.send(req, body)
-        } catch (e: HttpConnectTimeoutException) {
-            ServerStatus.report(false); throw ServerUnreachableException(true, e)
-        } catch (e: HttpTimeoutException) {
-            ServerStatus.report(false); throw ServerUnreachableException(true, e)
-        } catch (e: ConnectException) {
-            ServerStatus.report(false); throw ServerUnreachableException(false, e)
-        } catch (e: IOException) {
-            ServerStatus.report(false); throw ServerUnreachableException(false, e)
+        } catch (e: IOException) { // no answer; a timeout (connecting or waiting, HttpConnectTimeoutException included) says so
+            ServerStatus.report(false); throw ServerUnreachableException(e is HttpTimeoutException, e)
         }
         ServerStatus.report(JellyfinClient.answered(res.statusCode()))
         res
@@ -279,8 +270,5 @@ class DesktopApi(
             val uri = URI(u ?: return false)
             uri.scheme.equals("https", true) && !uri.host.isNullOrEmpty() && uri.userInfo == null
         }.getOrDefault(false)
-
-        /** A cheat as the server's snapshot list keeps it. */
-        fun cheatPairs(list: List<ServerCheat>) = list.map { it.name to it.code }
     }
 }

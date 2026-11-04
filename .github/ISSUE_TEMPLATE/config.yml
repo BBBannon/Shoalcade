@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a bug or ask for help on Discord
-    url: https://discord.gg/SRDBXwhre
+    url: https://discord.gg/8jZQXTRCEj
     about: Bugs, ideas and help are handled on Discord. Please post there first.
   - name: Report a security problem
     url: https://github.com/BBBannon/Shoalcade/security/advisories/new

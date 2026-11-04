@@ -1,5 +1,7 @@
 package uk.benmarks.shoalcade
 
+import android.content.Context
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -14,11 +16,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -80,6 +80,31 @@ private fun Badge(text: String, bg: Color, fg: Color, marker: String = "") {
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp))
     }
 }
+
+/** A save file's ending for "Save a copy to a file…": a folder save (PSP, 3DS) goes out as a zip. */
+private fun saveExt(folder: Boolean) = if (folder) "zip" else "sav"
+
+/** A tappable list row, at least 48 dp tall, read as a button. */
+private fun Modifier.tapRow(enabled: Boolean = true, onClick: () -> Unit) =
+    fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+
+/** Writes [bytes] to the file the person picked, off the main thread (reading them too). */
+private suspend fun writeToUri(ctx: Context, uri: Uri, bytes: () -> ByteArray) =
+    withContext(Dispatchers.IO) { ctx.contentResolver.openOutputStream(uri)!!.use { it.write(bytes()) } }
+
+/** The panel's last result (red for a problem), read out when it changes. */
+@Composable
+private fun StatusLine(text: String, error: Boolean) = LiveText(text,
+    if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, Modifier.padding(vertical = 6.dp))
+
+/** "Loading…", "No saves on Jellyfin yet." and the like, where the list would be. */
+@Composable
+private fun ListNote(text: String) = Text(text, Modifier.padding(vertical = 8.dp))
+
+/** Where an older copy on the phone came from, and its size. */
+private fun backupLine(b: Storage.Backup) =
+    (if (b.fromJellyfin) "Jellyfin's save, kept when the phone's replaced it" else "From this phone") + " · " + sizeLabel(b.file.length())
+
 
 /**
  * Saves panel (D39): the game's save history on Jellyfin, with "Use this save", save-a-copy, replace-with-a-file, and
@@ -149,7 +174,7 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
         scope.launch {
             status = try {
                 val d = vm.versionBytes(game, v.version)
-                withContext(Dispatchers.IO) { ctx.contentResolver.openOutputStream(uri)!!.use { it.write(d.bytes) } }
+                writeToUri(ctx, uri) { d.bytes }
                 "Saved a copy of version ${v.version}."
             } catch (e: Exception) {
                 "Couldn't save the copy: ${e.message}"
@@ -200,10 +225,7 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
                     Text("Jellyfin keeps the last $recent versions plus one a day for $days days. The one in use and pinned ones are never removed.",
                         style = MaterialTheme.typography.bodySmall)
                 }
-                status?.let {
-                    Text(it, color = if (statusError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(vertical = 6.dp).semantics { liveRegion = LiveRegionMode.Polite }) // read out when it changes
-                }
+                status?.let { StatusLine(it, statusError) }
                 if (offline && history != null) {
                     Text("You're offline (Jellyfin can't be reached), so Pin and Name are off. Nothing was changed.",
                         color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
@@ -214,48 +236,17 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
                 val h = history
                 when {
                     h == null && loadFailed -> OutlinedButton(onClick = { status = null; reload++ }, Modifier.padding(vertical = 8.dp)) { Text("Retry") }
-                    h == null -> Text("Loading…", Modifier.padding(vertical = 8.dp))
-                    h.versions.isEmpty() -> Text("No saves on Jellyfin yet.", Modifier.padding(vertical = 8.dp))
+                    h == null -> ListNote("Loading…")
+                    h.versions.isEmpty() -> ListNote("No saves on Jellyfin yet.")
                     else -> LazyColumn(Modifier.heightIn(max = 360.dp)) {
                         items(h.versions, key = { it.version }) { v ->
-                            val canChange = !busy && !offline
-                            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                                Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !busy, role = Role.Button) { selected = v }.padding(vertical = 2.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Version ${v.version}", fontWeight = if (v.isCurrent) FontWeight.Bold else FontWeight.Normal)
-                                        if (v.isCurrent) Badge("In use", InUseRed, Color.White)
-                                        if (v.pinned) Badge("Pinned", MaterialTheme.colorScheme.inverseSurface,
-                                            MaterialTheme.colorScheme.inverseOnSurface, marker = "📌 ")
-                                    }
-                                    // The name is what the person chose, so it stands out (as in the browser).
-                                    v.label?.let { Text(it, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold) }
-                                    Text(
-                                        listOfNotNull(v.createdMillis?.let { formatTime(it) }, fromLabel(v), sizeLabel(v.size),
-                                            if (v.origin == "browser") "Was a browser save (merged in)" else null,
-                                            if (v.afterSnapshot) "Saved after loading a snapshot" else null,
-                                            if (v.cheats) "Made with cheats on" else null).joinToString(" · "),
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                                Row {
-                                    TextButton(
-                                        enabled = canChange,
-                                        onClick = {
-                                            change(v, pinned = !v.pinned,
-                                                ok = if (v.pinned) "Unpinned version ${v.version}" else "Pinned. Version ${v.version} won't be cleared out.")
-                                        },
-                                        modifier = Modifier.semantics {
-                                            contentDescription = (if (v.pinned) "Unpin version " else "Pin version ") + v.version
-                                            stateDescription = if (v.pinned) "Pinned" else "Not pinned"
-                                        },
-                                    ) { Text(if (v.pinned) "Unpin" else "Pin") }
-                                    TextButton(
-                                        enabled = canChange,
-                                        onClick = { naming = v },
-                                        modifier = Modifier.semantics { contentDescription = "Name version ${v.version}" },
-                                    ) { Text("Name") }
-                                }
-                            }
+                            VersionRow(v, busy, canChange = !busy && !offline,
+                                onOpen = { selected = v },
+                                onPin = {
+                                    change(v, pinned = !v.pinned,
+                                        ok = if (v.pinned) "Unpinned version ${v.version}" else "Pinned. Version ${v.version} won't be cleared out.")
+                                },
+                                onName = { naming = v })
                             HorizontalDivider()
                         }
                     }
@@ -282,8 +273,7 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
                     TextButton(onClick = {
                         selected = null
                         exportVersion = v
-                        val ext = if (game.console?.hasFolderSaves == true) "zip" else "sav"
-                        exportLauncher.launch("${game.name} v${v.version}.$ext")
+                        exportLauncher.launch("${game.name} v${v.version}.${saveExt(game.console?.hasFolderSaves == true)}")
                     }) { Text("Save a copy to a file…") }
                     TextButton(onClick = { selected = null }) { Text("Cancel") }
                 }
@@ -361,6 +351,45 @@ internal fun SavesPanel(vm: AppViewModel, game: Game, onDismiss: () -> Unit) {
     }
 }
 
+/** One version in the Saves panel: tap it for Use this save / Save a copy; Pin and Name under it. */
+@Composable
+private fun VersionRow(
+    v: SaveVersion, busy: Boolean, canChange: Boolean, onOpen: () -> Unit, onPin: () -> Unit, onName: () -> Unit,
+) = Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    Column(Modifier.tapRow(enabled = !busy, onClick = onOpen).padding(vertical = 2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Version ${v.version}", fontWeight = if (v.isCurrent) FontWeight.Bold else FontWeight.Normal)
+            if (v.isCurrent) Badge("In use", InUseRed, Color.White)
+            if (v.pinned) Badge("Pinned", MaterialTheme.colorScheme.inverseSurface,
+                MaterialTheme.colorScheme.inverseOnSurface, marker = "📌 ")
+        }
+        // The name is what the person chose, so it stands out (as in the browser).
+        v.label?.let { Text(it, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold) }
+        Text(
+            listOfNotNull(v.createdMillis?.let { formatTime(it) }, fromLabel(v), sizeLabel(v.size),
+                if (v.origin == "browser") "Was a browser save (merged in)" else null,
+                if (v.afterSnapshot) "Saved after loading a snapshot" else null,
+                if (v.cheats) "Made with cheats on" else null).joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    Row {
+        TextButton(
+            enabled = canChange,
+            onClick = onPin,
+            modifier = Modifier.semantics {
+                contentDescription = (if (v.pinned) "Unpin version " else "Pin version ") + v.version
+                stateDescription = if (v.pinned) "Pinned" else "Not pinned"
+            },
+        ) { Text(if (v.pinned) "Unpin" else "Pin") }
+        TextButton(
+            enabled = canChange,
+            onClick = onName,
+            modifier = Modifier.semantics { contentDescription = "Name version ${v.version}" },
+        ) { Text("Name") }
+    }
+}
+
 /**
  * B9 "Not in your library" (D135): saves on this phone for games Jellyfin no longer lists, opened from Settings →
  * Saves. Each one can be saved to a file or uploaded to a game that is in the library (checked against that game's
@@ -418,7 +447,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
         scope.launch {
             try {
                 val bytes = vm.orphanBytes(o) ?: throw java.io.IOException("the save has gone from the phone.")
-                withContext(Dispatchers.IO) { ctx.contentResolver.openOutputStream(uri)!!.use { it.write(bytes) } }
+                writeToUri(ctx, uri) { bytes }
                 statusError = false; status = "Saved a copy of the ${o.title} save."
             } catch (e: Exception) {
                 statusError = true; status = "Couldn't save the copy: ${e.message}"
@@ -432,7 +461,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             try {
-                withContext(Dispatchers.IO) { ctx.contentResolver.openOutputStream(uri)!!.use { it.write(b.file.readBytes()) } }
+                writeToUri(ctx, uri) { b.file.readBytes() }
                 statusError = false; status = "Saved a copy of the older copy from ${formatTime(b.time)}."
             } catch (e: Exception) {
                 statusError = true; status = "Couldn't save the copy: ${e.message}"
@@ -457,25 +486,20 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
             Column {
                 Text("Games no longer in your library that still have a save, download or snapshot on this phone. " +
                     "Saves stay on this phone: nothing here deletes them.", style = MaterialTheme.typography.bodySmall)
-                status?.let {
-                    Text(it, color = if (statusError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(vertical = 6.dp).semantics { liveRegion = LiveRegionMode.Polite })
-                }
+                status?.let { StatusLine(it, statusError) }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 val l = list
                 when {
-                    l == null -> Text("Loading…", Modifier.padding(vertical = 8.dp))
-                    l is OrphanView.ListNotLoaded -> Text("Game list not loaded yet. Connect to Jellyfin once so the app knows " +
-                        "which games are in your library.", Modifier.padding(vertical = 8.dp))
+                    l == null -> ListNote("Loading…")
+                    l is OrphanView.ListNotLoaded -> ListNote("Game list not loaded yet. Connect to Jellyfin once so the app knows " +
+                        "which games are in your library.")
                     l is OrphanView.Failed -> Text("Couldn't read the saves on this phone: ${l.reason}",
                         color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp))
                     l is OrphanView.Ready && l.saves.isEmpty() ->
-                        Text("None. Every save, download and snapshot on this phone is for a game in your library.",
-                            Modifier.padding(vertical = 8.dp))
+                        ListNote("None. Every save, download and snapshot on this phone is for a game in your library.")
                     l is OrphanView.Ready -> LazyColumn(Modifier.heightIn(max = 360.dp)) {
                         items(l.saves, key = { it.id }) { o ->
-                            Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !busy, role = Role.Button) { selected = o }
-                                .padding(vertical = 6.dp)) {
+                            Column(Modifier.tapRow(enabled = !busy) { selected = o }.padding(vertical = 6.dp)) {
                                 Text(o.title, fontWeight = FontWeight.SemiBold)
                                 Text(details(o), style = MaterialTheme.typography.bodySmall)
                             }
@@ -507,7 +531,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
                         TextButton(onClick = {
                             selected = null
                             exporting = o
-                            exportLauncher.launch("${o.title}.${if (o.folder) "zip" else "sav"}")
+                            exportLauncher.launch("${o.title}.${saveExt(o.folder)}")
                         }) { Text("Save a copy to a file…") }
                         TextButton(enabled = !o.blank, onClick = { selected = null; picking = o }) { Text("Upload to another game…") }
                     }
@@ -530,8 +554,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
                 else LazyColumn(Modifier.heightIn(max = 360.dp)) {
                     items(targets, key = { it.id }) { g ->
                         Text(g.name + (g.console?.let { "  (${it.shortName})" } ?: ""),
-                            Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { picking = null; confirm = o to g }
-                                .padding(vertical = 12.dp))
+                            Modifier.tapRow { picking = null; confirm = o to g }.padding(vertical = 12.dp))
                         HorizontalDivider()
                     }
                 }
@@ -541,17 +564,13 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
     }
 
     confirm?.let { (o, g) ->
-        AlertDialog(
-            onDismissRequest = { confirm = null },
-            title = { DialogTitle("Upload to ${g.name}?") },
-            text = {
-                Text("The ${o.title} save becomes the save in use for ${g.name} on Jellyfin. The save it was using stays in the list." +
-                    (if (Storage.isDownloaded(g)) " It's then put on this phone; your phone save for ${g.name} is backed up first." else "") +
-                    " The copy here is kept.")
-            },
-            confirmButton = { TextButton(onClick = { confirm = null; send(o, g, "normal") }) { Text("Upload") } },
-            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } },
-        )
+        ConfirmDialog("Upload to ${g.name}?",
+            "The ${o.title} save becomes the save in use for ${g.name} on Jellyfin. The save it was using stays in the list." +
+                (if (Storage.isDownloaded(g)) " It's then put on this phone; your phone save for ${g.name} is backed up first." else "") +
+                " The copy here is kept.",
+            confirm = "Upload",
+            onConfirm = { confirm = null; send(o, g, "normal") },
+            onDismiss = { confirm = null })
     }
 
     conflict?.let { (o, g, server) ->
@@ -579,40 +598,28 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
     }
 
     removing?.let { o ->
-        AlertDialog(
-            onDismissRequest = { removing = null },
-            title = { DialogTitle("Remove ${o.title}?") },
-            text = {
-                Text("This deletes only the game's downloaded copy on this phone" + (o.download?.let { " (${sizeLabel(it)})" } ?: "") +
-                    ". It's no longer in your library, so it can't be downloaded again unless it comes back. " +
-                    "Its save, older copies and snapshot are kept.")
+        ConfirmDialog("Remove ${o.title}?",
+            "This deletes only the game's downloaded copy on this phone" + (o.download?.let { " (${sizeLabel(it)})" } ?: "") +
+                ". It's no longer in your library, so it can't be downloaded again unless it comes back. " +
+                "Its save, older copies and snapshot are kept.",
+            confirm = "Remove download", confirmEnabled = !busy,
+            onConfirm = {
+                removing = null; busy = true
+                vm.removeOrphanDownload(o) { busy = false; reload++ }
             },
-            confirmButton = {
-                TextButton(enabled = !busy, onClick = {
-                    removing = null; busy = true
-                    vm.removeOrphanDownload(o) { busy = false; reload++ }
-                }) { Text("Remove download") }
-            },
-            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } },
-        )
+            onDismiss = { removing = null })
     }
 
     deletingSnapshot?.let { o ->
-        AlertDialog(
-            onDismissRequest = { deletingSnapshot = null },
-            title = { DialogTitle("Delete the snapshot?") },
-            text = {
-                Text("The snapshot of ${o.title}" + (o.snapshotTime?.let { " from ${formatTime(it)}" } ?: "") +
-                    " is deleted from this phone. This can't be undone. The save is kept.")
+        ConfirmDialog("Delete the snapshot?",
+            "The snapshot of ${o.title}" + (o.snapshotTime?.let { " from ${formatTime(it)}" } ?: "") +
+                " is deleted from this phone. This can't be undone. The save is kept.",
+            confirm = "Delete snapshot", confirmEnabled = !busy,
+            onConfirm = {
+                deletingSnapshot = null; busy = true
+                vm.deleteOrphanSnapshot(o) { busy = false; reload++ }
             },
-            confirmButton = {
-                TextButton(enabled = !busy, onClick = {
-                    deletingSnapshot = null; busy = true
-                    vm.deleteOrphanSnapshot(o) { busy = false; reload++ }
-                }) { Text("Delete snapshot") }
-            },
-            dismissButton = { TextButton(onClick = { deletingSnapshot = null }) { Text("Cancel") } },
-        )
+            onDismiss = { deletingSnapshot = null })
     }
 
     backupsOf?.let { o ->
@@ -625,15 +632,13 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
                     Text("Copies of the save this phone kept before it was replaced (the last 10).",
                         style = MaterialTheme.typography.bodySmall)
                     when {
-                        list == null -> Text("Loading…", Modifier.padding(vertical = 8.dp))
-                        list.isEmpty() -> Text("No older copies on this phone.", Modifier.padding(vertical = 8.dp))
+                        list == null -> ListNote("Loading…")
+                        list.isEmpty() -> ListNote("No older copies on this phone.")
                         else -> LazyColumn(Modifier.heightIn(max = 360.dp)) {
                             items(list, key = { it.file.name }) { b ->
-                                Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = !busy, role = Role.Button) { backupPicked = b }
-                                    .padding(vertical = 6.dp)) {
+                                Column(Modifier.tapRow(enabled = !busy) { backupPicked = b }.padding(vertical = 6.dp)) {
                                     Text(formatTime(b.time), fontWeight = FontWeight.SemiBold)
-                                    Text((if (b.fromJellyfin) "Jellyfin's save, kept when the phone's replaced it" else "From this phone") +
-                                        " · " + sizeLabel(b.file.length()), style = MaterialTheme.typography.bodySmall)
+                                    Text(backupLine(b), style = MaterialTheme.typography.bodySmall)
                                 }
                                 HorizontalDivider()
                             }
@@ -650,8 +655,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
         AlertDialog(
             onDismissRequest = { backupPicked = null },
             title = { DialogTitle("Copy from ${formatTime(b.time)}") },
-            text = { Text((if (b.fromJellyfin) "Jellyfin's save, kept when the phone's replaced it" else "From this phone") +
-                " · " + sizeLabel(b.file.length())) },
+            text = { Text(backupLine(b)) },
             confirmButton = {
                 Column(horizontalAlignment = Alignment.End) {
                     if (o != null) TextButton(onClick = { backupPicked = null; confirmBackup = b }) { Text("Put back on this phone") }
@@ -659,7 +663,7 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
                         backupPicked = null
                         exportingBackup = b
                         val day = java.text.SimpleDateFormat("yyyy-MM-dd HH-mm", java.util.Locale.UK).format(Date(b.time))
-                        backupExportLauncher.launch("${o?.title ?: "Save"} $day.${if (o?.folder == true) "zip" else "sav"}")
+                        backupExportLauncher.launch("${o?.title ?: "Save"} $day.${saveExt(o?.folder == true)}")
                     }) { Text("Save a copy to a file…") }
                     TextButton(onClick = { backupPicked = null }) { Text("Cancel") }
                 }
@@ -669,30 +673,24 @@ internal fun OrphanSavesPanel(vm: AppViewModel, onDismiss: () -> Unit) {
 
     confirmBackup?.let { b ->
         val o = backupsOf
-        AlertDialog(
-            onDismissRequest = { confirmBackup = null },
-            title = { DialogTitle("Put this copy back?") },
-            text = {
-                Text("The copy from ${formatTime(b.time)} becomes the save on this phone. " +
-                    "The save there now is kept as an older copy first.")
-            },
-            confirmButton = {
-                TextButton(enabled = !busy && o != null, onClick = {
-                    confirmBackup = null
-                    if (o != null) {
-                        busy = true
-                        vm.restoreOrphanBackup(o, b) { err ->
-                            busy = false
-                            statusError = err != null
-                            status = err?.let { "Couldn't put the copy back: $it" }
-                                ?: "The copy from ${formatTime(b.time)} is now the ${o.title} save on this phone."
-                            backupsOf = null
-                            reload++
-                        }
+        ConfirmDialog("Put this copy back?",
+            "The copy from ${formatTime(b.time)} becomes the save on this phone. " +
+                "The save there now is kept as an older copy first.",
+            confirm = "Put back", confirmEnabled = !busy && o != null,
+            onConfirm = {
+                confirmBackup = null
+                if (o != null) {
+                    busy = true
+                    vm.restoreOrphanBackup(o, b) { err ->
+                        busy = false
+                        statusError = err != null
+                        status = err?.let { "Couldn't put the copy back: $it" }
+                            ?: "The copy from ${formatTime(b.time)} is now the ${o.title} save on this phone."
+                        backupsOf = null
+                        reload++
                     }
-                }) { Text("Put back") }
+                }
             },
-            dismissButton = { TextButton(onClick = { confirmBackup = null }) { Text("Cancel") } },
-        )
+            onDismiss = { confirmBackup = null })
     }
 }

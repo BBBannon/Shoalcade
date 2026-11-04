@@ -139,7 +139,7 @@ tasks.named("compileKotlin") { dependsOn(makeBuildConfig) }
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
-    implementation(compose.materialIconsExtended)
+    // No materialIconsExtended (37.7 MB): the few icons beyond the core set are in ui/PocketIcons.kt.
     // Same versions as the phone app (android/app/build.gradle.kts).
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0") // Dispatchers.Main for Compose Desktop
     implementation("org.json:json:20240303") // Android has org.json built in; the desktop needs the real one

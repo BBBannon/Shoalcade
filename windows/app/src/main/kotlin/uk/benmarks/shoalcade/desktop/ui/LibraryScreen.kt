@@ -12,6 +12,7 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -41,11 +42,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
@@ -62,7 +59,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
@@ -70,7 +71,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -79,15 +79,22 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uk.benmarks.shoalcade.BuildConfig
+import uk.benmarks.shoalcade.Console
 import uk.benmarks.shoalcade.ConsoleBar
 import uk.benmarks.shoalcade.ConsoleFilter
 import uk.benmarks.shoalcade.Game
 import uk.benmarks.shoalcade.GameSort
 import uk.benmarks.shoalcade.LibraryFilter
+import uk.benmarks.shoalcade.LinkRules
 import uk.benmarks.shoalcade.PlayTime
 import uk.benmarks.shoalcade.ServerStatus
 import uk.benmarks.shoalcade.desktop.AppModel
+import uk.benmarks.shoalcade.desktop.CheatEditor
+import uk.benmarks.shoalcade.desktop.ContinueCard
+import uk.benmarks.shoalcade.desktop.DesktopStorage
+import uk.benmarks.shoalcade.desktop.NetworkAdapter
 import uk.benmarks.shoalcade.desktop.PcWords
+import uk.benmarks.shoalcade.desktop.Ps2
 
 /**
  * The library in the plugin's Pocket layout (index.html, sc.css): the top bar (brand, who, Settings, search), the
@@ -157,8 +164,16 @@ fun LibraryScreen(vm: AppModel) {
                     val recent = remember(vm.games, vm.diskVersion, vm.playing) {
                         vm.games.mapNotNull { g -> vm.lastPlayed(g)?.let { g to it } }.sortedByDescending { it.second }.take(6)
                     }
+                    val carryOn = remember(vm.games, onPc, vm.diskVersion, vm.playing, search, vm.showContinue) {
+                        if (vm.showContinue) ContinueCard.pick(vm.games, onPc, search) { vm.lastPlayed(it) } else null
+                    }
                     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(32.dp)) {
                         Column(Modifier.weight(1f)) {
+                            // D248: the Continue card. Play's own path (save check, launch choice); a PS2 game with no
+                            // BIOS on this PC opens its sheet instead, which says why it can't start.
+                            carryOn?.let { (g, at) ->
+                                ContinueTile(g, at, vm) { if (vm.needsBios(g)) sheetOf = g.id else vm.play(g) }
+                            }
                             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 PocketSection("Games", "${shown.size} " + if (shown.size == 1) "game" else "games", Modifier.weight(1f))
                                 SortButton(vm.sort) { vm.chooseSort(it) }
@@ -223,7 +238,7 @@ internal fun TopBar(vm: AppModel, search: String, onSearch: (String) -> Unit, co
 /** The Dev build's marker (D152): the Dev red with the orange edge, beside the recoloured logo. */
 @Composable
 private fun DevBadge() {
-    Text("Dev", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelSmall.copy(fontSize = Pocket.rem(0.8f)),
+    Text("Dev", color = Color.White, style = MaterialTheme.typography.labelSmall.copy(fontSize = Pocket.rem(0.8f)),
         modifier = Modifier.background(Brand.DevRed, RoundedCornerShape(2.dp)).leftEdge(Brand.DevOrange, 4.dp)
             .padding(start = 10.dp, end = 8.dp, top = 2.dp, bottom = 2.dp))
 }
@@ -251,8 +266,8 @@ private fun SearchBox(value: String, onChange: (String) -> Unit) {
 }
 
 /** border-bottom: 2px solid [c]. */
-private fun Modifier.drawUnderline(c: androidx.compose.ui.graphics.Color) = drawBehind {
-    drawRect(c, topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - 2.dp.toPx()), size = androidx.compose.ui.geometry.Size(size.width, 2.dp.toPx()))
+private fun Modifier.drawUnderline(c: Color) = drawBehind {
+    drawRect(c, topLeft = Offset(0f, size.height - 2.dp.toPx()), size = Size(size.width, 2.dp.toPx()))
 }
 
 /** .strip: All, ★ Favourites only, ⬇ On this PC only, then each console (or maker menu), with counts (.chip-k). */
@@ -287,7 +302,7 @@ private fun ConsoleStrip(vm: AppModel, filter: ConsoleFilter, onPc: Set<String>,
 
 /** A DropdownMenu drawn as .con-menu (surface, 2 px ink edge). */
 @Composable
-private fun PocketDropdown(open: Boolean, onDismiss: () -> Unit, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+private fun PocketDropdown(open: Boolean, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     DropdownMenu(open, onDismiss, containerColor = Pocket.Surface, shape = RoundedCornerShape(Pocket.RM),
         border = BorderStroke(2.dp, Pocket.Ink), tonalElevation = 0.dp, shadowElevation = 0.dp, content = content)
 }
@@ -347,7 +362,7 @@ private fun SettingsButton(connected: Boolean, open: Boolean, onClick: () -> Uni
     }) {
         Box {
             Icon(Icons.Default.Settings, contentDescription = null, tint = colour, modifier = Modifier.size(20.dp))
-            if (!connected) Text("!", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelSmall,
+            if (!connected) Text("!", color = Color.White, style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.align(Alignment.TopEnd).padding(start = 12.dp).background(Pocket.Led, CircleShape).padding(horizontal = 4.dp))
         }
         Text("Settings")
@@ -357,9 +372,11 @@ private fun SettingsButton(connected: Boolean, open: Boolean, onClick: () -> Uni
 /** What the game sheet's buttons open (dialogs live on the library screen). */
 class CardActions(val savesPanel: (Game) -> Unit, val getSave: (Game) -> Unit, val cheats: (Game) -> Unit)
 
+private fun consoleName(g: Game) = g.console?.shortName ?: "Unknown console"
+
 /** The card's second line: console, On this PC, play time (the phone's words). */
 private fun cardMeta(g: Game, vm: AppModel, downloaded: Boolean) = listOfNotNull(
-    g.console?.shortName ?: "Unknown console",
+    consoleName(g),
     if (downloaded) PcWords.of("On phone") else null,
     PlayTime.label(vm.playSeconds(g)),
 ).joinToString(" · ")
@@ -375,7 +392,7 @@ private fun GameCard(g: Game, vm: AppModel, downloaded: Boolean, onOpen: () -> U
         Modifier.fillMaxWidth().hoverable(src)
             .clickable(src, PocketIndication, role = Role.Button, onClick = onOpen)
             .semantics(mergeDescendants = true) {
-                contentDescription = g.name + ", " + (g.console?.shortName ?: "Unknown console") + (if (g.favourite) ", starred" else "")
+                contentDescription = g.name + ", " + consoleName(g) + (if (g.favourite) ", starred" else "")
             },
         verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
@@ -388,6 +405,40 @@ private fun GameCard(g: Game, vm: AppModel, downloaded: Boolean, onOpen: () -> U
             PocketMini({ vm.askConflict(g) }, Modifier.padding(top = 4.dp), danger = true) { Text("⚠️ PC and Jellyfin saves differ: choose") }
         } else if (g.id in vm.waitingIds) {
             Text("Save waiting to go up to Jellyfin", style = MaterialTheme.typography.bodySmall, color = Pocket.Accent)
+        }
+    }
+}
+
+/**
+ * The Continue card (D248, [ContinueCard]): box art, "Continue", the name, console and when it was played, and a Play
+ * mark. One click, or Enter / Space when focused, starts the game through Play ([AppModel.play]); a screen reader
+ * hears it as one button.
+ */
+@Composable
+private fun ContinueTile(g: Game, at: Long, vm: AppModel, onPlay: () -> Unit) {
+    val src = remember { MutableInteractionSource() }
+    val hovered by src.collectIsHoveredAsState()
+    val focused by src.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(Pocket.RL)
+    val played = consoleName(g) + ", played " + Ago.of(at)
+    Row(
+        Modifier.padding(bottom = 18.dp).widthIn(max = 560.dp).fillMaxWidth()
+            .hardShadow(hovered || focused, 4.dp, Pocket.RL)
+            .background(Pocket.Surface, shape).border(2.dp, Pocket.Ink, shape)
+            .hoverable(src)
+            .clickable(src, PocketIndication, role = Role.Button, onClick = onPlay)
+            .semantics(mergeDescendants = true) { contentDescription = "${ContinueCard.TITLE}: ${g.name}, $played. Starts the game." }
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Cover(g, vm, Modifier.width(72.dp), small = true)
+        Column(Modifier.weight(1f)) {
+            Text(ContinueCard.TITLE, color = Pocket.Muted, style = MaterialTheme.typography.labelLarge)
+            Text(g.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(played, style = MaterialTheme.typography.bodySmall, color = Pocket.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Box(Modifier.size(44.dp).background(Pocket.Accent, CircleShape).border(2.dp, Pocket.Ink, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Outlined.PlayArrow, null, tint = Pocket.AccentInk, modifier = Modifier.size(26.dp))
         }
     }
 }
@@ -409,7 +460,7 @@ private fun PlayedLately(vm: AppModel, recent: List<Pair<Game, Long>>, onOpen: (
                     Cover(g, vm, Modifier.width(52.dp), small = true)
                     Column(Modifier.weight(1f)) {
                         Text(g.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text((g.console?.shortName ?: "Unknown console") + ", played " + Ago.of(at), style = MaterialTheme.typography.bodySmall, color = Pocket.Muted)
+                        Text(consoleName(g) + ", played " + Ago.of(at), style = MaterialTheme.typography.bodySmall, color = Pocket.Muted)
                     }
                 }
             }
@@ -461,28 +512,28 @@ private fun GameSheet(g: Game, vm: AppModel, downloaded: Boolean, actions: CardA
                         }
                         vm.checkingSave == g.id -> CircularProgressIndicator(Modifier.size(28.dp), color = Pocket.Accent)
                         // PS2 (plan §7): no Play until this PC has the person's own BIOS (the game would never start).
-                        downloaded && vm.needsBios(g) -> PocketNote(uk.benmarks.shoalcade.desktop.Ps2.BIOS_MISSING, Modifier.widthIn(max = 420.dp))
+                        downloaded && vm.needsBios(g) -> PocketNote(Ps2.BIOS_MISSING, Modifier.widthIn(max = 420.dp))
                         downloaded -> PocketButton({ onDismiss(); vm.play(g) }, enabled = vm.playing == null && vm.batch == null, primary = true) {
                             Icon(Icons.Outlined.PlayArrow, null, Modifier.size(20.dp)); Text("Play")
                         }
                         else -> PocketButton({ vm.download(g) }, enabled = vm.canDownload(g), primary = true) {
-                            Icon(Icons.Outlined.Download, null, Modifier.size(20.dp)); Text("Download", maxLines = 1, softWrap = false)
+                            Icon(PocketIcons.Download, null, Modifier.size(20.dp)); Text("Download", maxLines = 1, softWrap = false)
                         }
                     }
-                    PocketButton({ onDismiss(); actions.savesPanel(g) }) { Icon(Icons.Outlined.Save, null, Modifier.size(20.dp)); Text("Saves on Jellyfin…") }
+                    PocketButton({ onDismiss(); actions.savesPanel(g) }) { Icon(PocketIcons.Save, null, Modifier.size(20.dp)); Text("Saves on Jellyfin…") }
                     // D143: the game's cheats, every console but the 3DS (D210); the same list as the phone and browser.
-                    if (uk.benmarks.shoalcade.desktop.CheatEditor.allowed(g.console) && vm.session != null) {
-                        PocketButton({ onDismiss(); actions.cheats(g) }) { Icon(Icons.Outlined.Code, null, Modifier.size(20.dp)); Text("Cheats…") }
+                    if (CheatEditor.allowed(g.console) && vm.session != null) {
+                        PocketButton({ onDismiss(); actions.cheats(g) }) { Icon(PocketIcons.Code, null, Modifier.size(20.dp)); Text("Cheats…") }
                     }
                     if (vm.hasFavourites && !vm.offline) {
                         PocketButton({ vm.setFavourite(g, !g.favourite) }) {
-                            Icon(if (g.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline, null, Modifier.size(20.dp))
+                            Icon(if (g.favourite) Icons.Filled.Star else PocketIcons.StarOutline, null, Modifier.size(20.dp))
                             Text(if (g.favourite) "Unstar" else "Star")
                         }
                     }
-                    if (downloaded && uk.benmarks.shoalcade.LinkRules.supports(g.console)) {
+                    if (downloaded && LinkRules.supports(g.console)) {
                         // GBA's Link play also offers the internet and Celio Link (D176, D177); DS is Wi-Fi only.
-                        val linkLabel = if (g.console == uk.benmarks.shoalcade.Console.GBA) "Link play" else "Link play (same Wi-Fi)"
+                        val linkLabel = if (g.console == Console.GBA) "Link play" else "Link play (same Wi-Fi)"
                         PocketButton({ onDismiss(); vm.linkGame = g }, enabled = vm.playing == null) { Text(linkLabel) }
                     }
                     if (downloaded) {
@@ -496,11 +547,11 @@ private fun GameSheet(g: Game, vm: AppModel, downloaded: Boolean, actions: CardA
                 } else if (g.id in vm.waitingIds) {
                     PocketNote("Save waiting to go up to Jellyfin", Modifier.padding(top = 12.dp))
                 }
-                if (uk.benmarks.shoalcade.desktop.NetworkAdapter.applies(g.console)) NetworkAdapterRow(g)
+                if (NetworkAdapter.applies(g.console)) NetworkAdapterRow(g)
                 // .facts: the plugin's labels for what the app knows about the game.
                 Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     listOfNotNull(
-                        "Console" to (g.console?.shortName ?: "Unknown console"),
+                        "Console" to consoleName(g),
                         g.year?.let { "Year" to "$it" },
                         vm.lastPlayed(g)?.let { "Last played" to Ago.of(it) },
                     ).forEach { (k, v) ->
@@ -549,8 +600,8 @@ private fun UpdateBanner(vm: AppModel) {
 /** P11: GameCube / PS2 "Network adapter" for this game, off by default (D-8), with the plain explanation. */
 @Composable
 private fun NetworkAdapterRow(g: Game) {
-    val ctx = remember { uk.benmarks.shoalcade.desktop.DesktopStorage.context() }
-    val na = uk.benmarks.shoalcade.desktop.NetworkAdapter
+    val ctx = remember { DesktopStorage.context() }
+    val na = NetworkAdapter
     var on by remember(g.id) { mutableStateOf(na.isOn(ctx, g.id)) }
     val available = remember(g.id) { na.available(ctx, g.console) }
     Column(Modifier.padding(top = 12.dp).widthIn(max = 460.dp)) {

@@ -34,8 +34,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -165,7 +163,7 @@ private fun CheatForm(
             keyboardType = KeyboardType.Ascii),
         modifier = Modifier.fillMaxWidth(),
     )
-    problem?.let { Text(it, color = ERROR, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+    problem?.let { LiveText(it, ERROR) }
     if (confirmDelete && editing != null) {
         Text("Delete \"${editing.name}\"? This removes it from the game's list everywhere (phone and browser).", fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -77,39 +77,19 @@ public class LinkController : ShoalcadeControllerBase
     /// <returns>The host's seat and the room code.</returns>
     [HttpPost("rooms")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<LinkSeatDto> Create([FromBody] LinkRoomRequest? body)
-    {
-        if (RequireRelay(out var user) is ActionResult fail)
-        {
-            return fail;
-        }
-
-        if (ConsoleKey(body?.Console) is not string console)
-        {
-            return NotGba();
-        }
-
-        if (!SeesGame(user, console))
-        {
-            return NoGame();
-        }
-
-        var (seat, error) = _rooms.Create(user.Id, console);
-        if (seat is null)
-        {
-            return Refusal(error);
-        }
-
-        NoStore();
-        return Dto(seat);
-    }
+    public ActionResult<LinkSeatDto> Create([FromBody] LinkRoomRequest? body) =>
+        TakeSeat(body, _rooms.Create);
 
     /// <summary>Takes the second seat in a room.</summary>
     /// <param name="body">{"code":"K7QM2P","console":"GBA"}.</param>
     /// <returns>The joiner's seat.</returns>
     [HttpPost("join")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<LinkSeatDto> Join([FromBody] LinkRoomRequest? body)
+    public ActionResult<LinkSeatDto> Join([FromBody] LinkRoomRequest? body) =>
+        TakeSeat(body, (user, console) => _rooms.Join(user, body?.Code, console));
+
+    /// <summary>Create and Join: a relay user, a GBA room, a game they can see; then the seat from <paramref name="take"/>.</summary>
+    private ActionResult<LinkSeatDto> TakeSeat(LinkRoomRequest? body, Func<Guid, string, (LinkSeat? Seat, string? Error)> take)
     {
         if (RequireRelay(out var user) is ActionResult fail)
         {
@@ -126,7 +106,7 @@ public class LinkController : ShoalcadeControllerBase
             return NoGame();
         }
 
-        var (seat, error) = _rooms.Join(user.Id, body?.Code, console);
+        var (seat, error) = take(user.Id, console);
         if (seat is null)
         {
             return Refusal(error);

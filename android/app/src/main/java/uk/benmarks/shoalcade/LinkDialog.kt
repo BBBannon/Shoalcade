@@ -10,13 +10,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -69,22 +68,12 @@ fun LinkDialog(game: Game, userId: String, relay: RelayHttp? = null, onDismiss: 
                         Text("Both phones must be on the same Wi-Fi, or one phone's hotspot. Open this game's Link play on both, then:")
                         Text("• One phone taps Host and shows a PIN\n• The other taps Join and types the PIN", Modifier.padding(vertical = 8.dp))
                         if (console == Console.GBA) {
-                            // The whole row is the checkbox, so TalkBack reads its words with it and the label is tappable too.
-                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                .toggleable(value = cable, role = Role.Checkbox, onValueChange = { cable = it }),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(cable, onCheckedChange = null)
-                                Text("Link cable mode: Ruby/Sapphire with Emerald/FireRed/LeafGreen, and Emerald hacks like Monomyth (host decides)")
+                            CheckRow(cable, "Link cable mode: Ruby/Sapphire with Emerald/FireRed/LeafGreen, and Emerald hacks like Monomyth (host decides)") {
+                                cable = it
                             }
                         }
                         if (console == Console.NDS) {
-                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                .toggleable(value = dsMac, role = Role.Checkbox,
-                                    onValueChange = { dsMac = it; LinkPrefs.setDsMacEnabled(ctx, it) }),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(dsMac, onCheckedChange = null)
-                                Text("Use a different DS wireless ID on this phone")
-                            }
+                            CheckRow(dsMac, "Use a different DS wireless ID on this phone") { dsMac = it; LinkPrefs.setDsMacEnabled(ctx, it) }
                             Text(
                                 "Only tick this on ONE phone, and only if the phones link but can't see each other in the game. " +
                                     "It changes this phone's DS ID for all DS games, which may stop Pokémon DS saves made before it from loading. " +
@@ -109,21 +98,10 @@ fun LinkDialog(game: Game, userId: String, relay: RelayHttp? = null, onDismiss: 
                             OutlinedButton(onClick = { lobby.celioJoinForm() }, Modifier.fillMaxWidth()) { Text(CelioText.JOIN) }
                         }
                     }
-                    LobbyState.CelioConnecting -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text(CelioText.CONNECTING, Modifier.padding(start = 12.dp))
-                    }
+                    LobbyState.CelioConnecting -> Waiting(CelioText.CONNECTING)
                     is LobbyState.CelioRoom -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Text(CelioText.WAITING, Modifier.padding(start = 12.dp))
-                        }
-                        Text(CelioText.ROOM_FOR_PC, Modifier.padding(top = 12.dp), style = MaterialTheme.typography.labelLarge)
-                        Text(
-                            st.room.toList().joinToString(" "),
-                            Modifier.semantics { contentDescription = CelioText.ROOM_FOR_PC + " " + st.room.toList().joinToString(" ") },
-                            style = MaterialTheme.typography.displaySmall,
-                        )
+                        Waiting(CelioText.WAITING)
+                        BigCode(CelioText.ROOM_FOR_PC, spaced(st.room), CelioText.ROOM_FOR_PC + " " + spaced(st.room))
                         Text(CelioText.ROOM_HELP)
                     }
                     LobbyState.CelioJoining -> {
@@ -139,22 +117,9 @@ fun LinkDialog(game: Game, userId: String, relay: RelayHttp? = null, onDismiss: 
                     is LobbyState.HostingOnline -> if (st.paused) {
                         Text(st.notice ?: LinkLobby.HOST_PAUSED, color = MaterialTheme.colorScheme.error)
                     } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Text("Waiting for the other phone…", Modifier.padding(start = 12.dp))
-                        }
-                        Text(OnlineLink.ROOM_CODE, Modifier.padding(top = 12.dp), style = MaterialTheme.typography.labelLarge)
-                        Text(
-                            st.room,
-                            Modifier.semantics { contentDescription = OnlineLink.ROOM_CODE + " " + st.room.filter { it != ' ' }.toList().joinToString(" ") },
-                            style = MaterialTheme.typography.displaySmall,
-                        )
-                        Text("PIN for the other phone", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelLarge)
-                        Text(
-                            st.pin.toList().joinToString(" "),
-                            Modifier.semantics { contentDescription = "PIN " + st.pin.toList().joinToString(" ") },
-                            style = MaterialTheme.typography.displaySmall,
-                        )
+                        Waiting("Waiting for the other phone…")
+                        BigCode(OnlineLink.ROOM_CODE, st.room, OnlineLink.ROOM_CODE + " " + spaced(st.room.filter { it != ' ' }))
+                        BigCode(PIN_FOR_OTHER, spaced(st.pin), "PIN " + spaced(st.pin), top = 8.dp)
                         Text(OnlineLink.HOST_ONLINE_HELP)
                         st.notice?.let { Text(it, Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.error) }
                         Text(OnlineLink.ONLINE_SLOWER, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
@@ -166,11 +131,7 @@ fun LinkDialog(game: Game, userId: String, relay: RelayHttp? = null, onDismiss: 
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, capitalization = KeyboardCapitalization.Characters,
                                 autoCorrectEnabled = false),
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
-                        OutlinedTextField(pin, { pin = it.filter(Char::isDigit).take(4) }, label = { Text("PIN from the host phone") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, autoCorrectEnabled = false),
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
-                        if (!LinkRules.isPin(pin)) Text("Type the PIN first.", style = MaterialTheme.typography.bodySmall)
+                        PinField(pin) { pin = it }
                         Text(OnlineLink.ONLINE_SLOWER, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
                         Button(onClick = { if (code != null) lobby.joinOnline(code, pin) }, enabled = code != null && LinkRules.isPin(pin),
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Connect") }
@@ -179,17 +140,8 @@ fun LinkDialog(game: Game, userId: String, relay: RelayHttp? = null, onDismiss: 
                         // 5 wrong PINs (M1): nobody can join until the player chooses to carry on.
                         Text(st.notice ?: LinkLobby.HOST_PAUSED, color = MaterialTheme.colorScheme.error)
                     } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Text("Waiting for the other phone…", Modifier.padding(start = 12.dp))
-                        }
-                        Text("PIN for the other phone", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.labelLarge)
-                        // TalkBack reads the digits one by one ("PIN 4 0 7 1"), not as a number.
-                        Text(
-                            st.pin.toList().joinToString(" "),
-                            Modifier.semantics { contentDescription = "PIN " + st.pin.toList().joinToString(" ") },
-                            style = MaterialTheme.typography.displaySmall,
-                        )
+                        Waiting("Waiting for the other phone…")
+                        BigCode(PIN_FOR_OTHER, spaced(st.pin), "PIN " + spaced(st.pin))
                         Text("On the other phone, tap Join and type this PIN.")
                         st.notice?.let { Text(it, Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.error) }
                         val port = if (st.port == LinkRules.PORT) "" else ":${st.port}"
@@ -201,18 +153,9 @@ fun LinkDialog(game: Game, userId: String, relay: RelayHttp? = null, onDismiss: 
                     }
                     is LobbyState.Searching -> {
                         val pinOk = LinkRules.isPin(pin)
-                        OutlinedTextField(pin, { pin = it.filter(Char::isDigit).take(4) }, label = { Text("PIN from the host phone") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, autoCorrectEnabled = false),
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
-                        if (!pinOk) Text("Type the PIN first.", style = MaterialTheme.typography.bodySmall)
+                        PinField(pin) { pin = it }
                         Spacer(Modifier.height(8.dp))
-                        if (st.peers.isEmpty()) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                Text("Looking for a phone that's hosting…", Modifier.padding(start = 12.dp))
-                            }
-                        }
+                        if (st.peers.isEmpty()) Waiting("Looking for a phone that's hosting…")
                         st.peers.forEach { p ->
                             OutlinedButton(onClick = { lobby.join(p.host, p.port, pin) }, enabled = pinOk, modifier = Modifier.fillMaxWidth()) {
                                 Text("${p.name} · ${p.game}")
@@ -227,13 +170,9 @@ fun LinkDialog(game: Game, userId: String, relay: RelayHttp? = null, onDismiss: 
                             lobby.join(host, port, pin)
                         }) { Text("Connect") }
                     }
-                    is LobbyState.Connecting -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text("Connecting to ${st.to}…", Modifier.padding(start = 12.dp))
-                    }
+                    is LobbyState.Connecting -> Waiting("Connecting to ${st.to}…")
                     is LobbyState.Connected -> Text("Connected. Starting the game…")
-                    is LobbyState.Failed -> Text(st.reason, color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    is LobbyState.Failed -> LiveText(st.reason, MaterialTheme.colorScheme.error)
                 }
             }
         },
@@ -253,6 +192,38 @@ fun LinkDialog(game: Game, userId: String, relay: RelayHttp? = null, onDismiss: 
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(if (state is LobbyState.Failed) "Close" else "Cancel") } },
     )
+}
+
+private const val PIN_FOR_OTHER = "PIN for the other phone"
+
+/** "4071" → "4 0 7 1": shown spaced out, and TalkBack reads the digits one by one, not as a number. */
+private fun spaced(code: String) = code.toList().joinToString(" ")
+
+/** The whole row is the checkbox, so TalkBack reads its words with it and the label is tappable too. */
+@Composable
+private fun CheckRow(checked: Boolean, text: String, onChange: (Boolean) -> Unit) = Row(
+    Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = checked, role = Role.Checkbox, onValueChange = onChange),
+    verticalAlignment = Alignment.CenterVertically,
+) {
+    Checkbox(checked, onCheckedChange = null)
+    Text(text)
+}
+
+/** A code to give the other player: its [label], then the code big; TalkBack says [spoken] instead. */
+@Composable
+private fun BigCode(label: String, shown: String, spoken: String, top: Dp = 12.dp) {
+    Text(label, Modifier.padding(top = top), style = MaterialTheme.typography.labelLarge)
+    Text(shown, Modifier.semantics { contentDescription = spoken }, style = MaterialTheme.typography.displaySmall)
+}
+
+/** The joining phone's PIN box (digits only, at most 4), and a hint until it holds a whole PIN. */
+@Composable
+private fun PinField(pin: String, onChange: (String) -> Unit) {
+    OutlinedTextField(pin, { onChange(it.filter(Char::isDigit).take(4)) }, label = { Text("PIN from the host phone") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, autoCorrectEnabled = false),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
+    if (!LinkRules.isPin(pin)) Text("Type the PIN first.", style = MaterialTheme.typography.bodySmall)
 }
 
 // Internet link play words (docs/wording.md, "Internet link play (app)").

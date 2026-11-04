@@ -647,7 +647,7 @@ public class SavesController : ShoalcadeControllerBase
 
         if (s.Moved.Count > 0)
         {
-            yield return (s.Moved.Count == 1 ? "1 snapshot" : s.Moved.Count.ToString(CultureInfo.InvariantCulture) + " snapshots") + " moved too (" + Names(s.Moved) + ").";
+            yield return HowMany(s.Moved.Count, "snapshot") + " moved too (" + Names(s.Moved) + ").";
         }
 
         if (s.Kept.Count > 0)
@@ -668,14 +668,18 @@ public class SavesController : ShoalcadeControllerBase
     {
         if (r.Moved > 0)
         {
-            yield return (r.Moved == 1 ? "1 cheat" : r.Moved.ToString(CultureInfo.InvariantCulture) + " cheats") + " moved too.";
+            yield return HowMany(r.Moved, "cheat") + " moved too.";
         }
 
         if (r.Kept > 0)
         {
-            yield return (r.Kept == 1 ? "1 cheat" : r.Kept.ToString(CultureInfo.InvariantCulture) + " cheats") + " stayed with the old game, because this game's cheat list is full.";
+            yield return HowMany(r.Kept, "cheat") + " stayed with the old game, because this game's cheat list is full.";
         }
     }
+
+    /// <summary>"1 cheat", "3 cheats".</summary>
+    private static string HowMany(int count, string noun) =>
+        count == 1 ? "1 " + noun : count.ToString(CultureInfo.InvariantCulture) + " " + noun + "s";
 
     /// <summary>
     /// F8: a removed game with snapshots but no save. Same rules as a save move (<see cref="SaveStore.MoveRefusal"/>); the

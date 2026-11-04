@@ -360,19 +360,8 @@ private class SocketEnd(private val socket: Socket) : LinkEnd {
 private class RelayEnd(private val pipe: RelayPipe) : LinkEnd {
     private var pump: RelayLinkPump? = null
 
-    override fun detachFd(): Int {
-        val ours = java.io.FileDescriptor()
-        val theirs = java.io.FileDescriptor()
-        android.system.Os.socketpair(android.system.OsConstants.AF_UNIX, android.system.OsConstants.SOCK_STREAM, 0, ours, theirs)
-        val p = RelayLinkPump(pipe, java.io.FileInputStream(ours), java.io.FileOutputStream(ours)) {
-            runCatching { android.system.Os.shutdown(ours, android.system.OsConstants.SHUT_RDWR) }
-            runCatching { android.system.Os.close(ours) }
-        }
-        pump = p
-        p.start()
-        val fd = ParcelFileDescriptor.dup(theirs).detachFd()
-        runCatching { android.system.Os.close(theirs) }
-        return fd
+    override fun detachFd(): Int = shimSocketPair { input, output, closeOurs ->
+        pump = RelayLinkPump(pipe, input, output, closeOurs).also { it.start() }
     }
 
     override fun close() {
@@ -385,20 +374,26 @@ private class RelayEnd(private val pipe: RelayPipe) : LinkEnd {
  * bridge (MPK1 to the shim, Celio to the server).
  */
 private class CelioEnd(val session: CelioSession) : LinkEnd {
-    override fun detachFd(): Int {
-        val ours = java.io.FileDescriptor()
-        val theirs = java.io.FileDescriptor()
-        android.system.Os.socketpair(android.system.OsConstants.AF_UNIX, android.system.OsConstants.SOCK_STREAM, 0, ours, theirs)
-        session.attachLocal(java.io.FileInputStream(ours), java.io.FileOutputStream(ours)) {
-            runCatching { android.system.Os.shutdown(ours, android.system.OsConstants.SHUT_RDWR) }
-            runCatching { android.system.Os.close(ours) }
-        }
-        val fd = ParcelFileDescriptor.dup(theirs).detachFd()
-        runCatching { android.system.Os.close(theirs) }
-        return fd
-    }
+    override fun detachFd(): Int = shimSocketPair { input, output, closeOurs -> session.attachLocal(input, output, closeOurs) }
 
     override fun close() = session.close()
+}
+
+/**
+ * A socketpair for the native shim (Relay and Celio ends): [attach] gets our end's streams and how to close it (shutting
+ * it down unblocks a read on it); the shim gets a duplicate of the other end, an fd it owns and closes.
+ */
+private fun shimSocketPair(attach: (InputStream, OutputStream, closeOurs: () -> Unit) -> Unit): Int {
+    val ours = java.io.FileDescriptor()
+    val theirs = java.io.FileDescriptor()
+    android.system.Os.socketpair(android.system.OsConstants.AF_UNIX, android.system.OsConstants.SOCK_STREAM, 0, ours, theirs)
+    attach(java.io.FileInputStream(ours), java.io.FileOutputStream(ours)) {
+        runCatching { android.system.Os.shutdown(ours, android.system.OsConstants.SHUT_RDWR) }
+        runCatching { android.system.Os.close(ours) }
+    }
+    val fd = ParcelFileDescriptor.dup(theirs).detachFd()
+    runCatching { android.system.Os.close(theirs) }
+    return fd
 }
 
 /** Holds the one pending/active link session and the Wi-Fi locks that keep it fast. */

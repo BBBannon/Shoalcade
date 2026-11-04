@@ -25,12 +25,6 @@ class DiscPrefs(private val store: SyncStore) {
     fun startDisc(userId: String, gameId: String, count: Int): Int? = get(userId, gameId).takeIf { it in 1 until count }
 
     companion object {
-        fun of(ctx: Context) = DiscPrefs(object : SyncStore {
-            private val prefs = ctx.applicationContext.getSharedPreferences("discs", Context.MODE_PRIVATE)
-            override fun get(key: String): String? = try { prefs.getString(key, null) } catch (_: ClassCastException) { null }
-            override fun set(key: String, value: String?) {
-                prefs.edit().apply { if (value == null) remove(key) else putString(key, value) }.apply()
-            }
-        })
+        fun of(ctx: Context) = DiscPrefs(prefsStore(ctx, "discs"))
     }
 }

@@ -35,6 +35,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.swordfish.libretrodroid.GLRetroView
 import com.swordfish.libretrodroid.GLRetroViewData
 import com.swordfish.libretrodroid.LibretroDroid
+import com.swordfish.libretrodroid.ShaderConfig
 import com.swordfish.libretrodroid.Variable
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -188,6 +189,8 @@ class GameActivity : ComponentActivity() {
                 else -> loadedSave
             }
             preferLowLatencyAudio = GameSound.LOW_LATENCY // F4: low latency loses sound after a call
+            shader = shaderFor(display.smooth) // D245
+            rumbleEventsEnabled = rumbleOn // D246
         }
         retroView = GLRetroView(this, data).apply { isFocusable = true; isFocusableInTouchMode = true }
         lifecycle.addObserver(retroView)
@@ -243,8 +246,8 @@ class GameActivity : ComponentActivity() {
         // One root for every layout (D128): only sizes and places change when the phone turns, so the game never restarts.
         root = FrameLayout(this).apply {
             setBackgroundColor(android.graphics.Color.BLACK)
-            addView(retroView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-            addView(pad, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addFullSize(retroView)
+            addFullSize(pad)
             addView(menuHandle, FrameLayout.LayoutParams(0, 0))
             addView(ffButton, FrameLayout.LayoutParams(0, 0))
             addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyLayout() }
@@ -284,6 +287,9 @@ class GameActivity : ComponentActivity() {
     private var dsPending: Pair<DsLayout, Boolean>? = null
     /** The menu's Display choices, kept on the phone (D131). */
     private val display: DisplayChoices by lazy { DisplayPrefs.of(this, console) }
+
+    /** D245 Smooth picture: on = LibretroDroid's default look (bilinear, as before); off = crisp pixels ("Sharp"). */
+    private fun shaderFor(smooth: Boolean): ShaderConfig = if (smooth) ShaderConfig.Default else ShaderConfig.Sharp
 
     /** The pad's buttons for the layout on screen ([w] x [h] = the pad's size, which the layout already holds). */
     private fun padSpec(w: Int, h: Int): PadSpec {
@@ -405,31 +411,17 @@ class GameActivity : ComponentActivity() {
             Log.i("Shoalcade", "Loading screen: " + if (loading === state) "shown" else "not needed")
             if (loading !== state || isFinishing) return@postDelayed
             val v = ComposeView(this).apply { setContent { GameLoading(state) } }
-            root.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            root.addFullSize(v)
             // Touches pass through it, so the Menu button (and Back) still work while it loads.
             loadingView = v
         }, LoadingWords.SHOW_AFTER_MS)
     }
 
-    /** Looks at a small copy of the screen until the game shows something that isn't black, then drops the loading screen. */
+    /** Drops the loading screen once the game shows something that isn't black. */
     private suspend fun watchFirstPicture() {
-        val bmp = Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888)
-        val px = IntArray(64 * 48)
         val t0 = System.currentTimeMillis()
-        while (loading != null) {
-            val done = CompletableDeferred<Boolean>()
-            val asked = runCatching {
-                PixelCopy.request(retroView, bmp, { r -> done.complete(r == PixelCopy.SUCCESS) }, Handler(Looper.getMainLooper()))
-            }.isSuccess
-            val got = asked && withTimeoutOrNull(2_000) { done.await() } == true
-            if (got) bmp.getPixels(px, 0, 64, 0, 0, 64, 48)
-            // Safety net only: never leave the loading screen over a running game for good.
-            val lit = got && FirstPicture.lit(px)
-            if (lit || System.currentTimeMillis() - t0 > LOADING_SAFETY_MS) {
-                Log.i("Shoalcade", "Game picture showing after ${System.currentTimeMillis() - t0} ms (${if (lit) "picture" else "safety"})")
-                break
-            }
-            delay(250)
+        awaitFirstPicture(retroView, LOADING_SAFETY_MS) { loading != null }?.let { lit ->
+            Log.i("Shoalcade", "Game picture showing after ${System.currentTimeMillis() - t0} ms (${if (lit) "picture" else "safety"})")
         }
         endLoading()
     }
@@ -474,6 +466,12 @@ class GameActivity : ComponentActivity() {
             if (startFromState) {
                 delay(500) // let the core settle before the state goes in
                 startFromSnapshot()
+            }
+        }
+        // D246: a game's rumble shakes the controller last used (player 1; the consoles that rumble are one-player).
+        if (rumbleOn) lifecycleScope.launch {
+            retroView.getRumbleEvents().collect { e ->
+                if (e.port == 0 && !quitting) rumble.set(rumbleDevice(), ControllerRumble.amplitude(e.strengthWeak, e.strengthStrong))
             }
         }
         // Autosave the in-game save to the phone every 30 s while playing (guards against crashes).
@@ -583,6 +581,7 @@ class GameActivity : ComponentActivity() {
         }
         onScreen = false
         updatePlayClock()
+        rumble.stop() // D246: never left shaking behind another app
         // Play time (D172): queued on the phone, sent to Jellyfin by the library when online. Close Game, Home and
         // screen off all come through here.
         playClock.take()?.let { secs -> runCatching { PlayTimeQueue(this).record(userId, game.id, secs) } }
@@ -597,6 +596,7 @@ class GameActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        rumble.stop()
         if (deviceListenerOn) getSystemService(InputManager::class.java)?.unregisterInputDeviceListener(deviceListener)
         if (link != null && owner === this) LinkHolder.end()
         if (owner === this) owner = null
@@ -627,11 +627,17 @@ class GameActivity : ComponentActivity() {
     /** Rest of a touch gesture that only brought the touch buttons back (never reaches the game or the buttons). */
     private var swallowTouch = false
     private var deviceListenerOn = false
+    /** D247: each controller's shortcut spotter (device id → pad); none while Controller shortcuts is off. */
+    private val shortcutPads = mutableMapOf<Int, ShortcutPad>()
+    private val shortcutsOn by lazy { ControllerShortcuts.on(soundStore) }
+    /** D246: Controller rumble, for the consoles whose games rumble, switched on in Settings. */
+    private val rumbleOn by lazy { ControllerRumble.allowed(console) && ControllerRumble.on(soundStore) }
+    private val rumble = PadRumble()
 
     private val deviceListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(id: Int) {
             val d = InputDevice.getDevice(id)
-            if (isController(d)) { autoHide.controllerConnected(id); portFor(d, id); applyTouchVisibility() }
+            if (isGameController(d)) { autoHide.controllerConnected(id); portFor(d, id); applyTouchVisibility() }
         }
         override fun onInputDeviceRemoved(id: Int) {
             autoHide.controllerDisconnected(id)
@@ -639,6 +645,7 @@ class GameActivity : ComponentActivity() {
             lastController = null // the Controls screen must not show a controller that has gone
             // A controller vanishing mid-press must not leave a button held in the game.
             releaseControllers()
+            shortcutPads.remove(id)
             padIds.remove(id)?.let { ports.disconnect(it) } // it keeps its player number for when it comes back
             applyTouchVisibility()
         }
@@ -647,7 +654,7 @@ class GameActivity : ComponentActivity() {
 
     private fun setUpControllers() {
         autoHide.mode = controlPrefs.touchMode(console)
-        for (id in InputDevice.getDeviceIds()) InputDevice.getDevice(id)?.takeIf { isController(it) }?.let {
+        for (id in InputDevice.getDeviceIds()) InputDevice.getDevice(id)?.takeIf { isGameController(it) }?.let {
             autoHide.controllerConnected(id)
             portFor(it, id)
         }
@@ -657,9 +664,6 @@ class GameActivity : ComponentActivity() {
         }
         applyTouchVisibility()
     }
-
-    /** A real, plugged-in or paired controller (not the phone's own keys or a virtual device). */
-    private fun isController(d: InputDevice?): Boolean = isGameController(d)
 
     private fun applyTouchVisibility() {
         if (!::pad.isInitialized) return
@@ -672,8 +676,6 @@ class GameActivity : ComponentActivity() {
         if (::root.isInitialized) applyLayout() // DS in landscape grows to the full width while the buttons are hidden
         showFastForward()
     }
-
-    private fun infoOf(d: InputDevice?): ControllerInfo = controllerInfo(d)
 
     private fun translatorFor(c: ControllerInfo, port: Int) =
         translators.getOrPut(port to c.key) { PadTranslator(controlPrefs.map(console, c.key)) }
@@ -696,6 +698,45 @@ class GameActivity : ComponentActivity() {
     /** Lets go of everything every controller holds, on every player's port. */
     private fun releaseControllers() {
         for ((k, t) in translators) send(t.releaseAll(), k.first)
+        shortcutPads.values.forEach { it.reset() }
+        rumble.stop()
+    }
+
+    /** D246: the controller that last sent anything, else the first one connected (null = none: nothing rumbles). */
+    private fun rumbleDevice(): InputDevice? =
+        InputDevice.getDevice(lastDevice)?.takeIf { isGameController(it) }
+            ?: InputDevice.getDeviceIds().asSequence().mapNotNull { InputDevice.getDevice(it) }.firstOrNull { isGameController(it) }
+
+    /** D247: the shortcut spotter for controller [deviceId], or null while Controller shortcuts is off. */
+    private fun shortcutPad(deviceId: Int): ShortcutPad? = if (shortcutsOn) shortcutPads.getOrPut(deviceId) { ShortcutPad() } else null
+
+    /** A dialog (Load snapshot?) takes the keys: what the shortcut spotters think is held may be stale after it. */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) shortcutPads.values.forEach { it.reset() }
+    }
+
+    /**
+     * D247: Select + R1 / L1 / R2 / L2 on a controller. The same rules as the menu: snapshots only where the menu
+     * offers them (not a link session, on in the server settings), loading through the usual question and save backup,
+     * fast-forward only where the menu has it.
+     */
+    private fun shortcut(s: PadShortcut) {
+        if (quitting) return
+        val snapshots = link == null && SnapshotSetting.enabled(this, console)
+        when (s) {
+            PadShortcut.QUICK_SAVE -> if (snapshots) saveState() else toast(ControllerShortcuts.NO_SNAPSHOTS)
+            PadShortcut.QUICK_LOAD -> when {
+                !snapshots -> toast(ControllerShortcuts.NO_SNAPSHOTS)
+                !Storage.stateFile(userId, game).isFile -> toast(ControllerShortcuts.NO_SNAPSHOT)
+                else -> confirmLoadState()
+            }
+            PadShortcut.FAST_FORWARD -> if (link == null && FastForward.allowed(console)) {
+                toggleFastForward()
+                Toast.makeText(applicationContext, ControllerShortcuts.fastForward(fastOn), Toast.LENGTH_SHORT).show()
+            } else toast(ControllerShortcuts.NO_FAST_FORWARD)
+            PadShortcut.SCREENSHOT -> takeScreenshot()
+        }
     }
 
     private fun send(outs: List<PadOut>, port: Int) {
@@ -715,8 +756,6 @@ class GameActivity : ComponentActivity() {
         if (was != autoHide.visible) applyTouchVisibility()
     }
 
-    private fun isGamepad(source: Int) = isGamepadSource(source)
-
     // Lint flags super.dispatchKeyEvent on ComponentActivity as restricted; overriding it is the documented way to read keys.
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -724,20 +763,20 @@ class GameActivity : ComponentActivity() {
         val down = event.action == KeyEvent.ACTION_DOWN
         // Menu open: controller (and keyboard) keys move around it. The phone's own Back goes to the Back handler,
         // which closes it (taking it here too would close on the press and open again on the lift).
-        if (drawer.open && (isGamepad(event.source) || (DrawerNav.handles(event.keyCode) && event.keyCode != KeyEvent.KEYCODE_BACK))) {
+        if (drawer.open && (isGamepadSource(event.source) || (DrawerNav.handles(event.keyCode) && event.keyCode != KeyEvent.KEYCODE_BACK))) {
             navResult(nav.key(event.keyCode, down, event.repeatCount))
             return true
         }
         // Cheat screen: keys move around it (A presses, the D-pad moves); Home / Back go back.
         if (cheatsOpen) {
-            if (isGamepad(event.source) && MenuKeys.isMenu(event.keyCode)) {
+            if (isGamepadSource(event.source) && MenuKeys.isMenu(event.keyCode)) {
                 if (down && event.repeatCount == 0) cheatsBackPressed()
                 return true
             }
             return super.dispatchKeyEvent(event)
         }
-        if (!isGamepad(event.source)) return super.dispatchKeyEvent(event)
-        val info = infoOf(event.device)
+        if (!isGamepadSource(event.source)) return super.dispatchKeyEvent(event)
+        val info = controllerInfo(event.device)
         lastController = info
         lastDevice = event.deviceId
         if (controlsOpen) flow?.let { return controlsKey(it, info, event) }
@@ -749,16 +788,20 @@ class GameActivity : ComponentActivity() {
             if (down && event.repeatCount == 0 && MenuKeys.isMenu(event.keyCode)) openDrawer()
             return true
         }
+        shortcutPad(event.deviceId)?.key(event.keyCode, down)?.let { r ->
+            if (down && event.repeatCount == 0) r.fired?.let { shortcut(it) }
+            if (!r.pass) return true
+        }
         send(translatorFor(info, port).key(event.keyCode, down, event.repeatCount), port)
         return true
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        if (!::retroView.isInitialized || cheatsOpen || !isGamepad(event.source) || event.action != MotionEvent.ACTION_MOVE) {
+        if (!::retroView.isInitialized || cheatsOpen || !isGamepadSource(event.source) || event.action != MotionEvent.ACTION_MOVE) {
             return super.dispatchGenericMotionEvent(event) // cheat screen: the hat / stick become D-pad keys (Android does this)
         }
         val values = PadTranslator.AXES.associateWith { event.getAxisValue(it) }
-        val info = infoOf(event.device)
+        val info = controllerInfo(event.device)
         lastController = info
         lastDevice = event.deviceId
         val moved = axisRest.update(event.deviceId, values)
@@ -770,7 +813,9 @@ class GameActivity : ComponentActivity() {
         if (drawer.open) { navResult(nav.motion(values)); return true }
         if (moved) controllerUsed()
         val port = portFor(event.device, event.deviceId) ?: return true // a 5th N64 controller: no player for it
-        send(translatorFor(info, port).motion(values), port)
+        val sc = shortcutPad(event.deviceId)?.motion(values)
+        sc?.fired?.forEach { shortcut(it) }
+        send(translatorFor(info, port).motion(sc?.values ?: values), port)
         return true
     }
 
@@ -793,11 +838,6 @@ class GameActivity : ComponentActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
-    private fun hits(v: android.view.View, ev: MotionEvent): Boolean {
-        val at = IntArray(2).also { v.getLocationOnScreen(it) }
-        return ev.rawX >= at[0] && ev.rawX < at[0] + v.width && ev.rawY >= at[1] && ev.rawY < at[1] + v.height
-    }
-
     // --- Controls screen (D126) ------------------------------------------------------------------
 
     private var controlsView: ComposeView? = null
@@ -815,14 +855,14 @@ class GameActivity : ComponentActivity() {
             later = { ms, block -> val r = Runnable(block); root.postDelayed(r, ms); { root.removeCallbacks(r) } },
             changed = { key, map -> translators.forEach { (k, t) -> if (k.second == key) t.map = map } }).also { flow = it }
         val c = lastController
-            ?: InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.firstOrNull { isController(it) }?.let { infoOf(it) }
+            ?: InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.firstOrNull { isGameController(it) }?.let { controllerInfo(it) }
         f.open(c)
         val view = controlsView ?: ComposeView(this).also { v ->
             v.setContent { HapticsGate {
                 ControlsScreen(f.state, onPick = { f.startListening(it, axisRest.last(lastDevice)) }, onReset = { f.reset() },
                     onDone = { closeControls() })
             } }
-            root.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            root.addFullSize(v)
             onBackPressedDispatcher.addCallback(this, controlsBack) // added after the menu's, so it wins while enabled
             controlsView = v
         }
@@ -838,15 +878,8 @@ class GameActivity : ComponentActivity() {
         setGameAccessible(true)
     }
 
-    /** TalkBack mustn't wander onto the game and touch buttons hidden behind the Controls screen. */
-    private fun setGameAccessible(on: Boolean) {
-        val mode = if (on) android.view.View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
-            else android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-        pad.importantForAccessibility = mode
-        menuHandle.importantForAccessibility = mode
-        ffButton.importantForAccessibility = mode
-        retroView.importantForAccessibility = mode
-    }
+    /** Hidden from TalkBack behind the menu, the Controls screen or the Cheats screen. */
+    private fun setGameAccessible(on: Boolean) = setGameAccessible(on, pad, menuHandle, ffButton, retroView)
 
     /** Back cancels listening first, then closes the screen. */
     private fun controlsBackPressed() {
@@ -888,6 +921,7 @@ class GameActivity : ComponentActivity() {
             cheats = cheatBook.cheats.map { MenuCheat(it.id, it.name, cheatBook.isOn(it.id)) },
             discCount = discCount(),
             disc = if (discCount() > 1) runCatching { retroView.getCurrentDisk() }.getOrDefault(0) else 0,
+            smooth = display.smooth,
         )
     }
 
@@ -918,12 +952,12 @@ class GameActivity : ComponentActivity() {
         if (quitting || controlsOpen || cheatsOpen || drawer.open) return // Back / Home on those screens is handled there
         // Nothing stays held in the game while the menu is open.
         releaseControllers()
-        cancelTouches()
+        cancelTouches(root)
         refreshDrawer(resetFocus = true)
         nav.reset(axisRest.last(lastDevice))
         val view = drawerView ?: ComposeView(this).also { v ->
             v.setContent { HapticsGate { GameDrawer(drawer, onPick = { menuPick(it) }, onClose = { closeDrawer() }) } }
-            root.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            root.addFullSize(v)
             drawerView = v
         }
         view.bringToFront() // over the link status too
@@ -976,16 +1010,8 @@ class GameActivity : ComponentActivity() {
         if (drawer.open) refreshDrawer()
     }
 
-    /** Menu → Game → Screenshot: the drawer is closed first, then one frame later the picture is taken. */
-    private fun takeScreenshot() {
-        val name = game.name
-        root.postOnAnimation {
-            root.postOnAnimation {
-                if (isFinishing || isDestroyed) return@postOnAnimation
-                Screenshot.take(this, retroView, name) { err -> toast(if (err == null) Screenshot.SAVED else Screenshot.FAILED + err) }
-            }
-        }
-    }
+    /** Menu → Game → Screenshot (the drawer is closed first). */
+    private fun takeScreenshot() = screenshotNextFrame(root, retroView, game.name) { toast(it) }
 
     private val soundStore by lazy { GameSound.store(this) }
     /** F5 App Mute, the same for every game. */
@@ -997,14 +1023,6 @@ class GameActivity : ComponentActivity() {
     private fun applySound() {
         retroView.audioEnabled = GameSound.enabled(menuOpen = link == null && (drawer.open || cheatsOpen), muted = muted,
             fast = link == null && fastOn)
-    }
-
-    /** Lets go of any finger on the touch buttons or the game (the menu is taking over). */
-    private fun cancelTouches() {
-        val now = android.os.SystemClock.uptimeMillis()
-        val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
-        root.dispatchTouchEvent(cancel)
-        cancel.recycle()
     }
 
     private fun navResult(r: DrawerNav.Result) {
@@ -1031,6 +1049,8 @@ class GameActivity : ComponentActivity() {
                 applyLayout()
             }
             GameMenu.ID_MUTE -> { muted = !muted; applySound() }
+            // D245: the picture changes at once (LibretroDroid swaps the shader on its own thread).
+            GameMenu.ID_SMOOTH -> { display.smooth = !display.smooth; retroView.shader = shaderFor(display.smooth) }
             GameMenu.ID_SCREENSHOT -> { closeDrawer(); takeScreenshot() }
             GameMenu.ID_FAST_FORWARD -> toggleFastForward()
             GameMenu.ID_ADD_CHEAT -> { closeDrawer(); openCheats(list = false) }
@@ -1348,7 +1368,7 @@ class GameActivity : ComponentActivity() {
                 CheatEditor(cheatEditor, console, onSave = { id, name, code -> saveCheat(id, name, code) },
                     onDelete = { deleteCheat(it) }, onClose = { closeCheats() })
             } }
-            root.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            root.addFullSize(v)
             onBackPressedDispatcher.addCallback(this, cheatsBack) // added after the menu's, so it wins while enabled
             cheatView = v
         }
@@ -1445,42 +1465,12 @@ class GameActivity : ComponentActivity() {
         closing = true
         val sync = SaveSync(this@GameActivity)
         toast("Uploading your save to Jellyfin…") // F3: never a silent wait; a server that's off fails within seconds
+        val ask = CloseQuestions(this) { toast(it) }
         when (val r = sync.uploadLatest(game, snapshotNoSave)) {
-            is SyncResult.NeedsConfirm -> askReplaceNewer(sync, r)
-            is SyncResult.Conflict -> askConflict(sync, r)
+            is SyncResult.NeedsConfirm -> ask.replaceNewer(sync, game, r)
+            is SyncResult.Conflict -> ask.conflict(sync, game, userId, r, elsewhere = "the browser or another phone")
             else -> { toast(CloseSave.uploadNote(saveDisabled, mayMiss) + r.message); finish() }
         }
-    }
-
-    /** Replacing a newer Jellyfin save: both dates shown; Jellyfin's is kept in its history (and the phone's backups) first. */
-    private fun askReplaceNewer(sync: SaveSync, r: SyncResult.NeedsConfirm) {
-        AlertDialog.Builder(this)
-            .setTitle("Replace a newer save?")
-            .setMessage(r.message)
-            .setCancelable(false)
-            .setPositiveButton("Upload anyway") { _, _ -> finishWith { sync.keepPhone(game) } }
-            .setNegativeButton("Don't upload") { _, _ -> toast("Not uploaded. Your save is kept on the phone."); finish() }
-            .show()
-    }
-
-    /** Both changed (D35): same choices as the library's question, never settled silently. The other copy is always kept. */
-    private fun askConflict(sync: SaveSync, r: SyncResult.Conflict) {
-        val (phone, jf) = SavePlan.dateLines(Storage.saveTime(userId, game), r.server)
-        AlertDialog.Builder(this)
-            .setTitle("Which save should be in use?")
-            .setMessage("${game.name} has a different save on this phone and on Jellyfin (maybe from the browser or another phone).\n\n" +
-                "$phone\n$jf\n\nNothing is lost either way: the other save is kept in Jellyfin's history and in the phone's backups.")
-            .setCancelable(false)
-            .setPositiveButton("Keep the phone's") { _, _ -> finishWith { sync.keepPhone(game) } }
-            .setNeutralButton("Decide later") { _, _ ->
-                toast("Not uploaded. Your save is kept on the phone; tap ⚠️ in the library to choose."); finish()
-            }
-            .apply { if (r.server != null) setNegativeButton("Keep Jellyfin's") { _, _ -> finishWith { sync.keepServer(game) } } }
-            .show()
-    }
-
-    private fun finishWith(op: suspend () -> SyncResult) {
-        lifecycleScope.launch { toast(op().message); finish() }
     }
 
     private fun toast(msg: String) = Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show()

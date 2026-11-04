@@ -49,7 +49,6 @@ public:
     void use_core();
 
     void set_pixel_format(retro_pixel_format f) { format_ = f; }
-    retro_pixel_format pixel_format() const { return format_; }
     void set_geometry(const retro_game_geometry &g);
     void set_display(const DisplaySettings &d) { display_ = d; }
     const DisplaySettings &display() const { return display_; }
@@ -67,7 +66,6 @@ public:
     void request_window_capture() { want_window_capture_ = true; }
     bool take_window_capture(RgbaImage &out);
 
-    void toggle_fullscreen();
     void set_fullscreen(bool on);
     void note_fullscreen(bool on) { fullscreen_ = on; }
     /** Full screen as last asked (the window manager carries it out a moment later; headless: just remembered). */
@@ -81,8 +79,6 @@ public:
     std::function<void(int, int)> overlay;
     /** Where the game picture is in window coordinates (for the mouse = touch screen). */
     SDL_FRect game_rect_window() const;
-    unsigned frame_width() const { return last_w_; }
-    unsigned frame_height() const { return last_h_; }
 
 private:
     bool build_program(std::string &err);

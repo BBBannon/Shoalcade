@@ -302,101 +302,116 @@ public static partial class ConsoleDetector
     /// UnauthorizedAccessException) instead of answering "none".</summary>
     private static string? ReadDiscHeaderTag(string path)
     {
+        using var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var head = ReadAt(f, 0, 0x4C);
+        if (head is null)
         {
-            using var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            var head = ReadAt(f, 0, 0x4C);
-            if (head is null)
+            return null;
+        }
+
+        if (GcWiiMagic(head, 0) is string plain)
+        {
+            return plain;
+        }
+
+        if (head.AsSpan(0, 4).SequenceEqual("WIA\u0001"u8) || head.AsSpan(0, 4).SequenceEqual("RVZ\u0001"u8))
+        {
+            return System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(head.AsSpan(0x48)) switch { 1 => "GameCube", 2 => "Wii", _ => null };
+        }
+
+        if (System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(head) == 0xB10BC001)
+        {
+            return System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(4)) switch { 0 => "GameCube", 1 => "Wii", _ => null };
+        }
+
+        if (head.AsSpan(0, 4).SequenceEqual("CISO"u8))
+        {
+            // Dolphin's CISO keeps the disc from 0x8000; PSP / PS2 CISO (.cso) does not, and is left to its folder.
+            return ReadAt(f, 0x8000, 0x20) is byte[] ciso ? GcWiiMagic(ciso, 0) : null;
+        }
+
+        if (!string.Equals(Path.GetExtension(path), ".iso", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return Iso9660Tag(f);
+    }
+
+    /// <summary>An .iso's console from its ISO 9660 root folder: <c>PSP_GAME</c> = PSP, a <c>SYSTEM.CNF</c> naming BOOT2 =
+    /// PlayStation 2. Null for anything else.</summary>
+    private static string? Iso9660Tag(FileStream f)
+    {
+        // ISO 9660: the primary volume descriptor at sector 16, its root directory record at byte 156.
+        const int Sector = 2048;
+        var pvd = ReadAt(f, 16L * Sector, Sector);
+        if (pvd is null || pvd[0] != 1 || pvd[1] != (byte)'C' || pvd[2] != (byte)'D' || pvd[3] != (byte)'0' || pvd[4] != (byte)'0' || pvd[5] != (byte)'1')
+        {
+            return null;
+        }
+
+        var rootLba = BitConverter.ToUInt32(pvd, 156 + 2);
+        var rootSize = (int)Math.Min(BitConverter.ToUInt32(pvd, 156 + 10), 4 * Sector);
+        var dir = ReadAt(f, (long)rootLba * Sector, rootSize);
+        if (dir is null)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < dir.Length;)
+        {
+            int len = dir[i];
+            if (len == 0)
             {
-                return null;
+                i = ((i / Sector) + 1) * Sector; // records never cross a sector: the rest of this one is padding
+                continue;
             }
 
-            if (GcWiiMagic(head, 0) is string plain)
+            if (i + len > dir.Length || len < 34)
             {
-                return plain;
+                break;
             }
 
-            if (head.AsSpan(0, 4).SequenceEqual("WIA\u0001"u8) || head.AsSpan(0, 4).SequenceEqual("RVZ\u0001"u8))
+            var nameLen = dir[i + 32];
+            var name = System.Text.Encoding.ASCII.GetString(dir, i + 33, Math.Min(nameLen, len - 33));
+            if (name.Equals("PSP_GAME", StringComparison.OrdinalIgnoreCase))
             {
-                return System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(head.AsSpan(0x48)) switch { 1 => "GameCube", 2 => "Wii", _ => null };
+                return "PSP";
             }
 
-            if (System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(head) == 0xB10BC001)
+            if (name.StartsWith("SYSTEM.CNF", StringComparison.OrdinalIgnoreCase))
             {
-                return System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(4)) switch { 0 => "GameCube", 1 => "Wii", _ => null };
-            }
-
-            if (head.AsSpan(0, 4).SequenceEqual("CISO"u8))
-            {
-                // Dolphin's CISO keeps the disc from 0x8000; PSP / PS2 CISO (.cso) does not, and is left to its folder.
-                return ReadAt(f, 0x8000, 0x20) is byte[] ciso ? GcWiiMagic(ciso, 0) : null;
-            }
-
-            if (!string.Equals(Path.GetExtension(path), ".iso", StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-
-            // ISO 9660: the primary volume descriptor at sector 16, its root directory record at byte 156.
-            const int Sector = 2048;
-            var pvd = ReadAt(f, 16L * Sector, Sector);
-            if (pvd is null || pvd[0] != 1 || pvd[1] != (byte)'C' || pvd[2] != (byte)'D' || pvd[3] != (byte)'0' || pvd[4] != (byte)'0' || pvd[5] != (byte)'1')
-            {
-                return null;
-            }
-
-            var rootLba = BitConverter.ToUInt32(pvd, 156 + 2);
-            var rootSize = (int)Math.Min(BitConverter.ToUInt32(pvd, 156 + 10), 4 * Sector);
-            var dir = ReadAt(f, (long)rootLba * Sector, rootSize);
-            if (dir is null)
-            {
-                return null;
-            }
-
-            for (var i = 0; i < dir.Length;)
-            {
-                int len = dir[i];
-                if (len == 0)
+                var lba = BitConverter.ToUInt32(dir, i + 2);
+                var size = (int)Math.Min(BitConverter.ToUInt32(dir, i + 10), 1024);
+                var cnf = ReadAt(f, (long)lba * Sector, size);
+                if (cnf is not null && System.Text.Encoding.ASCII.GetString(cnf).Contains("BOOT2", StringComparison.OrdinalIgnoreCase))
                 {
-                    i = ((i / Sector) + 1) * Sector; // records never cross a sector: the rest of this one is padding
-                    continue;
+                    return "PlayStation 2";
                 }
 
-                if (i + len > dir.Length || len < 34)
-                {
-                    break;
-                }
-
-                var nameLen = dir[i + 32];
-                var name = System.Text.Encoding.ASCII.GetString(dir, i + 33, Math.Min(nameLen, len - 33));
-                if (name.Equals("PSP_GAME", StringComparison.OrdinalIgnoreCase))
-                {
-                    return "PSP";
-                }
-
-                if (name.StartsWith("SYSTEM.CNF", StringComparison.OrdinalIgnoreCase))
-                {
-                    var lba = BitConverter.ToUInt32(dir, i + 2);
-                    var size = (int)Math.Min(BitConverter.ToUInt32(dir, i + 10), 1024);
-                    var cnf = ReadAt(f, (long)lba * Sector, size);
-                    if (cnf is not null && System.Text.Encoding.ASCII.GetString(cnf).Contains("BOOT2", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return "PlayStation 2";
-                    }
-
-                    return null; // a SYSTEM.CNF without BOOT2 is a PS1 disc (PS1 .iso isn't a Shoalcade file type)
-                }
-
-                i += len;
+                return null; // a SYSTEM.CNF without BOOT2 is a PS1 disc (PS1 .iso isn't a Shoalcade file type)
             }
+
+            i += len;
         }
 
         return null;
     }
 
-    private static string? GcWiiMagic(byte[] b, int at) =>
-        b.Length >= at + 0x20 && b[at + 0x1C] == 0xC2 && b[at + 0x1D] == 0x33 && b[at + 0x1E] == 0x9F && b[at + 0x1F] == 0x3D ? "GameCube"
-        : b.Length >= at + 0x20 && b[at + 0x18] == 0x5D && b[at + 0x19] == 0x1C && b[at + 0x1A] == 0x9E && b[at + 0x1B] == 0xA3 ? "Wii"
-        : null;
+    private static string? GcWiiMagic(byte[] b, int at)
+    {
+        if (b.Length < at + 0x20)
+        {
+            return null;
+        }
+
+        if (b[at + 0x1C] == 0xC2 && b[at + 0x1D] == 0x33 && b[at + 0x1E] == 0x9F && b[at + 0x1F] == 0x3D)
+        {
+            return "GameCube";
+        }
+
+        return b[at + 0x18] == 0x5D && b[at + 0x19] == 0x1C && b[at + 0x1A] == 0x9E && b[at + 0x1B] == 0xA3 ? "Wii" : null;
+    }
 
     private static byte[]? ReadAt(FileStream f, long offset, int count)
     {

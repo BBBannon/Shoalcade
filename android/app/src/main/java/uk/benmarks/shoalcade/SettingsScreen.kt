@@ -62,7 +62,7 @@ internal fun SettingsScreen(vm: AppViewModel, onClose: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Heading(SettingsModel.EACH_CONSOLE)
-            Text(SettingsModel.EACH_CONSOLE_HELP, style = MaterialTheme.typography.bodySmall)
+            Help(SettingsModel.EACH_CONSOLE_HELP)
             Row(Modifier.horizontalScroll(rememberScrollState())) {
                 SettingsModel.CONSOLES.forEach { c ->
                     FilterChip(c == console, { consoleKey = c.key }, { Text(c.shortName) },
@@ -84,10 +84,10 @@ internal fun SettingsScreen(vm: AppViewModel, onClose: () -> Unit) {
             SubHeading(GameMenu.SNAPSHOTS)
             val snapshots = remember(console) { SnapshotSetting.enabled(ctx, console) }
             Text(if (snapshots) SettingsModel.SNAPSHOTS_ON else SettingsModel.SNAPSHOTS_OFF, style = MaterialTheme.typography.bodyLarge)
-            Text(SettingsModel.SNAPSHOTS_WHERE, style = MaterialTheme.typography.bodySmall)
+            Help(SettingsModel.SNAPSHOTS_WHERE)
 
             Heading(SettingsModel.SAVES)
-            Text(SettingsModel.SAVES_HELP, style = MaterialTheme.typography.bodySmall)
+            Help(SettingsModel.SAVES_HELP)
             SyncAllBar(vm)
             Text(SettingsModel.CHANGING_PHONES, style = MaterialTheme.typography.bodyMedium)
             // Auto upload: on by default. Turning it on asks (Android 13+) to show "a save needs your choice" notices.
@@ -97,21 +97,17 @@ internal fun SettingsScreen(vm: AppViewModel, onClose: () -> Unit) {
             DrawerRow(SettingsModel.autoUploadRow(autoStore).copy(on = autoUpload), focused = false) {
                 autoUpload = !autoUpload
                 runCatching { AutoUpload.setOn(ctx, autoUpload) } // on: waiting saves go up once online; off: the run is cancelled
-                if (autoUpload && android.os.Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
-                    != android.content.pm.PackageManager.PERMISSION_GRANTED) notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                if (autoUpload && needsNotificationPermission(ctx)) notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             }
-            Text(SettingsModel.AUTO_UPLOAD_HELP, style = MaterialTheme.typography.bodySmall)
+            Help(SettingsModel.AUTO_UPLOAD_HELP)
             SubHeading(SettingsModel.NOT_IN_LIBRARY)
-            Text(SettingsModel.NOT_IN_LIBRARY_HELP, style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick = { orphans = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text(SettingsModel.NOT_IN_LIBRARY + "…")
-            }
+            Help(SettingsModel.NOT_IN_LIBRARY_HELP)
+            WideButton(SettingsModel.NOT_IN_LIBRARY + "…") { orphans = true }
 
             // D151: the 3DS check, run once per phone before 3DS games can be downloaded.
             Heading(N3dsCheck.TITLE)
             Text(N3dsCheck.status(ctx), style = MaterialTheme.typography.bodyLarge)
-            OutlinedButton(onClick = { ctx.startActivity(android.content.Intent(ctx, N3dsCheckActivity::class.java)) },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(N3dsCheck.OPEN) }
+            WideButton(N3dsCheck.OPEN) { ctx.startActivity(android.content.Intent(ctx, N3dsCheckActivity::class.java)) }
 
             // Celio Link (trade with PC players): off by default, per phone. A third-party server, so it says so.
             Heading(CelioText.HEADING)
@@ -119,7 +115,7 @@ internal fun SettingsScreen(vm: AppViewModel, onClose: () -> Unit) {
             DrawerRow(MenuItem.Toggle(ID_CELIO, CelioText.SWITCH, celioOn), focused = false) {
                 celioOn = !celioOn; LinkPrefs.setCelioOn(ctx, celioOn)
             }
-            Text(CelioText.SWITCH_HINT, style = MaterialTheme.typography.bodySmall)
+            Help(CelioText.SWITCH_HINT)
             if (celioOn) {
                 var server by remember { mutableStateOf(LinkPrefs.celioServer(ctx)) }
                 val problem = CelioWire.serverProblem(server)
@@ -140,20 +136,33 @@ internal fun SettingsScreen(vm: AppViewModel, onClose: () -> Unit) {
             DrawerRow(MenuItem.Toggle(SettingsModel.ID_HAPTICS, SettingsModel.HAPTICS, haptics), focused = false) {
                 haptics = !haptics; Haptics.setOn(GameSound.store(ctx), haptics)
             }
+            // D248, D246, D247: kept on this phone, on by default.
+            val appStore = remember { GameSound.store(ctx) }
+            var showContinue by remember { mutableStateOf(ContinueGame.on(appStore)) }
+            DrawerRow(MenuItem.Toggle(SettingsModel.ID_SHOW_CONTINUE, SettingsModel.SHOW_CONTINUE, showContinue), focused = false) {
+                showContinue = !showContinue; ContinueGame.setOn(appStore, showContinue)
+            }
+            Help(SettingsModel.SHOW_CONTINUE_HELP)
+            var rumble by remember { mutableStateOf(ControllerRumble.on(appStore)) }
+            DrawerRow(MenuItem.Toggle(SettingsModel.ID_RUMBLE, SettingsModel.RUMBLE, rumble), focused = false) {
+                rumble = !rumble; ControllerRumble.setOn(appStore, rumble)
+            }
+            Help(SettingsModel.RUMBLE_HELP)
+            var shortcuts by remember { mutableStateOf(ControllerShortcuts.on(appStore)) }
+            DrawerRow(MenuItem.Toggle(SettingsModel.ID_SHORTCUTS, SettingsModel.SHORTCUTS, shortcuts), focused = false) {
+                shortcuts = !shortcuts; ControllerShortcuts.setOn(appStore, shortcuts)
+            }
+            Help(SettingsModel.SHORTCUTS_HELP)
             val session = vm.session
             Labelled(SettingsModel.SERVER, session?.serverUrl.orEmpty())
             Labelled(SettingsModel.ACCOUNT, session?.userName.orEmpty() + if (vm.offline) " · offline" else "")
-            OutlinedButton(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text(SettingsModel.LOG_OUT)
-            }
+            WideButton(SettingsModel.LOG_OUT) { vm.logout() }
             // F9: counted again when files change (e.g. a download removed under Not in your library).
             var used by remember { mutableStateOf<Long?>(null) }
             LaunchedEffect(vm.diskVersion) { used = withContext(Dispatchers.IO) { runCatching { Storage.bytesUsed() }.getOrNull() } }
             Labelled(SettingsModel.STORAGE,
                 used?.let { android.text.format.Formatter.formatShortFileSize(ctx, it) } ?: "…", SettingsModel.STORAGE_HELP)
-            OutlinedButton(onClick = { about = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text(SettingsModel.ABOUT)
-            }
+            WideButton(SettingsModel.ABOUT) { about = true }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -166,6 +175,14 @@ private fun Heading(text: String) = Text(text, style = MaterialTheme.typography.
 @Composable
 private fun SubHeading(text: String) = Text(text, style = MaterialTheme.typography.titleSmall,
     color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 10.dp).semantics { heading() })
+
+@Composable
+private fun Help(text: String) = Text(text, style = MaterialTheme.typography.bodySmall)
+
+/** A full-width button, at least 48 dp tall. */
+@Composable
+private fun WideButton(text: String, onClick: () -> Unit) =
+    OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(text) }
 
 @Composable
 private fun Labelled(label: String, value: String, help: String? = null) {

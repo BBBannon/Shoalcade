@@ -117,7 +117,9 @@ object Storage {
     fun saveFile(userId: String, game: Game) = File(saveDir(userId), "${game.id}.sav")
 
     /** PSP: the folder the emulator uses as this game's memory stick. */
-    fun memstickDir(userId: String, game: Game) = File(root, "memstick/$userId/${game.id}")
+    fun memstickDir(userId: String, game: Game) = stickDir(userId, game.id)
+
+    private fun stickDir(userId: String, gameId: String) = File(root, "memstick/$userId/$gameId")
 
     /**
      * Which files in a folder-save console's folder are the save (S1, plan-windows-gc-wii-ps2 §5). The emulator keeps
@@ -240,10 +242,10 @@ object Storage {
      * so it is read from the right place (D158). Reads only.
      */
     fun folderSaveConsole(userId: String, gameId: String): Console? =
-        FOLDER_SPECS.firstOrNull { hasSave(File(root, "memstick/$userId/$gameId"), it) }?.console
+        FOLDER_SPECS.firstOrNull { hasSave(stickDir(userId, gameId), it) }?.console
 
     /** True if this game's phone save is a folder (memory stick, SD card, Dolphin's User folder…), not a save file. Reads only. */
-    fun hasSaveFolder(userId: String, gameId: String) = FOLDER_SPECS.any { hasSave(File(root, "memstick/$userId/$gameId"), it) }
+    fun hasSaveFolder(userId: String, gameId: String) = folderSaveConsole(userId, gameId) != null
 
     /**
      * Takes a folder save off (Start fresh, after its backup): only its save files ([FolderSpec]), never the
@@ -289,7 +291,7 @@ object Storage {
         "Its backup is kept: put it back, or get the save from Jellyfin, before you play."
 
     /** Hidden (never a save file), beside the folder save: present = uploads of this game's save are held (review S6). */
-    private fun holdFile(userId: String, gameId: String) = File(root, "memstick/$userId/$gameId/.upload-held")
+    private fun holdFile(userId: String, gameId: String) = File(stickDir(userId, gameId), ".upload-held")
 
     /** True if this game's save must not be uploaded: only part of it is here ([SavePartlyRemovedException]). Reads only. */
     fun uploadHeld(userId: String, gameId: String) = holdFile(userId, gameId).isFile
@@ -303,7 +305,7 @@ object Storage {
         val sp = spec(game.console) ?: return a.contentEquals(b)
         fun files(z: ByteArray): Map<String, String>? = runCatching {
             val out = HashMap<String, String>()
-            java.util.zip.ZipInputStream(z.inputStream()).use { zip ->
+            ZipInputStream(z.inputStream()).use { zip ->
                 while (true) {
                     val e = zip.nextEntry ?: break
                     if (!e.isDirectory && sp.keep(e.name)) out[e.name] = String(zip.readBytes(), Charsets.ISO_8859_1)
@@ -344,8 +346,7 @@ object Storage {
     fun deleteSnapshot(userId: String, game: Game) {
         val f = stateFile(userId, game)
         val cheats = stateCheatsFile(userId, game)
-        listOf(f, File(f.parentFile, f.name + ".bak"), stateImageFile(userId, game), cheats, File(cheats.parentFile, cheats.name + ".bak"))
-            .forEach { it.delete() }
+        listOf(f, bak(f), stateImageFile(userId, game), cheats, bak(cheats)).forEach { it.delete() }
     }
 
     /** A phone backup of a save: from the phone itself, or the Jellyfin save the phone replaced ([fromJellyfin]). */
@@ -575,9 +576,9 @@ object Storage {
     fun writeState(userId: String, game: Game, bytes: ByteArray, cheats: String? = null) {
         val f = stateFile(userId, game)
         val c = stateCheatsFile(userId, game)
-        val cBak = File(c.parentFile, c.name + ".bak")
+        val cBak = bak(c)
         if (f.isFile) {
-            writeAtomically(File(f.parentFile, f.name + ".bak"), f.readBytes())
+            writeAtomically(bak(f), f.readBytes())
             if (c.isFile) writeAtomically(cBak, c.readBytes()) else cBak.delete()
         }
         // Old list off first, new one after the state: if the app dies in between, a snapshot is left with no cheats
@@ -586,6 +587,9 @@ object Storage {
         writeAtomically(f, bytes)
         if (cheats != null) writeAtomically(c, cheats.toByteArray(Charsets.UTF_8))
     }
+
+    /** The previous snapshot (or its cheat list), kept beside it as `<name>.bak`. */
+    private fun bak(f: File) = File(f.parentFile, f.name + ".bak")
 
     /** Small text files (e.g. the cheat list), written whole or not at all. */
     fun writeText(f: File, text: String) = writeAtomically(f, text.toByteArray(Charsets.UTF_8))

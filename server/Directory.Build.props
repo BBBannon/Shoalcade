@@ -4,8 +4,8 @@
        A release has ShoalcadeDevBuild = 0 (shown as "s1.0", no "dev"). The 4th part of the version is the dev number.
        A patch release (fix only) bumps ShoalcadeServerPatch: 0.11.1.0, shown as "s0.11.1". Back to 0 for the next 0.x. -->
   <PropertyGroup>
-    <ShoalcadeServerVersion>0.11</ShoalcadeServerVersion>
-    <ShoalcadeServerPatch>1</ShoalcadeServerPatch>
+    <ShoalcadeServerVersion>0.12</ShoalcadeServerVersion>
+    <ShoalcadeServerPatch>0</ShoalcadeServerPatch>
     <ShoalcadeDevBuild>0</ShoalcadeDevBuild>
     <Version>$(ShoalcadeServerVersion).$(ShoalcadeServerPatch).$(ShoalcadeDevBuild)</Version>
     <AssemblyVersion>$(ShoalcadeServerVersion).$(ShoalcadeServerPatch).$(ShoalcadeDevBuild)</AssemblyVersion>

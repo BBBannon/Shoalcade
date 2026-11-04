@@ -74,6 +74,18 @@ const std::vector<std::pair<std::string, std::pair<Hotkey, std::vector<std::stri
 const char *kPadButtons[] = {"south", "east", "west", "north", "l1", "r1", "l2", "r2", "select", "start",
                              "l3", "r3", "up", "down", "left", "right", "home"};
 
+/**
+ * A browser "standard" mapping index ("b0".."b16") becomes its name; any other name stays as it is. False: an index
+ * past the list (the name is left unchanged).
+ */
+bool standard_button(std::string &n) {
+    if (!(n.size() >= 2 && n[0] == 'b' && std::all_of(n.begin() + 1, n.end(), ::isdigit))) return true;
+    size_t i = std::stoul(n.substr(1));
+    if (i >= sizeof kPadButtons / sizeof *kPadButtons) return false;
+    n = kPadButtons[i];
+    return true;
+}
+
 bool pad_source(const std::string &name, int &kind, int &code) {
     // kind: 0 button, 1 axis +, 2 axis -
     static const std::map<std::string, SDL_GamepadButton> buttons = {
@@ -86,11 +98,7 @@ bool pad_source(const std::string &name, int &kind, int &code) {
         {"right", SDL_GAMEPAD_BUTTON_DPAD_RIGHT}, {"home", SDL_GAMEPAD_BUTTON_GUIDE},
     };
     std::string n = name;
-    if (n.size() >= 2 && n[0] == 'b' && std::all_of(n.begin() + 1, n.end(), ::isdigit)) {
-        size_t i = std::stoul(n.substr(1)); // browser "standard" mapping index
-        if (i >= sizeof kPadButtons / sizeof *kPadButtons) return false;
-        n = kPadButtons[i];
-    }
+    if (!standard_button(n)) return false;
     if (n == "l2") return kind = 1, code = SDL_GAMEPAD_AXIS_LEFT_TRIGGER, true;
     if (n == "r2") return kind = 1, code = SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, true;
     auto b = buttons.find(n);
@@ -119,11 +127,10 @@ std::vector<std::string> as_list(const json &v) {
             if (x.is_string()) out.push_back(x.get<std::string>());
     return out;
 }
-} // namespace
-
-SDL_Scancode scancode_from_code(const std::string &c) {
-    static std::map<std::string, SDL_Scancode> table;
-    if (table.empty()) {
+/** Every KeyboardEvent.code name the player knows, and its scancode. */
+const std::map<std::string, SDL_Scancode> &key_table() {
+    static const std::map<std::string, SDL_Scancode> table = [] {
+        std::map<std::string, SDL_Scancode> table;
         for (char ch = 'A'; ch <= 'Z'; ch++)
             table[std::string("Key") + ch] = (SDL_Scancode)(SDL_SCANCODE_A + (ch - 'A'));
         table["Digit0"] = SDL_SCANCODE_0;
@@ -152,9 +159,15 @@ SDL_Scancode scancode_from_code(const std::string &c) {
             {"NumpadDecimal", SDL_SCANCODE_KP_PERIOD}, {"IntlBackslash", SDL_SCANCODE_NONUSBACKSLASH},
         };
         for (const auto &kv : rest) table[kv.first] = kv.second;
-    }
-    auto it = table.find(c);
-    return it == table.end() ? SDL_SCANCODE_UNKNOWN : it->second;
+        return table;
+    }();
+    return table;
+}
+} // namespace
+
+SDL_Scancode scancode_from_code(const std::string &c) {
+    auto it = key_table().find(c);
+    return it == key_table().end() ? SDL_SCANCODE_UNKNOWN : it->second;
 }
 
 void Input::configure(const ConsoleInfo &console, const json &controls) {
@@ -204,18 +217,14 @@ void Input::configure(const ConsoleInfo &console, const json &controls) {
         // the player's back; here the left stick click is Flip instead (handle_event), so the menu stays right.
         targets_.erase("L3");
     }
-    if (console.analogue_stick) {
-        analog("StickUp", RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, -1);
-        analog("StickDown", RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, 1);
-        analog("StickLeft", RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, -1);
-        analog("StickRight", RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, 1);
-    }
-    if (console.right_stick) {
-        analog("RStickUp", RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, -1);
-        analog("RStickDown", RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, 1);
-        analog("RStickLeft", RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, -1);
-        analog("RStickRight", RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, 1);
-    }
+    auto stick = [&](const std::string &prefix, unsigned index) {
+        analog((prefix + "Up").c_str(), index, RETRO_DEVICE_ID_ANALOG_Y, -1);
+        analog((prefix + "Down").c_str(), index, RETRO_DEVICE_ID_ANALOG_Y, 1);
+        analog((prefix + "Left").c_str(), index, RETRO_DEVICE_ID_ANALOG_X, -1);
+        analog((prefix + "Right").c_str(), index, RETRO_DEVICE_ID_ANALOG_X, 1);
+    };
+    if (console.analogue_stick) stick("Stick", RETRO_DEVICE_INDEX_ANALOG_LEFT);
+    if (console.right_stick) stick("RStick", RETRO_DEVICE_INDEX_ANALOG_RIGHT);
 
     Names keys = key == "n64" ? kN64Keys : kDefaultKeys;
     Names pad = key == "n64" ? kN64Pad : console.analogue_stick ? merged(kDefaultPad, kStickPad) : kDefaultPad;
@@ -228,6 +237,12 @@ void Input::configure(const ConsoleInfo &console, const json &controls) {
     // press (accelerating, aiming). The right trigger then presses Cross (B) with its real level, as well as the
     // bottom button; R2 moves to the right stick click (R3 then has no button). Only where buttons have levels.
     pressure_cross_ = console.analog_buttons && controls.is_object() && controls.value("pressureCross", false);
+    // D246 / D247: Settings → Display, kept on this PC; both on unless the shell says false.
+    auto switch_on = [&](const char *name) {
+        return !(controls.is_object() && controls.contains(name) && controls[name].is_boolean() && !controls[name].get<bool>());
+    };
+    rumble_on_ = switch_on("rumble");
+    pad_shortcuts_ = switch_on("padShortcuts");
     Names plain = pad, crossed = pad;
     crossed["B"].push_back("r2");
     crossed["R2"] = {"r3"};
@@ -328,6 +343,36 @@ void Input::compile_pad(Pad &p) {
     }
 }
 
+namespace {
+/** D247: one of the four shortcut inputs as it is now, 0-1 (the physical button or trigger). */
+float combo_level(SDL_Gamepad *pad, PadCombo::Part part) {
+    switch (part) {
+    case PadCombo::L1: return SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) ? 1.0f : 0.0f;
+    case PadCombo::R1: return SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) ? 1.0f : 0.0f;
+    case PadCombo::L2: return SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) / 32767.0f;
+    case PadCombo::R2: return SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) / 32767.0f;
+    default: return 0.0f;
+    }
+}
+} // namespace
+
+Hotkey Input::pad_combo(SDL_JoystickID id, PadCombo::Part part, float level) {
+    for (auto &p : pads_)
+        if (p.id == id) return p.combo.update(part, level, SDL_GetGamepadButton(p.pad, SDL_GAMEPAD_BUTTON_BACK), pad_shortcuts_);
+    return Hotkey::None;
+}
+
+bool Input::kept_from_game(const Pad &pad, const PadSource &src) {
+    if (!pad.combo.swallowed) return false;
+    if (src.kind == PadSource::Button)
+        return (src.code == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER && pad.combo.kept_from_game(PadCombo::L1)) ||
+               (src.code == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER && pad.combo.kept_from_game(PadCombo::R1));
+    if (src.kind == PadSource::AxisPos)
+        return (src.code == SDL_GAMEPAD_AXIS_LEFT_TRIGGER && pad.combo.kept_from_game(PadCombo::L2)) ||
+               (src.code == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER && pad.combo.kept_from_game(PadCombo::R2));
+    return false;
+}
+
 void Input::add_pad(SDL_JoystickID id) {
     for (const auto &p : pads_)
         if (p.id == id) return;
@@ -395,6 +440,14 @@ Hotkey Input::handle_event(const SDL_Event &e) {
     else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && console_ && std::string(console_->key) == "3ds" &&
              e.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_STICK)
         return Hotkey::Flip;
+    else if ((e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_BUTTON_UP) &&
+             (e.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER || e.gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER))
+        return pad_combo(e.gbutton.which, e.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER ? PadCombo::L1 : PadCombo::R1,
+                         e.gbutton.down ? 1.0f : 0.0f);
+    else if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION &&
+             (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || e.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER))
+        return pad_combo(e.gaxis.which, e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER ? PadCombo::L2 : PadCombo::R2,
+                         std::max(0, (int)e.gaxis.value) / 32767.0f);
     else if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
         if (e.key.scancode == SDL_SCANCODE_RETURN && (e.key.mod & SDL_KMOD_ALT)) return Hotkey::Fullscreen;
         for (const auto &kv : hotkeys_) {
@@ -421,9 +474,11 @@ float Input::key_level(const std::vector<SDL_Scancode> &keys, const bool *ks) co
     return 0.0f;
 }
 
-float Input::pad_level(const std::vector<PadSource> &srcs, SDL_Gamepad *pad, bool analog) const {
+float Input::pad_level(const std::vector<PadSource> &srcs, const Pad &p, bool analog) const {
+    SDL_Gamepad *pad = p.pad;
     float best = 0;
     for (const auto &s : srcs) {
+        if (kept_from_game(p, s)) continue; // D247: pressed for a controller shortcut
         float v = 0;
         if (s.kind == PadSource::Button) v = SDL_GetGamepadButton(pad, (SDL_GamepadButton)s.code) ? 1.0f : 0.0f;
         else {
@@ -440,13 +495,21 @@ float Input::pad_level(const std::vector<PadSource> &srcs, SDL_Gamepad *pad, boo
 
 void Input::poll(SDL_FRect game, bool window_focused) {
     const bool *ks = SDL_GetKeyboardState(nullptr);
+    // D247: a shoulder or trigger let go while the menu had the events is the game's again (and can fire again).
+    for (auto &pad : pads_)
+        for (int i = 0; i < PadCombo::Parts; i++) {
+            if (!pad.combo.down[i]) continue;
+            auto part = (PadCombo::Part)i;
+            float level = combo_level(pad.pad, part);
+            if (level < PadCombo::kRelease) pad.combo.update(part, level, false, false);
+        }
     if (blocked_) {
         // The key or button that closed the menu (or picked in it) must not reach the game.
         bool any = (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK) != 0;
         for (const auto &k : keys_)
             for (auto sc : k.second) any |= ks[sc];
         for (const auto &pad : pads_)
-            for (const auto &p : pad.map) any |= pad_level(p.second, pad.pad, false) >= 0.5f;
+            for (const auto &p : pad.map) any |= pad_level(p.second, pad, false) >= 0.5f;
         for (int sc = 0; sc < SDL_SCANCODE_COUNT && !any; sc++) any |= ks[sc];
         if (any) {
             ports_ = {};
@@ -461,15 +524,15 @@ void Input::poll(SDL_FRect game, bool window_focused) {
         float acc[2][2] = {{0, 0}, {0, 0}};
         for (const auto &t : targets_) {
             bool analog = t.second.kind == Target::Analog;
-            float level = 0;
+            float key = 0; // keys are all or nothing (1 or 0)
             if (p == 0 && window_focused) {
                 auto k = keys_.find(t.first);
-                if (k != keys_.end()) level = key_level(k->second, ks);
+                if (k != keys_.end()) key = key_level(k->second, ks);
             }
+            float level = key;
             for (const auto &pad : pads_) {
-                int pport = players_ > 1 ? pad.slot : 0;
                 auto ps = pad.map.find(t.first);
-                if (pport == p && ps != pad.map.end()) level = std::max(level, pad_level(ps->second, pad.pad, analog));
+                if (port_of(pad) == p && ps != pad.map.end()) level = std::max(level, pad_level(ps->second, pad, analog));
             }
             if (analog) acc[t.second.stick][t.second.axis] += level * t.second.sign;
             else if (level >= 0.5f) port.buttons |= (uint16_t)(1u << t.second.id);
@@ -477,21 +540,17 @@ void Input::poll(SDL_FRect game, bool window_focused) {
                 // P4: the trigger's real level. Keys and real buttons are all or nothing; a trigger (an axis) "clicks"
                 // its digital button only near the end of its travel on GameCube/Wii (Dolphin's own threshold is
                 // 90%: trigger_click), so a half press is a half press, not a full one. PS2 L2/R2: half way.
-                bool hard = false;
-                if (p == 0 && window_focused) {
-                    auto k = keys_.find(t.first);
-                    if (k != keys_.end()) hard = key_level(k->second, ks) >= 0.5f;
-                }
+                bool hard = key >= 0.5f;
                 float a = hard ? 1.0f : 0.0f;
                 for (const auto &pad : pads_) {
-                        int pport = players_ > 1 ? pad.slot : 0;
-                        auto ps = pad.map.find(t.first);
-                        if (pport != p || ps == pad.map.end()) continue;
-                        for (const auto &src : ps->second)
-                            if (src.kind == PadSource::Button && SDL_GetGamepadButton(pad.pad, (SDL_GamepadButton)src.code))
-                                hard = true;
-                        a = std::max(a, pad_level(ps->second, pad.pad, true));
-                    }
+                    auto ps = pad.map.find(t.first);
+                    if (port_of(pad) != p || ps == pad.map.end()) continue;
+                    for (const auto &src : ps->second)
+                        if (src.kind == PadSource::Button && !kept_from_game(pad, src) &&
+                            SDL_GetGamepadButton(pad.pad, (SDL_GamepadButton)src.code))
+                            hard = true;
+                    a = std::max(a, pad_level(ps->second, pad, true));
+                }
                 int16_t v = (int16_t)std::lround(std::clamp(a, 0.0f, 1.0f) * 0x7fff);
                 port.button_level[t.second.id] = std::max(port.button_level[t.second.id], v);
                 if (hard || a >= console_->trigger_click) port.buttons |= (uint16_t)(1u << t.second.id);
@@ -551,10 +610,12 @@ int16_t Input::state(unsigned port, unsigned device, unsigned index, unsigned id
 }
 
 bool Input::rumble(unsigned port, unsigned effect, uint16_t strength) {
+    // D246: Controller rumble off in Settings = the core is told no and no controller is asked to shake. The N64
+    // never rumbles (Controller Pak 1 holds the save, paks 2-4 none: forced_options.cpp); this keeps it so.
+    if (!rumble_on_ || (console_ && std::string(console_->key) == "n64")) return false;
     bool any = false;
     for (auto &pad : pads_) {
-        int pport = players_ > 1 ? pad.slot : 0;
-        if ((unsigned)pport != port) continue;
+        if ((unsigned)port_of(pad) != port) continue;
         if (effect == RETRO_RUMBLE_STRONG) pad.strong = strength;
         else pad.weak = strength;
         // Cores re-send the level while it lasts; 250 ms covers a missed update without buzzing on forever.
@@ -591,10 +652,7 @@ std::string pad_name(const std::string &raw) {
         {"a3-", "right stick up"}, {"a3+", "right stick down"},
     };
     std::string n = raw;
-    if (n.size() >= 2 && n[0] == 'b' && std::all_of(n.begin() + 1, n.end(), ::isdigit)) {
-        size_t i = std::stoul(n.substr(1));
-        if (i < sizeof kPadButtons / sizeof *kPadButtons) n = kPadButtons[i];
-    }
+    standard_button(n);
     auto it = names.find(n);
     return it != names.end() ? it->second : raw;
 }
@@ -654,8 +712,6 @@ std::string Input::shortcut_words(const std::string &name) const {
     return name;
 }
 
-bool Input::is_shortcut(const std::string &name) const { return default_hot_.count(name) > 0; }
-
 std::vector<Input::ControlText> Input::describe_buttons() const {
     Names pad_names = pad_base_;
     PadInfo shown;
@@ -708,10 +764,15 @@ std::vector<Input::ControlText> Input::describe_hotkeys() const {
         Hotkey hk = hotkey_of(h.first);
         std::string k = hotkey_keys(hk);
         if (hk == Hotkey::Fullscreen) k += k.empty() ? "Alt+Enter" : " or Alt+Enter";
-        out.push_back(ControlText{h.first, h.second, k,
-                                  hk == Hotkey::Menu ? "Guide button, or Start + Select together"
-                                  : hk == Hotkey::Flip ? "Left stick click" : "",
-                                  hk == Hotkey::Menu});
+        std::string pad = hk == Hotkey::Menu ? "Guide button, or Start + Select together"
+                          : hk == Hotkey::Flip ? "Left stick click" : "";
+        if (pad_shortcuts_) { // D247: Back / Select held, then a shoulder or trigger
+            if (hk == Hotkey::QuickSave) pad = "Hold Select, press right shoulder";
+            if (hk == Hotkey::QuickLoad) pad = "Hold Select, press left shoulder";
+            if (hk == Hotkey::FastForward) pad = "Hold Select, press right trigger (on / off)";
+            if (hk == Hotkey::Screenshot) pad = "Hold Select, press left trigger";
+        }
+        out.push_back(ControlText{h.first, h.second, k, pad, hk == Hotkey::Menu});
     }
     return out;
 }
@@ -719,24 +780,12 @@ std::vector<Input::ControlText> Input::describe_hotkeys() const {
 // ---- Changing the buttons ----
 
 std::string Input::code_of(SDL_Scancode sc) {
-    static std::map<SDL_Scancode, std::string> back;
-    if (back.empty()) {
-        // Every name scancode_from_code knows, the other way round.
-        const char *extra[] = {"ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "NumpadEnter", "Space",
-                               "Backspace", "Tab", "Escape", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight",
-                               "AltLeft", "AltRight", "Minus", "Equal", "BracketLeft", "BracketRight", "Backslash",
-                               "Semicolon", "Quote", "Backquote", "Comma", "Period", "Slash", "CapsLock", "Home",
-                               "End", "PageUp", "PageDown", "Insert", "Delete", "NumpadAdd", "NumpadSubtract",
-                               "NumpadMultiply", "NumpadDivide", "NumpadDecimal", "IntlBackslash"};
-        std::vector<std::string> names(std::begin(extra), std::end(extra));
-        for (char ch = 'A'; ch <= 'Z'; ch++) names.push_back(std::string("Key") + ch);
-        for (char ch = '0'; ch <= '9'; ch++) names.push_back(std::string("Digit") + ch), names.push_back(std::string("Numpad") + ch);
-        for (int i = 1; i <= 12; i++) names.push_back("F" + std::to_string(i));
-        for (const auto &n : names) {
-            SDL_Scancode s = scancode_from_code(n);
-            if (s != SDL_SCANCODE_UNKNOWN) back[s] = n;
-        }
-    }
+    // Every name scancode_from_code knows, the other way round (each scancode has one name).
+    static const std::map<SDL_Scancode, std::string> back = [] {
+        std::map<SDL_Scancode, std::string> back;
+        for (const auto &kv : key_table()) back[kv.second] = kv.first;
+        return back;
+    }();
     auto it = back.find(sc);
     return it == back.end() ? "" : it->second;
 }
@@ -777,8 +826,6 @@ std::string Input::key_words(const std::string &code) {
     SDL_Scancode sc = scancode_from_code(code);
     return sc == SDL_SCANCODE_UNKNOWN ? code : key_name(sc);
 }
-
-std::string Input::pad_words(const std::string &input) { return pad_name(input); }
 
 Input::Change Input::bind_key(const std::string &name, bool shortcut, const std::string &code) {
     Change c;

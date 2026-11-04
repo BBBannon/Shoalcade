@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -396,14 +395,7 @@ public sealed class CheatStore
             // handled below
         }
 
-        var stamp = _clock.GetUtcNow().ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
-        var keep = path + ".damaged-" + stamp;
-        for (var n = 2; File.Exists(keep); n++)
-        {
-            keep = path + ".damaged-" + stamp + "-" + n.ToString(CultureInfo.InvariantCulture);
-        }
-
-        File.Move(path, keep);
+        var keep = AtomicFile.KeepDamaged(path, _clock.GetUtcNow());
         _logger.LogWarning("Cheats file {Path} was damaged; kept it as {Copy} and started that game's cheats afresh", path, keep);
         return new CheatDoc();
     }

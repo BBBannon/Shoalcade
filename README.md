@@ -200,6 +200,7 @@
 
 **Your games list**
 - **Box art** cached on the phone, so it shows offline
+- **▶ Continue** (new): the last game you played that's on this phone sits at the top of the list; one tap plays it, offline too, with the usual save check. Hidden while you search. Switch off in **Settings → Show Continue**
 - **Sort** by **Name**, **Year**, **Platform** or **Last played** — remembered; **Last played** is the default and counts browser play too
 - **Console bar:** **All**, **Nintendo ▾** and **Sony ▾**. Each menu lists that maker's consoles that have games
 - **Search:** type in **Find a game** (accents and punctuation don't matter)
@@ -231,6 +232,9 @@
 - **Cheats** — side menu → **Cheats**: **Add a cheat…**, switch each one on or off, **Edit cheats…**. Shared with the browser player, and they work offline. See [Cheats](#-cheats)
 - **Fast-forward** — tap **⏩** (2×, 3× or 4×, set in side menu → **Speed**). GBA goes up to 3×. Not on Game Boy / Game Boy Color
 - **Screenshot** — side menu → **Game** → **Screenshot**, saved to a **Shoalcade** album in your gallery
+- **Smooth picture** (new) — side menu → **Display**, or **Settings → Each console**: **on** keeps the softened look, **off** shows crisp pixels. Per console, changes straight away
+- **Controller shortcuts** (new) — hold **Select**, then **R1** quick snapshot, **L1** load snapshot, **R2** fast-forward on / off, **L2** screenshot. The game doesn't get that shoulder press. Switch off in **Settings → Controller shortcuts**
+- **Controller rumble** (new) — Game Boy, GBC, GBA and DS games with rumble shake your **controller**, never the phone. Not N64 (its Controller Pak holds your saves). Switch off in **Settings → Controller rumble**
 - **Snapshots** — **Save snapshot** / **Load snapshot**, one per game with a picture, kept on the phone
 - **Launch choice:** games with a snapshot ask **Continue from save** or **Or load a snapshot**, with **Delete snapshot…** to remove it (asks first; the save is kept)
 - Side menu: **Close Game** or **Close Game (and Upload)**
@@ -270,6 +274,7 @@
 - **Log in** with your username and password, or **Use Quick Connect instead**. **HTTPS only**
 - Your login token is protected by **Windows** for your Windows account only, and never logged
 - Box art grid, **Find a game**, console bar, **Sort**, **★ Favourites only**, **⬇ On this PC only** and **play time**, as on the phone
+- **▶ Continue** (new): the last game you played that's on this PC sits at the top of the library; one click carries on, with the usual save check. Switch off in ⚙ Settings → **Display** → **Show Continue**
 - **Download** with progress and **Cancel**. Downloaded games play **offline**
 - **⚙ Settings** opens as a **panel down the right-hand side**, with tabs: **Account**, **Saves**, **Display**, **PS2**, **Link play**, **3DS check**, **About**
 - **Update banner:** "Shoalcade x for Windows is ready." with **Get it**, when your Jellyfin says there's a newer Windows app
@@ -280,6 +285,8 @@
 - **GameCube, Wii and PS2** (new): see [GameCube, Wii and PS2](#gamecube-wii-and-ps2-windows-app-new)
 - **Fast-forward** 2×, 3× or 4× on **every console**, and **Rewind** on GB, GBC, GBA and PS1 (and GameCube, Wii and PS2 where the PC is fast enough)
 - **Screenshot** — saved as a picture in your **Pictures** folder
+- **Controller shortcuts** (new) — hold **Select**, then **R1** quick snapshot, **L1** load it, **R2** fast-forward on / off, **L2** screenshot. Switch off in ⚙ Settings → **Display**
+- **Controller rumble** (new) — games with rumble shake your controller (PS1, GameCube, Wii, PS2, and GB/GBA rumble cartridges). Never on N64. Switch off in ⚙ Settings → **Display**
 - **Display:** in a window or full screen, **Whole-number scale**, **Smooth picture**
 - **Picture size** (⚙ Settings → **Display**): **1×–4×** per console for N64, PSP, 3DS, GameCube, Wii and PS2. Bigger is sharper in a big window but needs a faster PC
 - **Change disc** (menu → **Game**) for a game on more than one disc
@@ -784,4 +791,4 @@ tools/build_windows_release.sh release   # → dist/windows/release/ (Setup.exe)
 - Shoalcade is provided **as is, with no warranty** (see [LICENSE](LICENSE)). **Back up your saves.**
 
 <!-- Discord invite: change it here only. -->
-[discord]: https://discord.gg/SRDBXwhre
+[discord]: https://discord.gg/8jZQXTRCEj

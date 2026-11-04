@@ -53,7 +53,13 @@ private:
     bool start(const json &msg, std::string &err);
     void loop(Inbox &inbox);
     void handle(const json &msg);
+    /** The `debug.*` messages (only with --test-hooks). */
+    void handle_debug(const std::string &type, const json &msg);
     void run_frame();
+    // Parts of `start`, in its order: the layout and Wii controllers from the shell, rewind, and the `ready` reply.
+    void take_layout_and_controllers(const json &msg);
+    void start_rewind(const json &msg);
+    void send_ready(const std::string &core_path);
     void shutdown(const char *reason);
 
     void set_paused(bool p, const char *by);
@@ -128,6 +134,8 @@ private:
     void toggle_cheat(const std::string &id, bool on, const char *by);
     void report_play_time(bool force);
     void send_frame_info();
+    /** `stats` (debug.stats, and as the game closes). */
+    void send_stats();
     double now_s() const;
     void core_message(const char *text, bool show);
 
@@ -241,5 +249,6 @@ private:
     double mouse_moved_at_ = -1e9;
     bool menu_button_shown() const;
     bool menu_button_rect(float out[4]) const;
+    bool mouse_on_menu_button() const;
 };
 } // namespace sc

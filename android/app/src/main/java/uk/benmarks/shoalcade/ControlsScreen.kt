@@ -177,6 +177,16 @@ object ControlsWords {
         if (taken.isEmpty()) "" else " Taken from ${taken.joinToString(", ")}."
 }
 
+private val SOFT = Color(0xFFC8C8D4)
+private val TEXT = Color(0xFFE6E6EE)
+private val DIM = Color(0xFF8A8A96)
+private val LISTEN_BLUE = Color(0xFF9AD0FF)
+private val ROW_SHAPE = RoundedCornerShape(10.dp)
+
+/** A row's rounded tile: [fill] behind it, and a blue edge while it is the one chosen ([on]). */
+private fun Modifier.tile(fill: Color, on: Boolean) =
+    background(fill, ROW_SHAPE).border(1.dp, if (on) Color(0xFF78C8FF) else Color(0xFF2C2C3A), ROW_SHAPE)
+
 @Composable
 fun ControlsScreen(
     state: ControlsState, onPick: (GameButton) -> Unit, onReset: () -> Unit, onDone: () -> Unit,
@@ -204,19 +214,17 @@ fun ControlsScreen(
                     Text("🎮 " + (device?.name ?: ControlsWords.NO_CONTROLLER), fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium)
                     Text(if (device == null) ControlsWords.NO_CONTROLLER_HELP else ControlsWords.forGames(state.console),
-                        style = MaterialTheme.typography.bodyMedium, color = Color(0xFFC8C8D4))
+                        style = MaterialTheme.typography.bodyMedium, color = SOFT)
                 }
 
                 // Settings: more than one controller connected, so say which one is being changed.
                 if (onChoose != null && state.connected.size > 1) {
-                    Text(ControlsWords.WHICH, style = MaterialTheme.typography.titleSmall, color = Color(0xFFC8C8D4),
+                    Text(ControlsWords.WHICH, style = MaterialTheme.typography.titleSmall, color = SOFT,
                         modifier = Modifier.semantics { heading() })
                     for (c in state.connected) {
                         val on = c.key == device?.key
                         Row(
-                            Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                .background(Color(0xFF181822), RoundedCornerShape(10.dp))
-                                .border(1.dp, if (on) Color(0xFF78C8FF) else Color(0xFF2C2C3A), RoundedCornerShape(10.dp))
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).tile(Color(0xFF181822), on)
                                 .selectable(selected = on, role = Role.RadioButton, onClick = { onChoose(c) })
                                 .padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -235,7 +243,7 @@ fun ControlsScreen(
                 }
                 // Always two lines tall, so the rows never jump while you're tapping them.
                 Text(banner ?: "", style = MaterialTheme.typography.bodyLarge, minLines = 2,
-                    color = if (listening != null) Color(0xFF9AD0FF) else Color(0xFFE6E6EE),
+                    color = if (listening != null) LISTEN_BLUE else TEXT,
                     modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite })
 
                 for (b in state.map.buttons) {
@@ -244,9 +252,7 @@ fun ControlsScreen(
                     val value = if (now) ControlsWords.LISTEN else state.map.describe(b)
                     val enabled = device != null
                     Row(
-                        Modifier.fillMaxWidth().heightIn(min = 64.dp)
-                            .background(if (now) Color(0xFF203448) else Color(0xFF181822), RoundedCornerShape(10.dp))
-                            .border(1.dp, if (now) Color(0xFF78C8FF) else Color(0xFF2C2C3A), RoundedCornerShape(10.dp))
+                        Modifier.fillMaxWidth().heightIn(min = 64.dp).tile(if (now) Color(0xFF203448) else Color(0xFF181822), now)
                             .clickable(enabled = enabled) { onPick(b) }
                             .clearAndSetSemantics {
                                 role = Role.Button
@@ -258,13 +264,13 @@ fun ControlsScreen(
                     ) {
                         Text(label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
                             modifier = Modifier.width(96.dp),
-                            color = if (enabled) Color.White else Color(0xFF8A8A96))
+                            color = if (enabled) Color.White else DIM)
                         Text(value, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f),
                             color = when {
-                                now -> Color(0xFF9AD0FF)
+                                now -> LISTEN_BLUE
                                 value == ControllerMap.NOT_SET -> Color(0xFFFFB86C)
-                                enabled -> Color(0xFFE6E6EE)
-                                else -> Color(0xFF8A8A96)
+                                enabled -> TEXT
+                                else -> DIM
                             })
                     }
                 }

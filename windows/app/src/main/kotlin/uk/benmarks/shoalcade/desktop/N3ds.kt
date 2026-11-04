@@ -139,22 +139,7 @@ class N3dsCheckRun(private val setup: PlayerSetup, private val dir: File, privat
         val start = StartRequest(console = Console.N3DS.key, core = core, rom = scene, saveFolder = dir,
             systemDir = setup.systemDir, title = N3dsCheck.TITLE, check = StartRequest.Check(warmUp, measure),
             snapshotsAllowed = false, cheatsAllowed = false, canUpload = false)
-        val p = withContext(Dispatchers.IO) { PlayerClient.launch(setup.player, playerArgs, log = log) }
-        var result: PlayerEvent.Message? = null
-        var fatal: String? = null
-        try {
-            p.events.collect { e ->
-                if (e !is PlayerEvent.Message) return@collect
-                when (e.type) {
-                    "hello" -> p.start(start)
-                    "checkTick" -> onTick(tickWords(e))
-                    "checkResult" -> result = e
-                    "error" -> if (e.bool("fatal") == true) fatal = e.string("message")
-                }
-            }
-        } finally {
-            withContext(NonCancellable) { withTimeoutOrNull(10_000) { p.close() } }
-        }
+        val (result, fatal) = runCheckPlayer(setup, playerArgs, log, start) { onTick(tickWords(it)) }
         val r = result ?: return Outcome.Failed(fatal?.let { "${N3dsCheckPc.NO_ENGINE} ($it)" } ?: N3dsCheckPc.NO_ENGINE)
         if (r.bool("done") != true) return Outcome.Cancelled
         if (r.bool("picture") == false) return Outcome.Failed(NO_PICTURE) // nothing was shown, so nothing was measured
@@ -173,4 +158,32 @@ class N3dsCheckRun(private val setup: PlayerSetup, private val dir: File, privat
         const val NO = "The 3DS check couldn't start."
         const val NO_PICTURE = "The 3DS check's test scene didn't appear on this PC, so it couldn't measure anything. Nothing changed."
     }
+}
+
+/** What a check's player said: its `checkResult` (null = none came) and the words of a fatal error. */
+internal data class CheckReply(val result: PlayerEvent.Message?, val fatal: String?)
+
+/**
+ * Runs the player in check mode ([start] has `check`) until it has gone (the end, or Esc in its window); [onTick]
+ * gets each `checkTick`. The 3DS and the GameCube / Wii checks.
+ */
+internal suspend fun runCheckPlayer(setup: PlayerSetup, playerArgs: List<String>, log: File?, start: StartRequest,
+                                    onTick: (PlayerEvent.Message) -> Unit): CheckReply {
+    val p = withContext(Dispatchers.IO) { PlayerClient.launch(setup.player, playerArgs, log = log) }
+    var result: PlayerEvent.Message? = null
+    var fatal: String? = null
+    try {
+        p.events.collect { e ->
+            if (e !is PlayerEvent.Message) return@collect
+            when (e.type) {
+                "hello" -> p.start(start)
+                "checkTick" -> onTick(e)
+                "checkResult" -> result = e
+                "error" -> if (e.bool("fatal") == true) fatal = e.string("message")
+            }
+        }
+    } finally {
+        withContext(NonCancellable) { withTimeoutOrNull(10_000) { p.close() } }
+    }
+    return CheckReply(result, fatal)
 }
