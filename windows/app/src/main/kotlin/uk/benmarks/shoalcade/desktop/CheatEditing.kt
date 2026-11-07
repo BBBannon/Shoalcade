@@ -203,7 +203,7 @@ class CheatEditor(val console: Console, val host: CheatHost) {
     }
 
     companion object {
-        /** Consoles with cheats on Windows: every one but the 3DS (D210: Azahar's retro_cheat_set is empty). */
-        fun allowed(console: Console?): Boolean = console != null && console != Console.N3DS
+        /** Consoles with cheats on Windows: every one but the 3DS (D210: Azahar's retro_cheat_set is empty) and Xbox 360 (X-5). */
+        fun allowed(console: Console?): Boolean = console != null && console != Console.N3DS && console != Console.XBOX360
     }
 }

@@ -39,7 +39,7 @@ It is built on the work of the projects below. Thank you to all of them.
 
 ---
 
-## Windows app: GameCube, Wii and PS2 cores (Windows only)
+## Windows app: GameCube, Wii, PS2 and Xbox 360 cores (Windows only)
 
 Built by us with MinGW-w64 (`tools/build_windows_cores.sh`), exact commits and SHA-256 in `windows/cores/cores.lock`. Not in the phone app.
 
@@ -49,10 +49,12 @@ Built by us with MinGW-w64 (`tools/build_windows_cores.sh`), exact commits and S
 | **Dolphin system files** (`system\dolphin-emu\Sys`) | Game fixes, cheat code handler, free DSP ROM replacements, names | GPL-2.0-or-later (Dolphin's own files); GameCube fonts made from **Droid Sans**: Apache-2.0. **Nothing from Nintendo** | Same as Dolphin (`Data/Sys`) |
 | **LRPS2** (`libretro/parallel-ps2`, commit `083de59f52`) + our build fixes and cheats patch (`tools/lrps2-patches`) | PlayStation 2 | GPL-3.0 (PCSX2 parts GPL-3.0+/LGPL-3.0+); bundles glslang (BSD/Apache-2.0), xbyak (BSD-3), vixl (BSD-3), Vulkan headers (Apache-2.0) | https://github.com/libretro/parallel-ps2/tree/083de59f52159ce4dd2f63a63f74fa9f0e936ee3 |
 | **PCEE2** (`WizzardSK/pcee2-libretro`, commit `5719627731`) + our memory card and cheats patches (`tools/pcee2-patches`), and its resources (`system\pcsx2\resources`) | PlayStation 2 (second choice) | GPL-3.0-or-later (PCSX2); compiled-in libraries (SDL3 zlib, FreeType FTL, shaderc/glslang Apache-2.0/BSD, zstd/lz4/libwebp BSD, libpng, libjpeg-turbo, rapidyaml/plutovg MIT and others) as listed in its `THIRD_PARTY_LICENSES.html` | https://github.com/WizzardSK/pcee2-libretro/tree/5719627731beb90e379ff1be1223391b7f563b3b |
+| **Xenia Edge** libretro (`WizzardSK/xenia-libretro`, commit `8fd1709218`, a port of `has207/xenia-edge`) | Xbox 360 | BSD-3-Clause (Xenia); its bundled libraries under their own licences | https://github.com/WizzardSK/xenia-libretro/tree/8fd1709218e98767d4468a482656adc64f45a8ef |
 | **GameCube / Wii check scenes** (`gc-check.dol`, `wii-check.dol`) | The GameCube / Wii speed check's test scene | GPL-3.0-or-later (our own scene); libogc inside it: zlib-style licence | `tools/gc-check` in this repository; https://github.com/devkitPro/libogc |
 | **zstd** 1.5.7 (inside `ShoalcadePlayer.exe`) | Packing the big GameCube / Wii / PS2 snapshots | BSD-3-Clause | https://github.com/facebook/zstd/tree/v1.5.7 |
 
 - **No PS2 BIOS** is included: each PC's owner picks their own (D218).
+- **Xbox 360:** no BIOS, keys or firmware are included or needed.
 
 ---
 

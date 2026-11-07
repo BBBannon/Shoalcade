@@ -23,6 +23,7 @@ typedef float GLfloat;
 typedef unsigned char GLboolean;
 typedef char GLchar;
 typedef unsigned char GLubyte;
+typedef uint64_t GLuint64;
 
 #define GL_NO_ERROR 0
 #define GL_TRIANGLE_STRIP 0x0005
@@ -74,6 +75,17 @@ typedef unsigned char GLubyte;
 #define GL_RENDERBUFFER 0x8D41
 #define GL_FRAMEBUFFER_SRGB 0x8DB9
 #define GL_DEPTH_COMPONENT24 0x81A6
+#define GL_EXTENSIONS 0x1F03
+#define GL_NUM_EXTENSIONS 0x821D
+// GL_EXT_memory_object, GL_EXT_memory_object_win32, GL_EXT_semaphore (Vulkan pictures, vulkan_host.h)
+#define GL_TEXTURE_TILING_EXT 0x9580
+#define GL_DEDICATED_MEMORY_OBJECT_EXT 0x9581
+#define GL_OPTIMAL_TILING_EXT 0x9584
+#define GL_HANDLE_TYPE_OPAQUE_WIN32_EXT 0x9587
+#define GL_LAYOUT_SHADER_READ_ONLY_EXT 0x9591
+#define GL_NUM_DEVICE_UUIDS_EXT 0x9596
+#define GL_DEVICE_UUID_EXT 0x9597
+#define GL_DEVICE_LUID_EXT 0x9599
 
 #define SC_GL_FUNCS(X)                                                                                         \
     X(void, glGenTextures, (GLsizei n, GLuint * t))                                                            \
@@ -128,10 +140,30 @@ typedef unsigned char GLubyte;
     X(void, glBindSampler, (GLuint, GLuint))                                                                   \
     X(void, glDrawArrays, (GLenum, GLint, GLsizei))
 
+// Only for Vulkan cores (load_interop): a driver without them still plays every OpenGL and software core.
+#define SC_GL_INTEROP_FUNCS(X)                                                                                 \
+    X(void, glGetIntegerv, (GLenum, GLint *))                                                                  \
+    X(const GLubyte *, glGetStringi, (GLenum, GLuint))                                                         \
+    X(void, glGetUnsignedBytevEXT, (GLenum, GLubyte *))                                                        \
+    X(void, glGetUnsignedBytei_vEXT, (GLenum, GLuint, GLubyte *))                                              \
+    X(void, glCreateMemoryObjectsEXT, (GLsizei, GLuint *))                                                     \
+    X(void, glDeleteMemoryObjectsEXT, (GLsizei, const GLuint *))                                               \
+    X(void, glMemoryObjectParameterivEXT, (GLuint, GLenum, const GLint *))                                     \
+    X(void, glImportMemoryWin32HandleEXT, (GLuint, GLuint64, GLenum, void *))                                  \
+    X(void, glTexStorageMem2DEXT, (GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLuint, GLuint64))               \
+    X(void, glGenSemaphoresEXT, (GLsizei, GLuint *))                                                           \
+    X(void, glDeleteSemaphoresEXT, (GLsizei, const GLuint *))                                                  \
+    X(void, glImportSemaphoreWin32HandleEXT, (GLuint, GLenum, void *))                                         \
+    X(void, glWaitSemaphoreEXT, (GLuint, GLuint, const GLuint *, GLuint, const GLuint *, const GLenum *))      \
+    X(void, glSignalSemaphoreEXT, (GLuint, GLuint, const GLuint *, GLuint, const GLuint *, const GLenum *))
+
 namespace sc::gl {
 #define SC_GL_DECLARE(ret, name, args) typedef ret(SC_GLAPI *PFN_##name) args; extern PFN_##name name;
 SC_GL_FUNCS(SC_GL_DECLARE)
+SC_GL_INTEROP_FUNCS(SC_GL_DECLARE)
 #undef SC_GL_DECLARE
 /** Looks every function up with SDL_GL_GetProcAddress. False names the first missing one in `missing`. */
 bool load(const char **missing);
+/** The Vulkan-picture functions (SC_GL_INTEROP_FUNCS), after load(). False names the first missing one. */
+bool load_interop(const char **missing);
 } // namespace sc::gl

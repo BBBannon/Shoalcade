@@ -17,7 +17,7 @@ import java.util.zip.ZipOutputStream
  *                                                            cheats that were on: .state.cheats.json, previous .state.cheats.json.bak)
  *   Shoalcade/cheats/<userId>/<itemId>.json                 (the game's cheats, D143, see CheatStore)
  *   Shoalcade/memstick/<userId>/<itemId>/PSP/SAVEDATA/...      (PSP: one memory stick per game; its "save" is a zip of SAVEDATA)
- *   Shoalcade/memstick/<userId>/<itemId>/...                   (3DS, and on Windows GameCube / Wii / PS2: the core's own
+ *   Shoalcade/memstick/<userId>/<itemId>/...                   (3DS, and on Windows GameCube / Wii / PS2 / Xbox 360: the core's own
  *                                                            folder; only its save files are zipped, see [FolderSpec])
  */
 object Storage {
@@ -137,6 +137,12 @@ object Storage {
      *  - PS2 (LRPS2 or PCEE2: the same card in both): the game's own 8 MB memory card, `<game file name>.ps2`, at the
      *    top of the folder. A blank card (every byte the same: never formatted) is no save: never zipped, and never
      *    replaces a real one ([writeSave]).
+     *  - Xbox 360 (Xenia Edge, X-4): the Windows app gives the game's folder to Xenia as its system folder, so its
+     *    content is `Xenia-Edge/content`. The save is every saved game (`<XUID>/<TitleID>/00000001/…`), its header
+     *    (`<XUID>/<TitleID>/Headers/00000001/…`) and the profile that made it (`<XUID≠0>/FFFE07D1/00010000/…`). Title
+     *    updates, DLC, publisher content, `cache/`, `xbl_profilename.txt` and `xenia.log` never are. A profile alone is
+     *    no save (Xenia makes one the first time any game starts). A restore replaces every profile in the folder with
+     *    the save's own, so Xenia signs in the XUID the saved games are under.
      */
     private class FolderSpec(val console: Console, val sub: String, val keep: (String) -> Boolean = { true })
 
@@ -144,6 +150,11 @@ object Storage {
     private const val N3DS_SAVES = "Azahar/sdmc/Nintendo 3DS"
     private const val GC_SETTINGS = "SRAM.raw"
     private val WII_DATA = Regex("[^/]+/[^/]+/data/.+")
+    private const val X360_CONTENT = "Xenia-Edge/content"
+    private val X360_SAVED = Regex("[0-9A-F]{16}/[0-9A-F]{8}/00000001/.+", RegexOption.IGNORE_CASE)
+    private val X360_HEADER = Regex("[0-9A-F]{16}/[0-9A-F]{8}/Headers/00000001/.+", RegexOption.IGNORE_CASE)
+    private val X360_PROFILE = Regex("(?!0{16}/)[0-9A-F]{16}/FFFE07D1/00010000/.+", RegexOption.IGNORE_CASE)
+    private fun x360Keep(rel: String) = X360_SAVED.matches(rel) || X360_HEADER.matches(rel) || X360_PROFILE.matches(rel)
 
     /** In the order a folder whose game has gone is recognised by ([folderSaveConsole]): most specific first. */
     private val FOLDER_SPECS = listOf(
@@ -151,6 +162,7 @@ object Storage {
         FolderSpec(Console.PSP, PSP_SAVES),
         FolderSpec(Console.WII, "User/Wii/title", keep = { WII_DATA.matches(it) }),
         FolderSpec(Console.GC, "User/GC", keep = { it != GC_SETTINGS }),
+        FolderSpec(Console.XBOX360, X360_CONTENT, keep = ::x360Keep),
         FolderSpec(Console.PS2, "", keep = { '/' !in it && it.endsWith(".ps2", ignoreCase = true) }),
     )
 
@@ -158,11 +170,18 @@ object Storage {
 
     private fun specDir(stick: File, sp: FolderSpec) = if (sp.sub.isEmpty()) stick else File(stick, sp.sub)
 
-    /** The save files of [sp] under [dir] (relative path to file), in name order; a blank PS2 card isn't one. Reads only. */
+    /**
+     * The save files of [sp] under [dir] (relative path to file), in name order; a blank PS2 card isn't one, nor an
+     * Xbox 360 profile with no saved game. Reads only.
+     */
     private fun saveFiles(dir: File, sp: FolderSpec): List<Pair<String, File>> =
         // An empty [FolderSpec.sub] (PS2) means files at the top only: never walk the emulator's whole folder.
         dir.walkTopDown().let { if (sp.sub.isEmpty()) it.maxDepth(1) else it }.filter { it.isFile && !it.name.startsWith(".") }.map { it.relativeTo(dir).invariantSeparatorsPath to it }
             .filter { (rel, f) -> sp.keep(rel) && !(sp.console == Console.PS2 && isBlankFile(f)) }.sortedBy { it.first }.toList()
+            .takeUnless { files -> sp.console == Console.XBOX360 && !hasX360SavedGame(files.map { it.first }) } ?: emptyList()
+
+    /** Xbox 360 (X-4): at least one saved game among [names] (relative to Xenia's content folder). */
+    private fun hasX360SavedGame(names: List<String>) = names.any { X360_SAVED.matches(it) }
 
     /** True if every byte of [f] is 0x00, or every byte 0xFF (a PS2 card never formatted). Reads only. */
     private fun isBlankFile(f: File): Boolean = runCatching {
@@ -419,9 +438,21 @@ object Storage {
             if (saveFiles(dir, sp).isNotEmpty()) throw IOException(PS2_BLANK_CARD)
             return
         }
+        // Xbox 360: a zip with no saved game in it (a profile alone) would only swap the profile, so it is refused.
+        if (sp.console == Console.XBOX360 && zipNames(bytes)?.let(::hasX360SavedGame) == false) throw IOException(X360_NO_SAVED_GAME)
         unzipToFolder(bytes, dir, sp.keep)
         holdFile(userId, game.id).delete() // a whole save is back (review S6)
     }
+
+    /** Xbox 360: why [writeSave] refused a zip with no saved game in it. */
+    const val X360_NO_SAVED_GAME = "That Xbox 360 save has no saved game in it, so it didn't replace the save on this PC."
+
+    /** The file names in a zip (`/` separators), or null if it can't be read (unzipToFolder then refuses it). Reads only. */
+    private fun zipNames(bytes: ByteArray): List<String>? = runCatching {
+        ZipInputStream(bytes.inputStream()).use { zip ->
+            generateSequence { zip.nextEntry }.filter { !it.isDirectory }.map { it.name.replace('\\', '/') }.toList()
+        }
+    }.getOrNull()
 
     /** PS2: why [writeSave] refused a zip whose only card is blank while a real card is here. */
     const val PS2_BLANK_CARD = "That PS2 save is an empty memory card, so it didn't replace the save on this PC."

@@ -82,6 +82,12 @@ object RomCheck {
                 "chd" -> tooSmall(0x7C) ?: if (at(0, "MComprHD")) null else mark
                 else -> tooSmall(0x100)
             }
+            // Xbox 360 (X-3): the disc's own header sits far past what is read here, so Xenia checks it; an .iso must
+            // at least reach the first XDVDFS header (sector 32).
+            Console.XBOX360 -> when (ext) {
+                "iso" -> tooSmall(0x10014)
+                else -> tooSmall(0x100)
+            }
             Console.N3DS -> when (ext) {
                 "3ds", "cci" -> tooSmall(0x200) ?: if (at(0x100, "NCSD")) null else mark
                 "cxi" -> tooSmall(0x200) ?: if (at(0x100, "NCCH")) null else mark

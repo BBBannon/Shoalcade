@@ -271,8 +271,17 @@ bool Player::environment(unsigned cmd, void *data) {
         return false; // the player always loads a game: "no game" mode isn't offered
     case RETRO_ENVIRONMENT_SET_HW_RENDER: {
         auto *cb = static_cast<retro_hw_render_callback *>(data);
+#ifdef _WIN32
+        if (cb->context_type == RETRO_HW_CONTEXT_VULKAN) {
+            // X-1: the core gets a Vulkan device (vulkan_host.h); its frames are shown through OpenGL.
+            hw_ = *cb;
+            hw_requested_ = vk_requested_ = true;
+            LOGI("core wants Vulkan");
+            return true;
+        }
+#endif
         if (cb->context_type != RETRO_HW_CONTEXT_OPENGL && cb->context_type != RETRO_HW_CONTEXT_OPENGL_CORE) {
-            LOGI("core offered hardware context type %d; only OpenGL is supported", (int)cb->context_type);
+            LOGI("core offered hardware context type %d; not supported", (int)cb->context_type);
             return false;
         }
         cb->get_current_framebuffer = get_fb_cb;
@@ -282,6 +291,26 @@ bool Player::environment(unsigned cmd, void *data) {
         LOGI("core wants OpenGL%s %u.%u (depth %d, stencil %d, bottom-left %d)",
              cb->context_type == RETRO_HW_CONTEXT_OPENGL_CORE ? " core" : "", cb->version_major, cb->version_minor,
              cb->depth, cb->stencil, cb->bottom_left_origin);
+        return true;
+    }
+    case RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE:
+        if (!data || !vk_requested_ || !vk_.active()) return false;
+        *static_cast<const retro_hw_render_interface **>(data) =
+            reinterpret_cast<const retro_hw_render_interface *>(vk_.interface());
+        return true;
+    case RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE: {
+        auto *n = static_cast<const retro_hw_render_context_negotiation_interface *>(data);
+        if (!n || n->interface_type != RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN) return false;
+        vk_neg_ = reinterpret_cast<const retro_hw_render_context_negotiation_interface_vulkan *>(n);
+        LOGI("core gave a Vulkan context negotiation interface (version %u)", n->interface_version);
+        return true;
+    }
+    case RETRO_ENVIRONMENT_GET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_SUPPORT: {
+        auto *n = static_cast<retro_hw_render_context_negotiation_interface *>(data);
+        if (!n) return false;
+        n->interface_version = n->interface_type == RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN
+                                   ? RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN_VERSION
+                                   : 0;
         return true;
     }
     case RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER:
@@ -375,7 +404,7 @@ bool Player::environment(unsigned cmd, void *data) {
         auto *a = static_cast<const retro_system_av_info *>(data);
         av_ = *a;
         video_.set_geometry(a->geometry);
-        if (hw_requested_ && video_.window()) {
+        if (hw_requested_ && !vk_requested_ && video_.window()) { // Vulkan: the shared picture grows as needed
             std::string err;
             if (!video_.ensure_hw_fbo(a->geometry.max_width, a->geometry.max_height, err)) LOGE("%s", err.c_str());
         }
@@ -436,7 +465,17 @@ bool Player::environment(unsigned cmd, void *data) {
     }
 }
 
-void Player::video_refresh(const void *data, unsigned w, unsigned h, size_t pitch) { video_.frame(data, w, h, pitch); }
+void Player::video_refresh(const void *data, unsigned w, unsigned h, size_t pitch) {
+    video_.frame(data, w, h, pitch);
+    if (!video_.vulkan_error().empty() && !vk_error_sent_) {
+        // The GPU stopped taking the game's frames: nothing more can be shown, so the session ends.
+        vk_error_sent_ = true;
+        LOGE("vulkan: %s", video_.vulkan_error().c_str());
+        send("error", {{"message", video_.vulkan_error()}, {"fatal", true}});
+        running_ = false;
+        close_reason_ = "error";
+    }
+}
 
 size_t Player::audio_batch(const int16_t *data, size_t frames) {
     if (frames) core_sound_seen_ = true;
@@ -519,6 +558,10 @@ bool Player::start(const json &msg, std::string &err) {
     cheats_allowed_ = boolean(msg, "cheatsAllowed", true);
     rewind_allowed_ = boolean(msg, "rewindAllowed", true);
     auto_snapshot_on_close_ = boolean(msg, "autoSnapshotOnClose", false);
+    // X-5: what the console's core can't do isn't offered, whatever the shell says.
+    if (!console_->cheats) cheats_allowed_ = false;
+    if (!console_->snapshots) snapshots_allowed_ = auto_snapshot_on_close_ = false;
+    if (console_->max_ff <= 1 && !console_->rewind) speed_allowed_ = rewind_allowed_ = false;
     if (msg.contains("check") && msg["check"].is_object()) {
         // The 3DS check (Game3dsActivity check mode), and the advisory GameCube / Wii check (D222 D-7, our own scene
         // tools/gc-check): the test scene, measured; no menu, snapshots, cheats or speed.
@@ -573,8 +616,9 @@ bool Player::start(const json &msg, std::string &err) {
         d.smooth = boolean(msg["display"], "smooth", false);
         video_.set_display(d);
     }
-    if (!video_.create("Shoalcade - " + title_, av_.geometry, hw_requested_ ? &hw_ : nullptr, cfg_.headless, err,
-                       console_->newest_gl, hw_requested_ && (hw_shared_ || console_->own_gl_context)))
+    const bool gl_core = hw_requested_ && !vk_requested_; // a Vulkan core draws nothing in OpenGL itself
+    if (!video_.create("Shoalcade - " + title_, av_.geometry, gl_core ? &hw_ : nullptr, cfg_.headless, err,
+                       console_->newest_gl, gl_core && (hw_shared_ || console_->own_gl_context)))
         return false;
     video_.set_icon(console_->key);
     if (msg.contains("display") && msg["display"].is_object() && boolean(msg["display"], "fullscreen", false))
@@ -585,7 +629,14 @@ bool Player::start(const json &msg, std::string &err) {
         if (ui_.init(video_.window(), video_.context(), uerr)) video_.overlay = [this](int, int) { draw_overlay(); };
         else send_warning("The pause menu couldn't start: " + uerr);
     }
-    if (hw_requested_) {
+    if (vk_requested_) {
+        // X-1: the Vulkan device on OpenGL's GPU (the core makes it if it negotiates), then the core's context_reset
+        // (Xenia starts the game there).
+        GpuId gpu;
+        if (!video_.vulkan_gpu(gpu, err) || !vk_.create(vk_neg_, gpu, err)) return false;
+        video_.attach_vulkan(&vk_);
+        if (hw_.context_reset) hw_.context_reset();
+    } else if (hw_requested_) {
         if (!video_.ensure_hw_fbo(av_.geometry.max_width, av_.geometry.max_height, err)) return false;
         if (hw_.context_reset) hw_.context_reset();
     }
@@ -608,7 +659,7 @@ bool Player::start(const json &msg, std::string &err) {
     if (msg.contains("ff") && msg["ff"].is_object()) ff_speed_ = (int)number(msg["ff"], "speed", 2);
     ff_speed_ = std::clamp(ff_speed_, 1, console_->max_ff);
     start_rewind(msg);
-    if (msg.contains("cheats") && !link_session_ && !check_) pending_cheats_ = msg["cheats"];
+    if (msg.contains("cheats") && !link_session_ && !check_ && console_->cheats) pending_cheats_ = msg["cheats"];
     scan_slots();
     if (msg.contains("slots")) load_slots(msg["slots"]);
     pending_snapshot_ = link_session_ || check_ ? "" : str(msg, "snapshot");
@@ -1546,14 +1597,14 @@ void Player::shutdown(const char *reason) {
             // unloads, so the GL context must still be there (RetroArch's order too).
             LOGI("closing: unload game");
             core_.unload_game();
-            if (hw_requested_ && hw_.context_destroy) {
-                LOGI("closing: GL context destroy");
+            if (hw_requested_ && hw_.context_destroy && (!vk_requested_ || vk_.active())) {
+                LOGI("closing: %s context destroy", vk_requested_ ? "Vulkan" : "GL");
                 hw_.context_destroy();
             }
         } else {
             // GL context first: PPSSPP's retro_unload_game deletes the object its context_destroy uses.
-            if (hw_requested_ && hw_.context_destroy) {
-                LOGI("closing: GL context destroy");
+            if (hw_requested_ && hw_.context_destroy && (!vk_requested_ || vk_.active())) {
+                LOGI("closing: %s context destroy", vk_requested_ ? "Vulkan" : "GL");
                 hw_.context_destroy();
             }
             if (link_session_) link_.shutdown(); // linkshim.c: stop the core's session before retro_unload_game
@@ -1566,6 +1617,13 @@ void Player::shutdown(const char *reason) {
         LOGI("closing: core deinit");
         core_.deinit();
         inited_ = false;
+    }
+    if (vk_requested_) {
+        // After the core is gone: OpenGL lets go of the shared picture, then the device and instance go (the core's
+        // destroy_device first).
+        LOGI("closing: Vulkan device");
+        video_.detach_vulkan();
+        vk_.destroy();
     }
     audio_.close();
     input_.close();
@@ -1604,8 +1662,9 @@ int Player::run(const json &start_msg, Inbox &inbox) {
     if (close_reason_ == "menu") closing["upload"] = close_upload_; // the shell uploads for "Close Game (and Upload)"
     send("closing", closing);
     shutdown(close_reason_.c_str());
-    send("exited", {{"code", 0}});
-    return 0;
+    int code = close_reason_ == "error" ? 1 : 0; // a fatal error while playing (the Vulkan picture stopped)
+    send("exited", {{"code", code}});
+    return code;
 }
 // ---------------------------------------------------------------------------------------------------------------
 // The pause menu. What shows is menu.cpp (the phone's GameMenu.kt); the drawing is menu_ui.cpp. Every pick also

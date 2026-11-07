@@ -27,6 +27,11 @@ static const ConsoleInfo kConsoles[] = {
     {"gc", "GameCube", 0, true, true, 4, true, false, 4, true, true, true, true, true, 60, 0.9f, true},
     {"wii", "Wii", 0, true, true, 4, true, false, 4, true, true, true, true, true, 60, 0.9f, true},
     {"ps2", "PS2", 0, true, true, 4, true, false, 4, true, true, true, true, true, 60},
+    // Xbox 360 (Windows only, plan-windows-x360.md): Xenia Edge, a Vulkan core (X-1). Saves are the game's folders
+    // under Xenia-Edge/content in the save folder (X-4). No rewind, fast-forward (max 1x), cheats or snapshots (X-5):
+    // the core has none. Analogue triggers (LT/RT), two sticks; the game unloads before the Vulkan context goes.
+    //  key        name        save  folder rewind pl stick  clock  maxFF  abtn  newGL  unload rstick packed coarse click own-gl cheats snaps
+    {"xbox360", "Xbox 360", 0, true, false, 4, true, false, 1, true, false, true, true, false, 0, 0.5f, false, false, false},
 };
 
 const ConsoleInfo *find_console(const std::string &key) {

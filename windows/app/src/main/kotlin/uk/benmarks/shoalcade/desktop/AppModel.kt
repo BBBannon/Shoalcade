@@ -746,6 +746,8 @@ class AppModel(
     }
 
     private suspend fun chooseStart(g: Game) {
+        // Xbox 360 (X-5): no snapshots, so no launch choice: always the save.
+        if (g.console?.hasSnapshots == false) return start(g, null, snapshotsEnabled = false)
         val snaps = snapshots() ?: return
         val (list, enabled) = runCatching { snaps.forLaunch(g) }.getOrDefault(emptyList<SnapshotStore.Entry>() to true)
         if (list.any { it.here }) launch = Launch(g, list, enabled) else start(g, null, enabled, list)

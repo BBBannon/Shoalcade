@@ -135,6 +135,8 @@ tools/*
 !tools/dolphin-patches/
 # ...and the PCEE2 (PS2, second choice) per-game memory card and cheats patches (Windows-only core, D222)
 !tools/pcee2-patches/
+# ...and the Xenia Edge (Xbox 360, Windows-only core) static C runtime build patch
+!tools/xenia-patches/
 # ...and the Windows installer build: it controls how the shipped files are built and installed (GPLv3 Corresponding Source)
 !tools/build_windows_release.sh
 !tools/fetch_core_licences.sh

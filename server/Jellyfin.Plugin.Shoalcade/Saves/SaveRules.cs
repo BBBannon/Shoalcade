@@ -45,7 +45,7 @@ internal static class SaveRules
             return "A " + console.DisplayName + " save must be a .zip of its save folder.";
         }
 
-        if (console.Key is "gc" or "wii" or "ps2")
+        if (console.Key is "gc" or "wii" or "ps2" or "xbox360")
         {
             var problem = CheckFolderZip(console, data, allowBlank, out errorCode);
             if (problem is not null)
@@ -105,7 +105,10 @@ internal static class SaveRules
     /// GameCube = Dolphin's User/GC card folders (with or without <c>SRAM.raw</c>, the console's settings: the app now
     /// leaves it out, older builds put it in; <c>SRAM.raw</c> alone is no save),
     /// Wii = only <c>&lt;hi&gt;/&lt;lo&gt;/data/…</c> under User/Wii/title, PS2 = exactly one memory card
-    /// <c>&lt;game&gt;.ps2</c> at the top, 8,650,752 bytes, not blank. No entry may climb out of its folder.
+    /// <c>&lt;game&gt;.ps2</c> at the top, 8,650,752 bytes, not blank. Xbox 360 (X-4) = files under Xenia's content folder
+    /// that are a saved game (<c>&lt;XUID&gt;/&lt;TitleID&gt;/00000001/…</c>), its header
+    /// (<c>&lt;XUID&gt;/&lt;TitleID&gt;/Headers/00000001/…</c>) or the profile (<c>&lt;XUID≠0&gt;/FFFE07D1/00010000/…</c>),
+    /// at least one a saved game (a profile alone is no save). No entry may climb out of its folder.
     /// </summary>
     private static string? CheckFolderZip(GameConsole console, ReadOnlySpan<byte> data, bool allowBlank, out string? errorCode)
     {
@@ -185,6 +188,20 @@ internal static class SaveRules
                     }
 
                     break;
+                case "xbox360":
+                    var notSave = files.FirstOrDefault(f => !X360Saved.IsMatch(f.Name) && !X360Header.IsMatch(f.Name) && !X360Profile.IsMatch(f.Name));
+                    if (notSave.Name is not null)
+                    {
+                        return "An Xbox 360 save holds only the profile and the game's saved games; this zip has " + notSave.Name + ".";
+                    }
+
+                    if (!files.Any(f => X360Saved.IsMatch(f.Name)))
+                    {
+                        errorCode = "blank";
+                        return "That Xbox 360 save has only a profile, no saved game, so the game has probably never saved.";
+                    }
+
+                    break;
             }
         }
         catch (Exception ex) when (ex is System.IO.InvalidDataException or System.IO.IOException)
@@ -199,6 +216,16 @@ internal static class SaveRules
     }
 
     private static readonly System.Text.RegularExpressions.Regex WiiData = new("^[^/]+/[^/]+/data/.+$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    // Xbox 360 (X-4): the same paths the app's Storage keeps, relative to Xenia's content folder.
+    private const System.Text.RegularExpressions.RegexOptions X360Options =
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.IgnoreCase;
+
+    private static readonly System.Text.RegularExpressions.Regex X360Saved = new("^[0-9A-F]{16}/[0-9A-F]{8}/00000001/.+$", X360Options);
+
+    private static readonly System.Text.RegularExpressions.Regex X360Header = new("^[0-9A-F]{16}/[0-9A-F]{8}/Headers/00000001/.+$", X360Options);
+
+    private static readonly System.Text.RegularExpressions.Regex X360Profile = new("^(?!0{16}/)[0-9A-F]{16}/FFFE07D1/00010000/.+$", X360Options);
 
     private static string SizeText(long n) => n >= 1024 * 1024 ? (n / (1024 * 1024)).ToString(CultureInfo.InvariantCulture) + " MB"
         : n >= 1024 ? (n / 1024).ToString(CultureInfo.InvariantCulture) + " KB" : n.ToString(CultureInfo.InvariantCulture) + " bytes";

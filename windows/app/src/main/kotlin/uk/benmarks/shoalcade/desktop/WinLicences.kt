@@ -49,6 +49,8 @@ object WinLicences {
         Part("PCEE2 (commit 5719627) + Shoalcade patches", "PlayStation 2 (second choice)",
             "GPL-3.0-or-later (libraries compiled in: see its THIRD_PARTY_LICENSES)",
             "https://github.com/WizzardSK/pcee2-libretro/tree/5719627731beb90e379ff1be1223391b7f563b3b (patches: tools/pcee2-patches in Shoalcade's source)"),
+        Part("Xenia Edge libretro (commit 8fd1709)", "Xbox 360", "BSD-3-Clause (bundled libraries under their own licences)",
+            "https://github.com/WizzardSK/xenia-libretro/tree/8fd1709218e98767d4468a482656adc64f45a8ef"),
     )
 
     val player = listOf(

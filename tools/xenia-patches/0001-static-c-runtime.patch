@@ -1,0 +1,34 @@
+Shoalcade build fix for the Windows (MSVC) libretro core: the static C runtime (/MT) instead of the DLL one (/MD).
+With /MD the core needs vcruntime140.dll and msvcp140.dll, which Windows does not have unless the Visual C++
+Redistributable is installed, and Shoalcade's player loads cores that may import only Windows system DLLs
+(tools/build_windows_cores.sh checks every core's imports). /MT links the runtime into xenia_edge_libretro.dll, so it
+is one file, as every other Shoalcade core. Mesa (spirv_to_dxil, built by meson) is switched with it, so every library
+in the link uses the same runtime. Checked builds (ASan) are left on the debug DLL runtime. No change to any other
+platform.
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4eed30d42..ad0bb1aee 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -196,7 +196,7 @@ if(MSVC)
+   # CRT (/MD); Checked uses the debug CRT (/MDd) because it pairs /RTCsu
+   # with ASan.
+   set(CMAKE_MSVC_RUNTIME_LIBRARY
+-      "MultiThreaded$<$<CONFIG:Checked>:Debug>DLL"
++      "$<IF:$<CONFIG:Checked>,MultiThreadedDebugDLL,MultiThreaded>"
+       CACHE STRING "" FORCE)
+ 
+   # Patch the cached CMAKE_C/CXX_FLAGS_DEBUG so /MDd → /MD for Debug builds.
+diff --git a/third_party/CMakeLists.txt b/third_party/CMakeLists.txt
+index 471adb912..27a1b6f89 100644
+--- a/third_party/CMakeLists.txt
++++ b/third_party/CMakeLists.txt
+@@ -1140,7 +1140,7 @@ if(WIN32)
+     # /MD matches xenia's CRT; /wd4189 overrides mesa's /we4189: Release strips
+     # asserts, leaving assert-only locals that would trip the promoted warning.
+     list(APPEND _xe_s2d_meson_args
+-      -Db_vscrt=md -Dc_args=/wd4189 -Dcpp_args=/wd4189)
++      -Db_vscrt=mt -Dc_args=/wd4189 -Dcpp_args=/wd4189)
+     if(NOT CMAKE_HOST_WIN32)
+       # Cross-built from Linux with clang-cl (.ci/build-windows-cross.sh):
+       # the script's clang-cl wrapper, which adds the target, lld and the CRT

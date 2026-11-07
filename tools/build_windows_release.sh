@@ -195,7 +195,7 @@ ${TP}strip --strip-unneeded -o "$PLAYER/SDL3.dll" "$PB/SDL3.dll"
 
 # Only Windows' own DLLs (and SDL3.dll for the player) may be needed: a MinGW runtime DLL here would mean a
 # "works on the build machine, fails on Ben's PC" install.
-SYSTEM_DLLS='^(kernel32|user32|gdi32|shell32|advapi32|ole32|oleaut32|ws2_32|winmm|opengl32|iphlpapi|bcrypt|winhttp|version|shlwapi|crypt32|msvcrt|imm32|setupapi|cfgmgr32|hid|dinput8|dxgi|d3dcompiler_47|d3d11|d3d12|dwmapi|uxtheme|comdlg32|comctl32|secur32|userenv|ntdll|dbghelp|powrprof|avrt|mfplat|mfreadwrite|mf|propsys|winusb|xinput1_4|api-ms-win-.*)\.dll$'
+SYSTEM_DLLS='^(kernel32|user32|gdi32|shell32|advapi32|ole32|oleaut32|ws2_32|wsock32|winmm|opengl32|iphlpapi|bcrypt|winhttp|version|shlwapi|crypt32|msvcrt|imm32|setupapi|cfgmgr32|hid|dinput8|dxgi|d3dcompiler_47|d3d11|d3d12|dwmapi|uxtheme|comdlg32|comctl32|secur32|userenv|ntdll|dbghelp|powrprof|avrt|mfplat|mfreadwrite|mf|propsys|winusb|xinput1_4|api-ms-win-.*)\.dll$'
 check_imports() { # file allowed-extra-regex
   local bad
   bad=$(${TP}objdump -p "$1" | tr -d '\r' | sed -n 's/^\s*DLL Name: //p' | tr 'A-Z' 'a-z' |

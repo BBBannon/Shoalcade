@@ -300,7 +300,8 @@ public class StatesController : ShoalcadeControllerBase
             rom = r;
             // Snapshots for consoles something of ours can play: the browser player, or the Windows app for
             // GameCube, Wii and PS2 (D-2: they go up packed when small enough; refused here, they never left the PC).
-            return r.Console.BrowserCore is null && !r.Console.WindowsOnly ? GameNotFound() : null;
+            // Xbox 360: none (X-5).
+            return (r.Console.BrowserCore is null && !r.Console.WindowsOnly) || !r.Console.HasSnapshots ? GameNotFound() : null;
         }
 
         if (cantReadNow)

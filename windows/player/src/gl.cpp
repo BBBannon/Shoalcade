@@ -9,6 +9,7 @@
 namespace sc::gl {
 #define SC_GL_DEFINE(ret, name, args) PFN_##name name = nullptr;
 SC_GL_FUNCS(SC_GL_DEFINE)
+SC_GL_INTEROP_FUNCS(SC_GL_DEFINE)
 #undef SC_GL_DEFINE
 
 bool load(const char **missing) {
@@ -19,6 +20,11 @@ bool load(const char **missing) {
         return false;                                                                \
     }
     SC_GL_FUNCS(SC_GL_LOAD)
+    return true;
+}
+
+bool load_interop(const char **missing) {
+    SC_GL_INTEROP_FUNCS(SC_GL_LOAD)
 #undef SC_GL_LOAD
     return true;
 }

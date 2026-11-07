@@ -68,10 +68,10 @@ public sealed class GameDatabase
     }
 
     /// <summary>The folder each console's main list comes from: No-Intro for cartridges, Redump for discs (PSP, PS1,
-    /// GameCube, Wii, PS2).</summary>
+    /// GameCube, Wii, PS2, Xbox 360).</summary>
     /// <param name="console">Console.</param>
     /// <returns>Folder name.</returns>
-    public static string MainFolder(GameConsole console) => console?.Key is "psp" or "psx" or "gc" or "wii" or "ps2" ? "redump" : "no-intro";
+    public static string MainFolder(GameConsole console) => console?.Key is "psp" or "psx" or "gc" or "wii" or "ps2" or "xbox360" ? "redump" : "no-intro";
 
     /// <summary>
     /// Looks a ROM up by MD5. The first lookup for a console downloads its lists if they are missing (one request at

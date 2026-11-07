@@ -46,6 +46,7 @@
 - [Your own games only](#your-own-games-only)
 - [Supported consoles](#supported-consoles)
   - [GameCube, Wii and PS2 (Windows app, new)](#gamecube-wii-and-ps2-windows-app-new)
+  - [Xbox 360 (Windows app, new)](#xbox-360-windows-app-new)
 - [Screenshots](#screenshots)
 - [Features](#features)
 - [Requirements](#requirements)
@@ -101,6 +102,7 @@
 | **GameCube** (new) | ➖ listed: **Plays on Windows** | ✅ Dolphin | ➖ listed: **Plays in the Windows app** | ❌ (the game's own LAN / online play: **Network adapter**) |
 | **Wii** (new) | ➖ listed: **Plays on Windows** | ✅ Dolphin | ➖ listed: **Plays in the Windows app** | ❌ |
 | **PlayStation 2** (new) | ➖ listed: **Plays on Windows** | ✅ LRPS2 or PCEE2 (**your own BIOS**) | ➖ listed: **Plays in the Windows app** | ❌ (the game's own LAN / online play: **Network adapter**, LRPS2 only) |
+| **Xbox 360** (new) | ➖ listed: **Plays on Windows** | ✅ Xenia (**AVX and a Vulkan graphics card**) | ➖ listed: **Plays in the Windows app** | ❌ |
 
 - **Same emulators, same versions** on the phone and the PC, so a save made on one plays on the other.
 - **Link play works phone ↔ phone, PC ↔ PC and phone ↔ PC.**
@@ -164,6 +166,16 @@
 - **Cheats:** see [Cheats](#-cheats).
 - **Network adapter** (the game's page, **off** unless you switch it on for that game): for **GameCube** and **PS2** games that play over a LAN or online **in their own way**. Most games don't need it. **PS2: LRPS2 only.** Shoalcade's link play isn't used for these consoles.
 - **Saves** sync like PSP saves: only the real save files go up (never an installed Wii game or an empty PS2 memory card), a few seconds after the game saves.
+
+### Xbox 360 (Windows app, new)
+
+> **New and untested with real games.** Please report what you find on [Discord][discord].
+
+- **Needs a PC with AVX and a Vulkan graphics card** (about RTX 2060 class for full speed). There is no speed check.
+- **Files:** one `.iso`, `.zar` or `.xcp` per game, in an **Xbox 360** folder (`xbox360` or `x360` work too). A game on more than one disc: a `.m3u`, as above. **Extracted games** (a folder with a `.xex`) and `.zip` / `.7z` are skipped (Jellyfin's log says why).
+- **No BIOS, keys or system files needed**, and none are included.
+- **No snapshots, rewind, cheats or fast-forward.** The game saves itself.
+- **Saves** sync like the others: the game's saved games and the profile that made them. Title updates and DLC stay on the PC.
 
 ---
 
@@ -465,6 +477,7 @@
 | **Phone app** | **Android 11+** on a **64-bit ARM** phone (almost every phone from the last few years) |
 | **Windows app** (new) | **Windows 10 or 11, 64-bit** (x64), about **350 MB** of disk space plus your games (the installer is about 195 MB). Saves from Windows need plugin **0.10.0.0 or newer** |
 | **GameCube, Wii, PS2** (Windows app) | A **fast PC** (recent processor, decent graphics; real-game speed not tested yet). **PS2:** a BIOS file from **your own** PlayStation 2 |
+| **Xbox 360** (Windows app) | A PC with **AVX** and a **Vulkan** graphics card (about RTX 2060 class for full speed) |
 | **Browser player** | A modern browser (Chrome, Edge, Firefox, Safari) on a computer, tablet or phone |
 | **Games** | Your own games, in a folder Jellyfin can read |
 | **Internet link play** | Both players logged in to the **same Jellyfin**, each user allowed **remote connections** |
@@ -505,7 +518,7 @@
 
 ### 2. Make a games library
 
-1. Put your games in **one folder per console** (short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`, `gc`, `wii`, `ps2`):
+1. Put your games in **one folder per console** (short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`, `gc`, `wii`, `ps2`, `xbox360`):
 
 ```
 /media/games/
@@ -519,14 +532,15 @@
 ├── PSP/                 .iso .cso .pbp .chd
 ├── GameCube/            .iso .gcm .rvz .wia .gcz .ciso   (Windows app)
 ├── Wii/                 .iso .wbfs .rvz .wia .gcz .ciso .wad   (Windows app)
-└── PS2/                 .iso .chd .cso .zso .gz   (Windows app; not .bin/.cue)
+├── PS2/                 .iso .chd .cso .zso .gz   (Windows app; not .bin/.cue)
+└── Xbox 360/            .iso .zar .xcp   (Windows app)
 ```
 
 2. **Dashboard → Plugins → Shoalcade → Add a games library**
 3. Give it a **Name** and the **ROM folder on the server** → **Create games library**
 4. Press **Scan for new games** and wait for it to finish
 
-- A `.zip` or `.7z` holding one game is fine (not PS1, GameCube, Wii or PS2). **Nothing is ever written into your ROM folder.**
+- A `.zip` or `.7z` holding one game is fine (not PS1, GameCube, Wii, PS2 or Xbox 360). **Nothing is ever written into your ROM folder.**
 - **PS1:** not yet `.bin/.cue`, `.iso` or archives — see the [Install guide](guides/install.md).
 - **Games on more than one disc:** a folder of `(Disc 1)`, `(Disc 2)` files or a `.m3u` — see [Games on more than one disc](#games-on-more-than-one-disc).
 
@@ -607,7 +621,7 @@ Yes. Patch your own game file with **⚙ Settings → Patch a game** in the brow
 Yes — it uses **Jellyfin's own users**. Each person has their own saves. Jellyfin's **library access** decides who sees the games library, and Jellyfin's **Allow media downloading** permission is needed to play (on the phone and in the browser). There's no separate kids mode.
 
 **Which consoles? Why not SNES?**
-**GB, GBC, GBA, N64, DS, 3DS, PS1 and PSP**, plus **GameCube, Wii and PS2 in the Windows app**. Each console is a lot of work to make safe for saves, so the list is small for now. Other consoles (SNES, Wii U and the rest) may come later; their files stay on your server untouched.
+**GB, GBC, GBA, N64, DS, 3DS, PS1 and PSP**, plus **GameCube, Wii, PS2 and Xbox 360 in the Windows app**. Each console is a lot of work to make safe for saves, so the list is small for now. Other consoles (SNES, Wii U and the rest) may come later; their files stay on your server untouched.
 
 **Can I play GameCube, Wii or PS2 games?**
 **Yes, in the Windows app only (new).** The phone shows them as **Plays on Windows** and the browser as **Plays in the Windows app**. They need a fast PC, and **real-game speed hasn't been tested yet**. Try the **GameCube and Wii check** (⚙ Settings → **3DS check** tab) to see how your PC copes. See [GameCube, Wii and PS2](#gamecube-wii-and-ps2-windows-app-new).

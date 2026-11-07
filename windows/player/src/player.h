@@ -22,6 +22,7 @@
 #include "rewind.h"
 #include "saves.h"
 #include "video.h"
+#include "vulkan_host.h"
 
 namespace sc {
 struct RunConfig {
@@ -144,6 +145,7 @@ private:
     Core core_;
     CoreOptions options_;
     Video video_;
+    VulkanHost vk_; // Vulkan cores only (Xbox 360): the core's context, its frames shown through video_
     Audio audio_;
     Input input_;
     Saves saves_;
@@ -159,6 +161,9 @@ private:
     bool hw_requested_ = false;
     bool hw_shared_ = false; // SET_HW_SHARED_CONTEXT: the core gets a GL context of its own (Video::create)
     retro_hw_render_callback hw_{};
+    bool vk_requested_ = false; // SET_HW_RENDER asked for Vulkan
+    const retro_hw_render_context_negotiation_interface_vulkan *vk_neg_ = nullptr;
+    bool vk_error_sent_ = false;
     bool loaded_ = false, inited_ = false;
     retro_frame_time_callback frame_time_{};
     bool have_frame_time_ = false;

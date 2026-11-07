@@ -12,7 +12,7 @@
 
 namespace sc {
 struct ConsoleInfo {
-    const char *key;        // "gba", "gbc", "gb", "nds", "psp", "psx", "n64", "3ds"
+    const char *key;        // "gba", "gbc", "gb", "nds", "psp", "psx", "n64", "3ds", "gc", "wii", "ps2", "xbox360"
     const char *short_name; // for messages
     /** Save is always exactly this many bytes (Console.exactSaveSize), 0 = sizes vary. */
     size_t exact_save_size;
@@ -57,6 +57,10 @@ struct ConsoleInfo {
      * undid it and still menus and 30 fps games showed black (02/11/2026).
      */
     bool own_gl_context = false;
+    /** X-5 (Xbox 360, Xenia): the core has no cheats (retro_cheat_set is empty): none handed over, no Cheats menu. */
+    bool cheats = true;
+    /** X-5: the core has no snapshots (retro_serialize_size is 0): no Snapshots menu, Automatic snapshot never taken. */
+    bool snapshots = true;
 };
 
 const ConsoleInfo *find_console(const std::string &key);

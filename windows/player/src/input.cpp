@@ -694,6 +694,9 @@ std::string Input::button_words(const std::string &b) const {
                 {"RStickDown", "C-stick down"}, {"RStickLeft", "C-stick left"}, {"RStickRight", "C-stick right"}}},
         {"wii", {{"X", "1"}, {"Y", "2"}, {"Start", "+"}, {"Select", "-"}, {"R3", "Home"}, {"R2", "Shake"}}},
         {"ps2", {{"A", "Circle"}, {"B", "Cross"}, {"X", "Triangle"}, {"Y", "Square"}, {"L", "L1"}, {"R", "R1"}}},
+        // By position, as the other consoles (plan-windows-x360.md): the bottom button is the pad's A.
+        {"xbox360", {{"A", "B"}, {"B", "A"}, {"X", "Y"}, {"Y", "X"}, {"L", "LB"}, {"R", "RB"}, {"L2", "LT"},
+                     {"R2", "RT"}, {"Select", "Back"}, {"L3", "Left stick click"}, {"R3", "Right stick click"}}},
     };
     if (console_) {
         auto bc = by_console.find(console_->key);

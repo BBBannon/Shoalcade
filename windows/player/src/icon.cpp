@@ -38,6 +38,7 @@ IconColours icon_colours(const std::string &k) {
     if (k == "ps2") return {0x0B0B10, 0x1F4FB0}; // black and blue
     if (k == "gc") return {0x6A5ACD, 0x2E2470};  // indigo purple
     if (k == "wii") return {0x6CCDF2, 0x1A7FC0}; // light blue
+    if (k == "xbox360") return {0x9BD33C, 0x1E5C12}; // lime to dark green (colours only: no logo, X-7)
     if (k == "gb") return {0x8BAC0F, 0x0F380F};  // the first Game Boy's screen greens
     if (k == "gbc") return {0x7B3FA8, 0x2CB5A9}; // grape to teal
     if (k == "gba") return {0x4B3C9E, 0x8E7CD9}; // indigo to lavender

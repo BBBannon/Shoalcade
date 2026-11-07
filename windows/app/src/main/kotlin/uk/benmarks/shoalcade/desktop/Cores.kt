@@ -27,6 +27,7 @@ class Cores(private val rows: List<Row>, val target: String,
         Console.N3DS -> "azahar"
         Console.GC, Console.WII -> "dolphin" // Windows only (D218)
         Console.PS2 -> ps2().core // "lrps2" (pcsx2_libretro.dll) or "pcee2": each has its own snapshot tag
+        Console.XBOX360 -> "xenia" // Xenia Edge (plan-windows-x360.md X-2)
     }
 
     /** Link play's core (the phone's LinkRules.GPSP_CORE for GBA: mGBA has no link; the DS keeps melonDS DS). */

@@ -28,8 +28,10 @@
   const STARRED = "starred";
   const SORTS = ["name", "year", "platform", "played"];
   const DEFAULT_SORT = "played";
-  /** Platform order (same as the app's GameSort.kt): Game Boy family, N64, GameCube, DS, Wii, 3DS, PS1, PS2, PSP. Unknown consoles last. */
-  const PLATFORM_ORDER = ["gb", "gbc", "gba", "n64", "gc", "nds", "wii", "3ds", "psx", "ps2", "psp"];
+  /** Platform order (same as the app's GameSort.kt): Game Boy family, N64, GameCube, DS, Wii, 3DS, PS1, PS2, PSP, Xbox 360. Unknown consoles last. */
+  const PLATFORM_ORDER = ["gb", "gbc", "gba", "n64", "gc", "nds", "wii", "3ds", "psx", "ps2", "psp", "xbox360"];
+  /** Xbox 360 (X-6): what PC it needs, the app's Console.X360_PC. */
+  const X360_PC = "Needs a PC with AVX and a Vulkan graphics card (about RTX 2060 class for full speed).";
   const collator = new Intl.Collator("en-GB", { sensitivity: "base" });
 
   const S = { info: null, games: [], byId: new Map(), cards: new Map(), con: "all", q: "", sort: DEFAULT_SORT, openedHere: false, edit: null,
@@ -70,9 +72,9 @@
 
   /** Why Play is not offered for a game, or null if it can be played here. */
   function cantPlay(g) {
-    // GameCube, Wii, PS2 (D218): only the Windows app plays them; saves are managed here as usual.
+    // GameCube, Wii, PS2 (D218), Xbox 360: only the Windows app plays them; saves are managed here as usual.
     const con = (S.info.consoles || []).find(x => x.key === g.console);
-    if (con && con.windowsOnly) return "Plays in the Windows app.";
+    if (con && con.windowsOnly) return "Plays in the Windows app." + (g.console === "xbox360" ? " " + X360_PC : "");
     if (!S.info.browserPlayer) return "The browser player is switched off on this server.";
     if (!g.browserPlayable) return consoleName(g.console) + " games can't be played in the browser. Use the Shoalcade app.";
     if (!S.info.user.canDownload) return "Your Jellyfin account isn't allowed to download, so games can't be played here. Ask the server admin.";

@@ -547,6 +547,8 @@ private fun GameSheet(g: Game, vm: AppModel, downloaded: Boolean, actions: CardA
                 } else if (g.id in vm.waitingIds) {
                     PocketNote("Save waiting to go up to Jellyfin", Modifier.padding(top = 12.dp))
                 }
+                // Xbox 360 (X-6): no speed check, so the sheet says what PC it needs.
+                g.console?.pcNeeds?.let { PocketNote(it, Modifier.padding(top = 12.dp).widthIn(max = 420.dp)) }
                 if (NetworkAdapter.applies(g.console)) NetworkAdapterRow(g)
                 // .facts: the plugin's labels for what the app knows about the game.
                 Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {

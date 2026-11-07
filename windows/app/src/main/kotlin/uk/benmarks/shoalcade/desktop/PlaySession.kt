@@ -152,7 +152,7 @@ class PlaySession(
                         offered: List<SnapshotStore.Entry> = emptyList()): Prepared = withContext(Dispatchers.IO) {
         // As GameActivity: a link session never starts from a snapshot and has no snapshots or cheats.
         require(link == null || snapshot == null) { "A link session can't start from a snapshot." }
-        snapshotsOn = snapshotsEnabled && link == null
+        snapshotsOn = snapshotsEnabled && link == null && console.hasSnapshots // Xbox 360 (X-5): Xenia has none
         val notes = mutableListOf<String>()
         val found = Storage.romFile(game) ?: throw IOException("Game file missing. Download it again.")
         // D161 (Game3dsActivity): a .cia is an installer package Azahar's core can't open; say so instead of failing.
@@ -233,7 +233,10 @@ class PlaySession(
 
         Prepared(StartRequest(
             console = console.key, core = core, rom = rom, saveFile = saveFile, clockFile = if (useClock) workClock else null,
-            saveFolder = saveFolder, systemDir = setup.systemDir, statesDir = snapshots.dir(game).apply { mkdirs() },
+            // Xbox 360 (X-4): Xenia keeps everything under <system folder>\Xenia-Edge, so the game's own save folder is
+            // its system folder: the saves land in Xenia-Edge\content there, one profile per game.
+            saveFolder = saveFolder, systemDir = if (console == Console.XBOX360) saveFolder else setup.systemDir,
+            statesDir = snapshots.dir(game).apply { mkdirs() },
             screenshotDir = screenshotDir, title = game.name, snapshot = snapFile,
             cheatItems = cheatItems().also { sentCheats = it },
             snapshotsAllowed = snapshotsOn, autoSnapshotOnClose = autoOnClose, canUpload = true, slots = slots,
@@ -242,6 +245,9 @@ class PlaySession(
                 (if (console == Console.PS2) Ps2.options(DesktopStorage.context(), setup.systemDir) else emptyMap()) +
                 NetworkAdapter.options(DesktopStorage.context(), console, game.id), link = linkStart,
             cheatsAllowed = if (noCheats) false else null,
+            // Xbox 360 (X-5): no fast-forward or rewind either.
+            speedAllowed = if (console.hasSnapshots) null else false,
+            rewindAllowed = if (console.hasSnapshots) null else false,
             n3dsLayout = if (console == Console.N3DS) n3dsDisplay.let { StartRequest.N3dsLayoutStart(it.layout, it.flip) } else null,
             dsLayout = if (console == Console.NDS) dsDisplay.let { StartRequest.DsLayoutStart(it.layout, it.swap) } else null,
             controllers = if (console == Console.WII) wiiControllers.get(game.id) else emptyList(),

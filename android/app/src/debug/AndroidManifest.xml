@@ -13,5 +13,24 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Shoalcade Dev only. "PS2 test" icon: the Play! core speed spike (to-do "PS2 on the phone"). -->
+        <activity
+            android:name=".devps2.DevPs2Activity"
+            android:label="PS2 test"
+            android:taskAffinity="uk.benmarks.shoalcade.devps2"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".devps2.Ps2TestActivity"
+            android:process=":ps2"
+            android:taskAffinity="uk.benmarks.shoalcade.devps2"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|smallestScreenSize"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:exported="false" />
     </application>
 </manifest>

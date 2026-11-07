@@ -69,9 +69,13 @@ add_executable(ShoalcadePlayer
   src/link.cpp
   src/statefile.cpp
   src/remap.cpp
+  src/vulkan_host.cpp
   ${SC_FONT_SOURCES}
 )
-target_include_directories(ShoalcadePlayer PRIVATE src third_party third_party/imgui)
+# third_party/libretro + third_party/vulkan: libretro_vulkan.h includes <libretro.h> and <vulkan/vulkan.h> (Khronos
+# headers only: vulkan-1.dll is loaded at run time, nothing is linked).
+target_include_directories(ShoalcadePlayer PRIVATE src third_party third_party/imgui third_party/libretro
+  third_party/vulkan)
 target_link_libraries(ShoalcadePlayer PRIVATE sc_imgui)
 target_compile_definitions(ShoalcadePlayer PRIVATE SC_PLAYER_VERSION="${PROJECT_VERSION}")
 target_link_libraries(ShoalcadePlayer PRIVATE SDL3::SDL3)
@@ -89,6 +93,8 @@ target_link_libraries(ShoalcadePlayer PRIVATE ${ZSTD_LIBRARY})
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(ShoalcadePlayer PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  # Vulkan structs are written {sType} with the rest zero, as Khronos' own samples do.
+  set_source_files_properties(src/vulkan_host.cpp PROPERTIES COMPILE_OPTIONS -Wno-missing-field-initializers)
 endif()
 
 if(WIN32)
@@ -105,6 +111,15 @@ if(WIN32)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE_DIR:ShoalcadePlayer>)
 else()
   target_link_libraries(ShoalcadePlayer PRIVATE ${CMAKE_DL_LIBS} pthread)
+endif()
+
+# The Vulkan test core (tests/vkcore, kept out of git with the other tests): a libretro core of our own that asks for
+# Vulkan and draws a known pattern, for the player's vkcore / vkwindow tests. Windows only, as the Vulkan path.
+if(WIN32 AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/vkcore/vkcore.c)
+  add_library(vkcore_libretro SHARED tests/vkcore/vkcore.c)
+  set_target_properties(vkcore_libretro PROPERTIES PREFIX "")
+  target_include_directories(vkcore_libretro PRIVATE third_party/libretro third_party/vulkan)
+  target_link_options(vkcore_libretro PRIVATE -static-libgcc)
 endif()
 
 # Unit tests (no core, no window): ShoalcadePlayerUnitTests <scratch dir>. Builds for Linux and Windows.

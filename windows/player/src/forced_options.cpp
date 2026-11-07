@@ -52,7 +52,7 @@ static const std::map<std::string, std::vector<ForcedOption>> kTable = {
      }},
     // Game3dsActivity.kt options() (Azahar 2126.2 core_settings.cpp), D151 defaults with the phone's dev switches at
     // their release values. Locked:
-    //  - OpenGL: the only hardware context this player gives a core (the phone's Vulkan layer is Android-only).
+    //  - OpenGL: Azahar draws in the player's own OpenGL (its Vulkan path is the phone's, Android-only).
     //  - the save location (LibRetro Default = <saveFolder>/Azahar/) and the virtual SD card: otherwise the game's
     //    save would go to Azahar's own folder, outside the memory stick Shoalcade backs up and syncs (D158).
     //  - touch on: the mouse is the stylus on the bottom screen (the phone's citra_enable_touch_touchscreen).
@@ -76,7 +76,8 @@ static const std::map<std::string, std::vector<ForcedOption>> kTable = {
      }},
     // GameCube and Wii: Dolphin libretro (Windows only, D218; plan-windows-gc-wii-ps2.md P3). Locked:
     //  - OSD off: Dolphin draws its messages ("Video Info: ...") into the game's picture.
-    //  - Hardware renderer (OpenGL, the only hardware context this player gives) and no GameCube BIOS (none bundled).
+    //  - Hardware renderer (OpenGL: Dolphin libretro's Vulkan would be the player's Vulkan path, untested with it) and
+    //    no GameCube BIOS (none bundled).
     //  - Cheats: "Internal Cheats" on, so Shoalcade's cheats patch (tools/dolphin-patches/0001) applies the codes the
     //    player hands over; "Import cheats" off, so the core never writes a .cht file beside the system folder and
     //    only the person's own codes run.
@@ -101,6 +102,12 @@ static const std::map<std::string, std::vector<ForcedOption>> kTable = {
          {"dolphin_wiimote_default_device", "frontend", true},
      }},
     // PS2: the per-core rules are in kCoreTable below (the two cores' option values differ).
+    // Xbox 360: Xenia Edge (plan-windows-x360.md X-1). Locked: Vulkan, the API the player gives it (no Direct3D 12:
+    // its frames would never reach the window).
+    {"xbox360",
+     {
+         {"xenia_graphics_api", "vulkan", true},
+     }},
     // GB / GBC / GBA (mGBA): Console.kt sets nothing; core defaults. gpSP (GBA link, GameActivity.kt) gets
     // gpsp_bios=builtin and gpsp_serial from the link settings: link play isn't in the player yet.
 };
@@ -108,7 +115,8 @@ static const std::map<std::string, std::vector<ForcedOption>> kTable = {
 // Rules for one core of a console, by {console, the core's library_name}. PS2 (D222 D-3: the person picks the core):
 //  - LRPS2 ("ParaLLEl PS2"): the game's own memory card in the save folder (<saveFolder>\<game>.ps2), never the
 //    shared cards in the system folder (one card for every game and every person); OpenGL renderer.
-//  - PCEE2: OpenGL renderer (the player gives no Vulkan; its other APIs copy every frame back). Its card is always
+//  - PCEE2: OpenGL renderer (its Vulkan would be the player's Vulkan path, untested with it; its other APIs copy
+//    every frame back). Its card is always
 //    the game's own in the save folder (tools/pcee2-patches/0001), so there is no option to lock.
 static const std::map<std::pair<std::string, std::string>, std::vector<ForcedOption>> kCoreTable = {
     {{"ps2", "ParaLLEl PS2"},

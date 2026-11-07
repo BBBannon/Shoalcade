@@ -75,6 +75,13 @@ public sealed class GameConsole
             BrowserSaveMode.None, "zip", 64L * 1024 * 1024, [], [0], singleFileOnly: true),
         new("ps2", "PlayStation 2", ["PlayStation 2"], [".iso", ".chd", ".cso", ".zso", ".gz", ".ciso", ".elf"], null,
             BrowserSaveMode.None, "zip", 64L * 1024 * 1024, [], [0], singleFileOnly: true),
+
+        // Xbox 360 (plan-windows-x360.md): Windows app only (Xenia Edge). Tag "Xbox 360" is JellyEMU's. Files X-3: one
+        // .iso, .zar or .xcp per game (an extracted .xex folder is logged, not played), disc sets through .m3u. The save
+        // is a zip of the profile and the game's saved games in Xenia's content folder (X-4, SaveRules checks it). Last,
+        // so a stray .iso with no console in its name or folder still means PSP (D89).
+        new("xbox360", "Xbox 360", ["Xbox 360"], [".iso", ".zar", ".xcp"], null,
+            BrowserSaveMode.None, "zip", 64L * 1024 * 1024, [], [0], singleFileOnly: true),
     ];
 
     private static readonly Dictionary<string, GameConsole> ByKey = AllConsoles.ToDictionary(c => c.Key, StringComparer.Ordinal);
@@ -112,7 +119,7 @@ public sealed class GameConsole
     /// <summary>Gets every known console.</summary>
     public static IReadOnlyList<GameConsole> All => AllConsoles;
 
-    /// <summary>Gets the short key used in URLs and folders (gb, gbc, gba, n64, nds, 3ds, psp, psx, gc, wii, ps2).</summary>
+    /// <summary>Gets the short key used in URLs and folders (gb, gbc, gba, n64, nds, 3ds, psp, psx, gc, wii, ps2, xbox360).</summary>
     public string Key { get; }
 
     /// <summary>Gets the name shown to people.</summary>
@@ -174,20 +181,24 @@ public sealed class GameConsole
     {
         "gb" or "gbc" or "gba" or "n64" or "nds" or "3ds" or "gc" or "wii" => "Nintendo",
         "psp" or "psx" or "ps2" => "Sony",
+        "xbox360" => "Microsoft",
         _ => null,
     };
 
     /// <summary>
-    /// Gets a value indicating whether only the Windows app plays this console (GameCube, Wii, PS2: D218). The phone
-    /// lists them with "Plays on Windows", the browser with "Plays in the Windows app"; saves sync as usual.
+    /// Gets a value indicating whether only the Windows app plays this console (GameCube, Wii, PS2: D218; Xbox 360). The
+    /// phone lists them with "Plays on Windows", the browser with "Plays in the Windows app"; saves sync as usual.
     /// </summary>
-    public bool WindowsOnly => Key is "gc" or "wii" or "ps2";
+    public bool WindowsOnly => Key is "gc" or "wii" or "ps2" or "xbox360";
 
     /// <summary>
     /// Gets a value indicating whether a game of this console can be a disc set (D-8): a game folder holding
     /// "(Disc 1)", "(Disc 2)"... files, or a .m3u list, all in the console's own disc formats. One game, one save.
     /// </summary>
-    public bool TakesDiscSets => Key is "psx" or "ps2" or "gc" or "wii";
+    public bool TakesDiscSets => Key is "psx" or "ps2" or "gc" or "wii" or "xbox360";
+
+    /// <summary>Gets a value indicating whether the emulator can make snapshots (Xbox 360's Xenia can't: X-5).</summary>
+    public bool HasSnapshots => Key != "xbox360";
 
     /// <summary>Looks up a console by key.</summary>
     /// <param name="key">Console key.</param>

@@ -37,6 +37,12 @@ enum class Console(
     GC("gc", "GameCube", "GameCube", "gc", null, setOf("iso", "gcm", "rvz", "wia", "gcz", "ciso", "tgc", "dol", "elf")),
     WII("wii", "Wii", "Wii", "wii", null, setOf("iso", "wbfs", "rvz", "wia", "gcz", "ciso", "wad", "dol", "elf")),
     PS2("ps2", "PlayStation 2", "PS2", "ps2", null, setOf("iso", "chd", "cso", "zso", "gz", "ciso", "elf")),
+    /**
+     * Xbox 360 (plan-windows-x360.md): **Windows app only**, Xenia Edge. Files X-3 (an extracted .xex folder isn't
+     * played in v1). Folder save: the profile and the game's saved games in Xenia's content folder ([Storage], X-4).
+     * No snapshots, rewind, cheats or fast-forward (X-5).
+     */
+    XBOX360("xbox360", "Xbox 360", "Xbox 360", "xbox360", null, setOf("iso", "zar", "xcp")),
     ;
 
     /**
@@ -46,6 +52,7 @@ enum class Console(
     val maker: Maker get() = when (this) {
         GB, GBC, GBA, NDS, N3DS, N64, GC, WII -> Maker.NINTENDO
         PSP, PSX, PS2 -> Maker.SONY
+        XBOX360 -> Maker.MICROSOFT
     }
 
     val isDualScreen get() = this == NDS
@@ -62,11 +69,17 @@ enum class Console(
      */
     val players get() = if (this == N64 || isWindowsOnly) 4 else 1
 
-    /** GameCube, Wii, PS2: played by the Windows app only (no phone core, D218). The phone shows them, never plays them. */
-    val isWindowsOnly get() = this == GC || this == WII || this == PS2
+    /** GameCube, Wii, PS2, Xbox 360: played by the Windows app only (no phone core, D218). The phone shows them, never plays them. */
+    val isWindowsOnly get() = this == GC || this == WII || this == PS2 || this == XBOX360
 
     /** D-8: a game of this console can be a disc set (several discs and a .m3u naming them, one save). */
-    val takesDiscSets get() = this == PSX || this == PS2 || this == GC || this == WII
+    val takesDiscSets get() = this == PSX || this == PS2 || this == GC || this == WII || this == XBOX360
+
+    /** Xbox 360 (X-5): Xenia has no snapshots, rewind, cheats or fast-forward, so none are offered. */
+    val hasSnapshots get() = this != XBOX360
+
+    /** Xbox 360 (X-6): no speed check, so the game card says what PC it needs instead. Null for the rest. */
+    val pcNeeds: String? get() = if (this == XBOX360) X360_PC else null
 
     /**
      * PSP saves are a folder of files on a pretend memory stick, not one block of save memory.
@@ -127,6 +140,8 @@ enum class Console(
         }
 
     companion object {
+        const val X360_PC = "Needs a PC with AVX and a Vulkan graphics card (about RTX 2060 class for full speed)."
+
         /** Server console key → console. Null for a console this app doesn't know (shown as "Unknown console"). */
         fun fromKey(key: String?): Console? = entries.firstOrNull { it.key == key }
 

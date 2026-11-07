@@ -246,6 +246,7 @@ object CheatRules {
         Console.WII -> "Wii: Gecko (Ocarina) codes, two blocks of 8 per line, like 04xxxxxx yyyyyyyy."
         Console.PS2 -> "PlayStation 2: unencrypted codes, two blocks of 8 per line, like 2xxxxxxx yyyyyyyy, or pnach lines " +
             "(patch=1,EE,…). Encrypted CodeBreaker, GameShark and Action Replay MAX codes don't work."
+        Console.XBOX360 -> "Xbox 360: cheats aren't supported." // X-5: Xenia has none
     }
 }
 

@@ -21,9 +21,10 @@ Your ROM files are never touched. JellyEMU's save files are only read.
 
 ## Games that will disappear
 
-Shoalcade shows **GB, GBC, GBA, N64, DS, PS1, PSP and 3DS**, plus **GameCube, Wii and PS2** (new: they play in the **Windows app** only; the phone and browser list them).
+Shoalcade shows **GB, GBC, GBA, N64, DS, PS1, PSP and 3DS**, plus **GameCube, Wii, PS2 and Xbox 360** (new: they play in the **Windows app** only; the phone and browser list them).
 **PS1:** one `.chd` or `.pbp` file per game, or a game on more than one disc (a folder of `(Disc 1)`, `(Disc 2)` files or a `.m3u`), stays. PS1 games as `.bin/.cue`, `.iso` or archives leave the list (files untouched).
 **PS2:** `.bin/.cue` games leave the list (make one `.chd` of the disc instead). GameCube, Wii and PS2 games in `.zip` / `.7z` archives leave it too.
+**Xbox 360:** one `.iso`, `.zar` or `.xcp` file per game stays. Extracted games (a folder with a `.xex`) and archives leave the list.
 Games for **every other console JellyEMU listed** leave the library. **Their files stay on your server.**
 
 | Group | Consoles that disappear |
@@ -32,7 +33,7 @@ Games for **every other console JellyEMU listed** leave the library. **Their fil
 | Sega | Master System, Game Gear, Genesis / Mega Drive, Sega CD, 32X, Saturn, Dreamcast |
 | Sony | PlayStation 3, PS Vita (and PS1 or PS2 games in file types Shoalcade doesn't take) |
 | Atari | 2600, 5200, 7800, Jaguar, Lynx |
-| Other | Arcade / MAME 2003, TurboGrafx-16, PC-FX, Neo Geo Pocket, WonderSwan, ColecoVision, 3DO, Commodore 64, Amiga, DOS, PICO-8, Xbox, Xbox 360 |
+| Other | Arcade / MAME 2003, TurboGrafx-16, PC-FX, Neo Geo Pocket, WonderSwan, ColecoVision, 3DO, Commodore 64, Amiga, DOS, PICO-8, Xbox |
 | Computer apps | Windows, macOS, Linux, Android |
 
 **What happens to those games, exactly:**

@@ -1,7 +1,7 @@
 package uk.benmarks.shoalcade
 
 /** Makers the library's console bar groups consoles under ([Console.maker]; the plugin's GameConsole.Maker is the same table). */
-enum class Maker(val label: String) { NINTENDO("Nintendo"), SONY("Sony") }
+enum class Maker(val label: String) { NINTENDO("Nintendo"), SONY("Sony"), MICROSOFT("Microsoft") }
 
 /** The library's console filter: every game, one maker's consoles, or one console. */
 sealed interface ConsoleFilter {

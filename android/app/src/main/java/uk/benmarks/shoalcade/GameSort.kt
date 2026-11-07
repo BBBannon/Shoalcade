@@ -22,7 +22,7 @@ enum class GameSort(val key: String, val label: String) {
 
         /** Platform order: the Game Boy family oldest first, then N64, DS, 3DS, PS1, PSP. */
         val PLATFORM_ORDER = listOf(Console.GB, Console.GBC, Console.GBA, Console.N64, Console.GC, Console.NDS, Console.WII,
-            Console.N3DS, Console.PSX, Console.PS2, Console.PSP)
+            Console.N3DS, Console.PSX, Console.PS2, Console.PSP, Console.XBOX360)
 
         /** Where [c] sits in [PLATFORM_ORDER]; a console not in it (or none) goes last. */
         internal fun platformRank(c: Console?): Int = PLATFORM_ORDER.indexOf(c).let { i -> if (i < 0) Int.MAX_VALUE else i }

@@ -82,6 +82,9 @@ public static partial class ConsoleDetector
         { "wii", "Wii" }, { "nintendo wii", "Wii" },
         // Not ours, but here so "Wii U" is never taken for "wii" (these names are matched before the library-only ones).
         { "wii u", "Wii U" }, { "wiiu", "Wii U" },
+        // Xbox 360 (plan-windows-x360.md: played by the Windows app). Was library-only until then; JellyEMU's tag.
+        // Matched before the library-only "xbox" (the first Xbox, not ours).
+        { "xbox 360", "Xbox 360" }, { "xbox360", "Xbox 360" }, { "x360", "Xbox 360" }, { "microsoft xbox 360", "Xbox 360" },
     };
 
     /// <summary>Consoles JellyEMU only lists (not playable); kept so their folders never match one of ours.</summary>
@@ -89,7 +92,7 @@ public static partial class ConsoleDetector
     {
         { "dreamcast", "Dreamcast" }, { "dc", "Dreamcast" }, { "sega dreamcast", "Dreamcast" },
         { "ps3", "PlayStation 3" }, { "playstation 3", "PlayStation 3" }, { "play station 3", "PlayStation 3" },
-        { "xbox", "Xbox" }, { "xbox 360", "Xbox 360" }, { "x360", "Xbox 360" },
+        { "xbox", "Xbox" },
         { "switch", "Nintendo Switch" }, { "nintendo switch", "Nintendo Switch" },
         { "psvita", "PlayStation Vita" }, { "ps vita", "PlayStation Vita" }, { "playstation vita", "PlayStation Vita" }, { "play station vita", "PlayStation Vita" },
         { "windows", "Windows" }, { "win", "Windows" },
@@ -117,9 +120,12 @@ public static partial class ConsoleDetector
         // GameCube / Wii only formats (D218). .rvz, .wia, .gcz and .ciso are both consoles' (Dolphin's own formats):
         // the folder or the name decides, else the disc's own header (DiscHeaderTag).
         { ".gcm", "GameCube" }, { ".tgc", "GameCube" }, { ".wbfs", "Wii" }, { ".wad", "Wii" },
+        // Xbox 360 (X-3): Xenia's own archive and the Xbox 360 content package. Its .iso is decided by the folder or name.
+        { ".zar", "Xbox 360" }, { ".xcp", "Xbox 360" },
     };
 
-    /// <summary>JellyEMU's other-platform extensions (only so a zip holding one is never taken for one of ours).</summary>
+    /// <summary>JellyEMU's other-platform extensions (only so a zip holding one is never taken for one of ours). An
+    /// extracted Xbox 360 game's <c>.xex</c> names the Xbox 360 but is never a game file (X-3): the scan log says so.</summary>
     private static readonly Dictionary<string, string> LibraryOnlyExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         { ".xex", "Xbox 360" },

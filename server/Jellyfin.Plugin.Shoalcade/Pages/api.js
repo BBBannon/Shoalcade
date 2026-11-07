@@ -517,6 +517,6 @@
     h, icon, hue, art, toast, download, loadFailed,
     /** An error's words for the person. */
     message: e => e && e.message ? e.message : String(e),
-    SHORT: { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP", gc: "GC", wii: "Wii", ps2: "PS2" },
+    SHORT: { gb: "GB", gbc: "GBC", gba: "GBA", n64: "N64", nds: "DS", "3ds": "3DS", psx: "PS1", psp: "PSP", gc: "GC", wii: "Wii", ps2: "PS2", xbox360: "X360" },
   };
 })();

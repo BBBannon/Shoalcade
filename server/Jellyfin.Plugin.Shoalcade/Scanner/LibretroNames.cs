@@ -25,6 +25,7 @@ public static class LibretroNames
         ["gc"] = "Nintendo - GameCube",
         ["wii"] = "Nintendo - Wii",
         ["ps2"] = "Sony - PlayStation 2",
+        ["xbox360"] = "Microsoft - Xbox 360",
     };
 
     private static readonly string[] Articles = ["The", "A", "An"];

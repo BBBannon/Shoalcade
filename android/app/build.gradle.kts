@@ -20,9 +20,9 @@ android {
         applicationId = "uk.benmarks.shoalcade"
         minSdk = 30 // Android 11+
         targetSdk = 35
-        versionCode = 22 // +1 for every build Ben installs
+        versionCode = 23 // +1 for every build Ben installs
         // a0.6 dev 1 (D41, D88): sent to the server in every request. Dev builds are "0.6.0-devN"; launch is "1.0.0".
-        versionName = "0.15.0"
+        versionName = "0.16.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
@@ -55,6 +55,8 @@ android {
             // x86_64 too, so the debug APK runs at full speed in the PC test emulators
             // (x86_64 cores live in src/debug/jniLibs). Phones only use arm64.
             ndk { abiFilters += listOf("x86_64") }
+            // PS2 test only (src/debug/cpp/ps2jvm.c): never built into release.
+            externalNativeBuild { cmake { arguments += "-DSC_DEV=ON" } }
         }
         release {
             // D125: R8 shrinks and optimises the code and drops unused resources. Keep rules: proguard-rules.pro.

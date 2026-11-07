@@ -195,6 +195,10 @@ data class StartRequest(
     val link: LinkStart? = null,
     /** False = no Cheats section in the menu (3DS: Azahar has no cheats; the phone's cheatsAllowed = false). */
     val cheatsAllowed: Boolean? = null,
+    /** False = no Speed section (fast-forward) in the menu (Xbox 360: Xenia can't run fast, X-5). */
+    val speedAllowed: Boolean? = null,
+    /** False = no Rewind switch in the menu (Xbox 360: Xenia has no snapshots to rewind with, X-5). */
+    val rewindAllowed: Boolean? = null,
     /** 3DS screen layout (PROTOCOL.md `layout`): the phone's N3dsLayout key and Flip. */
     val n3dsLayout: N3dsLayoutStart? = null,
     /** DS screen layout (PROTOCOL.md `layout`): the phone's DsLayout key and Swap. */
@@ -254,6 +258,8 @@ data class StartRequest(
         muted?.let { put("muted", it) }
         saveIntervalSeconds?.let { put("saveIntervalSeconds", it) }
         cheatsAllowed?.let { put("cheatsAllowed", it) }
+        speedAllowed?.let { put("speedAllowed", it) }
+        rewindAllowed?.let { put("rewindAllowed", it) }
         n3dsLayout?.let { put("layout", JSONObject().put("n3ds", it.layout).put("flip", it.flip)) }
         dsLayout?.let { put("layout", JSONObject().put("ds", it.layout).put("swap", it.swap)) }
         check?.let { put("check", JSONObject().put("warmUp", it.warmUp).put("measure", it.measure).apply { it.targetFps?.let { t -> put("targetFps", t) } }) }

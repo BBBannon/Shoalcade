@@ -71,6 +71,28 @@ if lock_has pcee2; then
   put "$CORE_SRC/pcee2/COPYING.GPLv3" "$L/cores/PCEE2-COPYING.GPLv3.txt"
   put "$CORE_SRC/pcee2/THIRD_PARTY_LICENSES.html" "$L/cores/PCEE2-THIRD_PARTY_LICENSES.html"
 fi
+# Xenia Edge (Xbox 360, Windows only, D250): its own licence plus every library built or compiled into the DLL. The
+# list is shared with tools/fetch_core_licences.sh. Files whose notice is in the source itself go into one notices file.
+HAVE_XENIA=0
+if lock_has xenia; then
+  HAVE_XENIA=1
+  mkdir -p "$L/cores/xenia"
+  for f in $(bash "$ROOT/tools/fetch_core_licences.sh" --list xenia); do
+    case "$f" in
+      third_party/crypto/*.h*|third_party/dxbc/*.h) ;; # in-source notices, below
+      LICENSE) put "$CORE_SRC/xenia/$f" "$L/cores/xenia/Xenia-LICENSE.txt" ;;
+      *) n=$(echo "${f#third_party/}" | tr '/' '-'); case "$n" in *.txt|*.TXT) ;; *) n=$n.txt ;; esac
+         put "$CORE_SRC/xenia/$f" "$L/cores/xenia/$n" ;;
+    esac
+  done
+  for f in third_party/crypto/TinySHA1.hpp third_party/crypto/sha256.h third_party/crypto/rijndael-alg-fst.h \
+           third_party/dxbc/DXBCChecksum.h; do
+    need "$CORE_SRC/xenia/$f"
+    printf '== %s\n' "$f"; sed -n '1,/\*\/\|^[^/ *]/p' "$CORE_SRC/xenia/$f"; echo
+  done > "$L/cores/xenia/in-source-notices.txt"
+  # boost_context has no licence file of its own: Boost Software License 1.0, the same text asio carries.
+  cp "$L/cores/xenia/asio-LICENSE_1_0.txt" "$L/cores/xenia/boost_context-LICENSE_1_0.txt"
+fi
 
 # The player's parts.
 put "$SDL_KIT/LICENSE.txt" "$L/SDL3-LICENSE.txt"
@@ -141,6 +163,11 @@ NEW_CORE_ROWS=
   patches; its resources                   (SDL3, FreeType, shaderc, zstd, lz4,
   (app/system/pcsx2/resources)             libpng, libjpeg-turbo, libwebp, zlib...):
                                            cores/PCEE2-THIRD_PARTY_LICENSES.html"
+[ $HAVE_XENIA = 0 ] || NEW_CORE_ROWS="${NEW_CORE_ROWS:+$NEW_CORE_ROWS
+}Xenia Edge (Xbox 360) + Shoalcade patch    BSD-3-Clause; libraries compiled in      cores/xenia/
+                                           (FFmpeg LGPL-2.1+, libmspack LGPL-2.1,
+                                           libusb LGPL-2.1+, Mesa MIT, others
+                                           MIT/BSD/zlib/Boost/Apache-2.0)"
 # The trees carry Shoalcade's patches: count the files they change (from the patches for a licence-only tree).
 tree_dirty() { # core-folder patch-folder
   if [ "$(git -C "$CORE_SRC/$1" config --bool core.sparseCheckout || true)" = true ]; then
@@ -149,10 +176,11 @@ tree_dirty() { # core-folder patch-folder
     git -C "$CORE_SRC/$1" status --porcelain --untracked-files=no | wc -l
   fi
 }
-LRPS2_DIRTY=0 PCEE2_DIRTY=0 DOLPHIN_DIRTY=0
+LRPS2_DIRTY=0 PCEE2_DIRTY=0 DOLPHIN_DIRTY=0 XENIA_DIRTY=0
 [ $HAVE_LRPS2 = 0 ] || LRPS2_DIRTY=$(tree_dirty lrps2 lrps2-patches)
 [ $HAVE_PCEE2 = 0 ] || PCEE2_DIRTY=$(tree_dirty pcee2 pcee2-patches)
 [ $HAVE_DOLPHIN = 0 ] || DOLPHIN_DIRTY=$(tree_dirty dolphin dolphin-patches)
+[ $HAVE_XENIA = 0 ] || XENIA_DIRTY=$(tree_dirty xenia xenia-patches)
 
 cat > "$L/README.txt" <<EOF
 $NAME $VERSION for Windows: licences
@@ -235,6 +263,7 @@ CORE_DIRS="mgba gpsp melonds pcsx mupen ppsspp azahar"
 [ $HAVE_DOLPHIN = 0 ] || CORE_DIRS="$CORE_DIRS dolphin"
 [ $HAVE_LRPS2 = 0 ] || CORE_DIRS="$CORE_DIRS lrps2"
 [ $HAVE_PCEE2 = 0 ] || CORE_DIRS="$CORE_DIRS pcee2"
+[ $HAVE_XENIA = 0 ] || CORE_DIRS="$CORE_DIRS xenia"
 for c in $CORE_DIRS; do
   # Submodule commits; if git can't walk them (Mupen64Plus-Next has a gitlink with no .gitmodules entry), the
   # commits recorded in the tree itself.
@@ -247,8 +276,8 @@ cat <<EOF
     melonDS DS fetches melonDS itself at JesseTG/melonDS commit 16f127dbb587a73371827ce79689c5d237c4b59b; its other
       dependencies are pinned by commit/tag inside melonDS DS at the commit above.
     Patches applied (in the Shoalcade source): tools/azahar-patches/*.patch (Azahar),
-      tools/ppsspp-patches/*.patch (PPSSPP, MinGW build fix)$([ $HAVE_LRPS2 = 0 ] || printf ',\n      tools/lrps2-patches/*.patch (LRPS2, MinGW build fixes and cheats)')$([ $HAVE_DOLPHIN = 0 ] || printf ',\n      tools/dolphin-patches/*.patch (Dolphin, cheats)')$([ $HAVE_PCEE2 = 0 ] || printf ',\n      tools/pcee2-patches/*.patch (PCEE2, per-game memory card and cheats)'). SHA-256:
-$(cd "$ROOT" && sha256sum tools/azahar-patches/*.patch tools/ppsspp-patches/*.patch $([ $HAVE_LRPS2 = 0 ] || echo tools/lrps2-patches/*.patch) $([ $HAVE_DOLPHIN = 0 ] || echo tools/dolphin-patches/*.patch) $([ $HAVE_PCEE2 = 0 ] || echo tools/pcee2-patches/*.patch) | sed 's/^/      /')
+      tools/ppsspp-patches/*.patch (PPSSPP, MinGW build fix)$([ $HAVE_LRPS2 = 0 ] || printf ',\n      tools/lrps2-patches/*.patch (LRPS2, MinGW build fixes and cheats)')$([ $HAVE_DOLPHIN = 0 ] || printf ',\n      tools/dolphin-patches/*.patch (Dolphin, cheats)')$([ $HAVE_PCEE2 = 0 ] || printf ',\n      tools/pcee2-patches/*.patch (PCEE2, per-game memory card and cheats)')$([ $HAVE_XENIA = 0 ] || printf ',\n      tools/xenia-patches/*.patch (Xenia Edge, static C runtime)'). SHA-256:
+$(cd "$ROOT" && sha256sum tools/azahar-patches/*.patch tools/ppsspp-patches/*.patch $([ $HAVE_LRPS2 = 0 ] || echo tools/lrps2-patches/*.patch) $([ $HAVE_DOLPHIN = 0 ] || echo tools/dolphin-patches/*.patch) $([ $HAVE_PCEE2 = 0 ] || echo tools/pcee2-patches/*.patch) $([ $HAVE_XENIA = 0 ] || echo tools/xenia-patches/*.patch) | sed 's/^/      /')
 $([ $HAVE_PCEE2 = 0 ] || printf '%s\n' "    PCEE2's libraries (SDL3, FreeType, plutovg/plutosvg, rapidyaml, shaderc + glslang, zlib, libpng, libjpeg-turbo,
       zstd, lz4, libwebp, DirectX-Headers) are built from source at the revisions in pcee2-libretro/scripts/deps.versions
       at the PCEE2 commit above, by its own pcee2-libretro/scripts/build-deps-linux.sh (libbacktrace left out), and
@@ -283,7 +312,10 @@ MinGW-w64 runtime (GCC 14, linked into the .exe/.dll files): https://www.mingw-w
   built on Windows: MSYS2 packages $MSYS2_PKGS (source: https://github.com/msys2/MINGW-packages)")$(
 [ $HAVE_DOLPHIN$HAVE_LRPS2$HAVE_PCEE2 = 000 ] || printf '%s\n' "
   Dolphin, LRPS2 and PCEE2 (app/cores) are built on Windows by tools/build_windows_cores.sh with MSYS2's MinGW-w64 GCC
-  (its runtime linked in statically; source: https://github.com/msys2/MINGW-packages)")
+  (its runtime linked in statically; source: https://github.com/msys2/MINGW-packages)")$(
+[ $HAVE_XENIA = 0 ] || printf '%s\n' "
+  Xenia Edge (app/cores) is built on Windows by tools/build_windows_cores.sh with Microsoft Visual C++ (Visual Studio
+  2022 Build Tools), the C runtime linked in statically (/MT), as its own Windows CI builds it.")
 
 Java runtime (runtime/): Eclipse Temurin $JDK_VER, reduced with jlink (modules: see runtime/release).
   Source: https://github.com/adoptium/jdk17u/tree/jdk-$JDK_VER
@@ -296,6 +328,7 @@ EOF
 if [ "$PPSSPP_DIRTY" != 0 ]; then echo; echo "(The PPSSPP tree carries the MinGW build fix above: $PPSSPP_DIRTY changed file(s), as expected.)"; fi
 if [ "$LRPS2_DIRTY" != 0 ]; then echo; echo "(The LRPS2 tree carries its patches above: $LRPS2_DIRTY changed file(s), as expected.)"; fi
 if [ "$DOLPHIN_DIRTY" != 0 ]; then echo; echo "(The Dolphin tree carries its patch above: $DOLPHIN_DIRTY changed file(s), as expected.)"; fi
+if [ "$XENIA_DIRTY" != 0 ]; then echo; echo "(The Xenia Edge tree carries its patch above: $XENIA_DIRTY changed file(s), as expected.)"; fi
 if [ "$PCEE2_DIRTY" != 0 ]; then echo; echo "(The PCEE2 tree carries its patches above: $PCEE2_DIRTY changed file(s), as expected.)"; fi
 } > "$IMG/SOURCE.txt"
 echo "  licences: $(find "$L" -type f | wc -l) files; SOURCE.txt $(wc -l < "$IMG/SOURCE.txt") lines"

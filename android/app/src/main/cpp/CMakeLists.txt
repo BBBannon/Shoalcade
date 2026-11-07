@@ -19,3 +19,11 @@ target_link_options(clockshim PRIVATE "-Wl,-z,max-page-size=16384")
 # 16 KB page alignment: required on newer Android devices that use 16 KB memory pages.
 target_link_options(sclinkstate PRIVATE "-Wl,-z,max-page-size=16384")
 target_link_options(linkshim PRIVATE "-Wl,-z,max-page-size=16384")
+
+# Shoalcade Dev only (debug build sets SC_DEV): gives the Play! core (PS2 test) its JavaVM, see src/debug/cpp/ps2jvm.c.
+if(SC_DEV)
+    add_library(scps2jvm SHARED ${CMAKE_CURRENT_SOURCE_DIR}/../../debug/cpp/ps2jvm.c)
+    target_compile_options(scps2jvm PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(scps2jvm dl)
+    target_link_options(scps2jvm PRIVATE "-Wl,-z,max-page-size=16384")
+endif()

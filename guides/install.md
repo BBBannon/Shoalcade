@@ -57,17 +57,18 @@
 ├── Nintendo 3DS/        .3ds .cci .cxi .3dsx (+ .zcci .zcxi .z3dsx; .cia listed, not playable)
 ├── GameCube/            .iso .gcm .rvz .wia .gcz .ciso .tgc   (Windows app only)
 ├── Wii/                 .iso .wbfs .rvz .wia .gcz .ciso .wad   (Windows app only)
-└── PS2/                 .iso .chd .cso .zso .gz .ciso   (Windows app only)
+├── PS2/                 .iso .chd .cso .zso .gz .ciso   (Windows app only)
+└── Xbox 360/            .iso .zar .xcp   (Windows app only)
 ```
 
-- Short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`, `gc`, `wii`, `ps2`.
-- A **.zip** or **.7z** holding one game is fine (not PS1, GameCube, Wii or PS2).
+- Short names work too: `gb`, `gbc`, `gba`, `n64`, `nds`, `ps1`, `psx`, `psp`, `3ds`, `gc`, `wii`, `ps2`, `xbox360`, `x360`.
+- A **.zip** or **.7z** holding one game is fine (not PS1, GameCube, Wii, PS2 or Xbox 360).
 - PSP `.iso` files **must** be in a PSP folder (`.iso` alone doesn't say which console).
 - **A file must fit its folder's console.** E.g. a `.gba` file in a `PSP` folder is **not listed** any more. Move it to the right folder.
 - **Nothing is ever written into your ROM folder.**
 - **Skipped files are logged:** Jellyfin's log names each file the scanner leaves out and why (see [Problems?](#problems)).
 
-**Games on more than one disc** (PS1, PS2, GameCube, Wii)
+**Games on more than one disc** (PS1, PS2, GameCube, Wii, Xbox 360)
 
 - Put the discs in **the game's own folder**, named `… (Disc 1)`, `… (Disc 2)` and so on, **or** list them in a `.m3u` file.
 - It shows as **one game with one save**. Every disc must be one of that console's own file types (no `.cue` / `.bin`).
@@ -86,6 +87,19 @@
 - The phone shows these games as **Plays on Windows**; the browser as **Plays in the Windows app**.
 - **GameCube and Wii:** no BIOS or system files needed.
 - **PS2:** needs **your own BIOS** (see [Windows app](#windows-app-optional-new)).
+
+**Xbox 360 — the rules** (Windows app only, new)
+
+| Works | Not supported |
+|---|---|
+| One `.iso`, `.zar` or `.xcp` file per game, or a game on more than one disc | `.zip` / `.7z` archives |
+| In an **Xbox 360** (`xbox360`, `x360`) folder (`.iso` is shared by several consoles) | **Extracted games** (a folder with a `.xex`): keep the game as one file. The original **Xbox** |
+
+- The phone shows these games as **Plays on Windows**; the browser as **Plays in the Windows app**.
+- **No BIOS, keys or system files needed**, and none are included.
+- **Needs a PC with AVX and a Vulkan graphics card** (about RTX 2060 class for full speed). There is no speed check.
+- **No snapshots, rewind, cheats or fast-forward.** The game saves itself.
+- **Saves** sync like the others: the game's saved games and the profile that made them. Title updates and DLC stay on the PC.
 
 **PS1 games — the rules**
 
@@ -176,7 +190,7 @@
 
 - Open the **Shoalcade** link in Jellyfin's menu, or go to **`https://<your-server>/shoalcade/`**.
 - It uses your Jellyfin web login. No extra sign-in.
-- Plays **GB, GBC, GBA, N64, DS and PS1**. PSP and 3DS are in the phone and Windows apps only; GameCube, Wii and PS2 in the Windows app only.
+- Plays **GB, GBC, GBA, N64, DS and PS1**. PSP and 3DS are in the phone and Windows apps only; GameCube, Wii, PS2 and Xbox 360 in the Windows app only.
 - Each game page has **Play** and **Saves** buttons.
 - Saves are sent to Jellyfin by themselves, a few seconds after the game saves.
   - Leaving too soon? It asks: **Your save hasn't reached the server yet** → **Stay** or **Leave anyway**.

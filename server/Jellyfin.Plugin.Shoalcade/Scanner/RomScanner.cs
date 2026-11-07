@@ -167,6 +167,11 @@ public static class RomScanner
             return Ps2BinCue; // D-5: PCSX2 reads .bin/.cue, but one file per game keeps saves and ids simple
         }
 
+        if (console.Key == "xbox360" && string.Equals(ext, ".xex", StringComparison.OrdinalIgnoreCase))
+        {
+            return X360Xex; // X-3: Xenia plays an extracted game, but one file per game keeps download and saves simple
+        }
+
         if (console.FilesOnly && (string.Equals(ext, ".cue", StringComparison.OrdinalIgnoreCase) || string.Equals(ext, ".j3u", StringComparison.OrdinalIgnoreCase)))
         {
             return $"{console.DisplayName} games must be one file ({takes}), not a .cue sheet or .j3u list";
@@ -179,6 +184,9 @@ public static class RomScanner
 
     /// <summary>The scan-log reason for a PS2 .bin / .cue game (D-5): it is skipped, and the fix is one .chd.</summary>
     internal const string Ps2BinCue = "PlayStation 2 .bin/.cue games are skipped: make a .chd of the disc (chdman createcd, or createdvd for a DVD)";
+
+    /// <summary>The scan-log reason for an extracted Xbox 360 game's .xex (X-3): it is skipped, and the fix is one file.</summary>
+    internal const string X360Xex = "Extracted Xbox 360 games (a folder with a .xex) are skipped: keep the game as one .iso, .zar or .xcp file";
 
     /// <summary>
     /// Why a folder that looks like one game (one .cue sheet, or two or more discs) is not one, for the scan log (D227).

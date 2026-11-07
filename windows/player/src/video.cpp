@@ -7,9 +7,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 #include "log.h"
+#include "vulkan_host.h"
 
 namespace sc {
 using namespace sc::gl;
@@ -210,6 +212,11 @@ bool Video::build_program(std::string &err) {
 }
 
 void Video::destroy() {
+    if (vk_ && ctx_) {
+        SDL_GL_MakeCurrent(window_, ctx_);
+        vk_release();
+        vk_ = nullptr;
+    }
     if (core_ctx_) {
         SDL_GL_MakeCurrent(window_, core_ctx_);
         if (core_fbo_) glDeleteFramebuffers(1, &core_fbo_), core_fbo_ = 0;
@@ -299,6 +306,7 @@ void Video::set_geometry(const retro_game_geometry &g) {
 }
 
 void Video::frame(const void *data, unsigned w, unsigned h, size_t pitch) {
+    if (vk_ && (!data || data == RETRO_HW_FRAME_BUFFER_VALID)) return vk_frame(data, w, h);
     if (!data) return; // dupe: keep showing the last frame
     if (w == 0 || h == 0) return;
     last_w_ = w, last_h_ = h;
@@ -329,6 +337,138 @@ void Video::frame(const void *data, unsigned w, unsigned h, size_t pitch) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)w, (GLsizei)h, fmt, type, last_pixels_.data());
+}
+
+bool Video::vulkan_gpu(GpuId &out, std::string &err) {
+    PlayerContext in_ours(*this);
+    out = GpuId{};
+    const char *renderer = (const char *)glGetString(GL_RENDERER);
+    std::string on = std::string(" on ") + (renderer ? renderer : "this graphics card");
+    const char *missing = nullptr;
+    if (!gl::load_interop(&missing))
+        return err = std::string("This game needs a graphics driver that can show Vulkan pictures in OpenGL (") +
+                     (missing ? missing : "?") + " missing" + on + "). Install your graphics card's latest driver.", false;
+    static const char *kNeeded[] = {"GL_EXT_memory_object", "GL_EXT_memory_object_win32", "GL_EXT_semaphore",
+                                    "GL_EXT_semaphore_win32"};
+    GLint n = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+    for (const char *want : kNeeded) {
+        bool have = false;
+        for (GLint i = 0; i < n && !have; i++) {
+            const char *e = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+            have = e && std::strcmp(e, want) == 0;
+        }
+        if (!have)
+            return err = std::string("This game needs a graphics driver that can show Vulkan pictures in OpenGL (") +
+                         want + " missing" + on + "). Install your graphics card's latest driver.", false;
+    }
+    while (glGetError() != GL_NO_ERROR) {}
+    glGetUnsignedBytevEXT(GL_DEVICE_LUID_EXT, out.luid);
+    out.has_luid = glGetError() == GL_NO_ERROR;
+    GLint uuids = 0;
+    glGetIntegerv(GL_NUM_DEVICE_UUIDS_EXT, &uuids);
+    if (uuids > 0) {
+        glGetUnsignedBytei_vEXT(GL_DEVICE_UUID_EXT, 0, out.uuid);
+        out.has_uuid = glGetError() == GL_NO_ERROR;
+    }
+    if (!out.has_luid && !out.has_uuid) return err = "OpenGL didn't say which graphics card it runs on" + on, false;
+    return true;
+}
+
+void Video::attach_vulkan(VulkanHost *vk) {
+    vk_ = vk;
+    hw_bottom_left_ = false; // Vulkan's row 0 is the top of the picture
+}
+
+void Video::detach_vulkan() {
+    if (!vk_) return;
+    PlayerContext in_ours(*this);
+    vk_release();
+    vk_ = nullptr;
+}
+
+void Video::vk_release() {
+    if (!vk_mem_ && !vk_ready_ && !vk_done_ && !fbo_ && !fbo_tex_) return;
+    glFinish(); // OpenGL is done with the image before Vulkan frees it
+    if (fbo_) glDeleteFramebuffers(1, &fbo_), fbo_ = 0;
+    if (fbo_tex_) glDeleteTextures(1, &fbo_tex_), fbo_tex_ = 0;
+    if (vk_mem_) glDeleteMemoryObjectsEXT(1, &vk_mem_), vk_mem_ = 0;
+    if (vk_ready_) glDeleteSemaphoresEXT(1, &vk_ready_), vk_ready_ = 0;
+    if (vk_done_) glDeleteSemaphoresEXT(1, &vk_done_), vk_done_ = 0;
+    fbo_w_ = fbo_h_ = 0;
+    vk_gl_owns_ = false;
+}
+
+bool Video::vk_import(unsigned w, unsigned h, std::string &err) {
+    vk_release();
+    SharedTarget t;
+    if (!vk_->make_target(w, h, t, err)) return false;
+    while (glGetError() != GL_NO_ERROR) {}
+    glCreateMemoryObjectsEXT(1, &vk_mem_);
+    GLint dedicated = 1; // the Vulkan memory is the image's own (VkMemoryDedicatedAllocateInfo)
+    glMemoryObjectParameterivEXT(vk_mem_, GL_DEDICATED_MEMORY_OBJECT_EXT, &dedicated);
+    glImportMemoryWin32HandleEXT(vk_mem_, t.size, GL_HANDLE_TYPE_OPAQUE_WIN32_EXT, t.memory);
+    glGenSemaphoresEXT(1, &vk_ready_);
+    glImportSemaphoreWin32HandleEXT(vk_ready_, GL_HANDLE_TYPE_OPAQUE_WIN32_EXT, t.ready);
+    glGenSemaphoresEXT(1, &vk_done_);
+    glImportSemaphoreWin32HandleEXT(vk_done_, GL_HANDLE_TYPE_OPAQUE_WIN32_EXT, t.done);
+    // Importing a Win32 handle doesn't take it over (EXT_external_objects_win32): ours to close.
+    close_shared_handle(t.memory), close_shared_handle(t.ready), close_shared_handle(t.done);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    glGenTextures(1, &fbo_tex_);
+    glBindTexture(GL_TEXTURE_2D, fbo_tex_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_TILING_EXT, GL_OPTIMAL_TILING_EXT);
+    glTexStorageMem2DEXT(GL_TEXTURE_2D, 1, GL_RGBA8, (GLsizei)w, (GLsizei)h, vk_mem_, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenFramebuffers(1, &fbo_); // for reading the picture back (screenshots, frame hashes)
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbo_tex_, 0);
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    GLenum e = glGetError();
+    if (e != GL_NO_ERROR || status != GL_FRAMEBUFFER_COMPLETE) {
+        char buf[96];
+        snprintf(buf, sizeof buf, "OpenGL couldn't take the shared Vulkan picture (GL error 0x%x, framebuffer 0x%x)", e, status);
+        vk_release();
+        return err = buf, false;
+    }
+    fbo_w_ = w, fbo_h_ = h;
+    return true;
+}
+
+void Video::vk_frame(const void *data, unsigned w, unsigned h) {
+    if (!vk_error_.empty()) return;
+    PlayerContext in_ours(*this);
+    // A new frame only with a set_image since the last one; anything else keeps the last picture (a dupe).
+    bool copy = data == RETRO_HW_FRAME_BUFFER_VALID && w && h && vk_->has_new_image();
+    std::string err;
+    if (copy && (!vk_mem_ || w > fbo_w_ || h > fbo_h_)) {
+        unsigned tw = std::max(w, std::min(geom_.max_width, 4096u)), th = std::max(h, std::min(geom_.max_height, 4096u));
+        if (!vk_import(tw, th, err)) {
+            vk_error_ = err;
+            return;
+        }
+    }
+    const GLenum layout = GL_LAYOUT_SHADER_READ_ONLY_EXT;
+    bool signalled = false;
+    if (copy && vk_gl_owns_) {
+        glSignalSemaphoreEXT(vk_done_, 0, nullptr, 1, &fbo_tex_, &layout);
+        glFlush(); // the signal must reach the GPU before Vulkan waits for it
+        signalled = true;
+    }
+    if (!vk_->frame(copy, w, h, signalled, err)) {
+        vk_error_ = err;
+        return;
+    }
+    if (!copy) return;
+    glWaitSemaphoreEXT(vk_ready_, 0, nullptr, 1, &fbo_tex_, &layout);
+    vk_gl_owns_ = true;
+    last_w_ = w, last_h_ = h;
+    have_frame_ = true;
+    last_is_hw_ = true;
 }
 
 void Video::compute_rect(int win_w, int win_h, float &x, float &y, float &w, float &h) const {

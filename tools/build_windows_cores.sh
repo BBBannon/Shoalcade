@@ -5,18 +5,20 @@
 #    windows/cores/cores.lock were built this way.
 #  - Windows (Git Bash + MSYS2's MinGW-w64 in C:\msys64, SHOALCADE_MSYS2): built natively, DLLs load-tested natively.
 #    Windows only builds the Windows DLLs. Dolphin, LRPS2 and PCEE2 are built on Windows only (that is how they were
-#    proven, plan-windows-gc-wii-ps2.md); the Linux host refuses them.
+#    proven, plan-windows-gc-wii-ps2.md); the Linux host refuses them. Xenia (Xbox 360, Windows only) is the one core
+#    built with MSVC (Visual Studio 2022 Build Tools, found by vswhere), as its own Windows CI builds it.
 #
 # The phone's cores are built from the EXACT commit the phone app ships (docs/licences.md), so saves behave the same
 # and the GPL source we publish is exact. Azahar (3DS) is built with the built-in key blob OFF (D153) and Shoalcade's
 # patches (tools/azahar-patches/, D154). Dolphin (GameCube + Wii), LRPS2 and PCEE2 (PS2: the user picks, D222 D-3) are
 # Windows-only cores (D218), pinned in the table below, with tools/dolphin-patches/ (cheats), tools/lrps2-patches/
-# (MinGW build fixes, cheats) and tools/pcee2-patches/ (per-game memory card, cheats).
+# (MinGW build fixes, cheats) and tools/pcee2-patches/ (per-game memory card, cheats). Xenia Edge (Xbox 360, Windows
+# only, plan-windows-x360.md) has tools/xenia-patches/ (static C runtime: the DLL needs no Visual C++ runtime).
 # Decisions and results: docs/windows/phase0-cores.md, docs/plan-windows-gc-wii-ps2.md.
 #
 # Usage:  bash tools/build_windows_cores.sh [--win|--linux|--both] [core ...]
-#   cores: mgba gpsp melonds pcsx mupen ppsspp azahar dolphin lrps2 pcee2
-#   default: every core this host builds (Linux: the first 7; Windows: all 10), in that order.
+#   cores: mgba gpsp melonds pcsx mupen ppsspp azahar dolphin lrps2 pcee2 xenia
+#   default: every core this host builds (Linux: the first 7; Windows: all 11), in that order.
 #   --both is the default on Linux, --win the only choice on Windows. Builds one core at a time.
 #
 # Environment (all optional):
@@ -91,6 +93,9 @@ WINE_CHECK="${WINE_CHECK:-1}"
 #  - Azahar: tag 2126.2 = commit 219d743.
 #  - Dolphin: libretro/dolphin 29/10/2026 ("aspect-fix" merge); every dependency is its own bundled Externals
 #    submodule, linked statically (USE_SYSTEM_LIBS=OFF). LRPS2: libretro/parallel-ps2 01/11/2026, no submodules.
+#  - Xenia: WizzardSK/xenia-libretro, branch libretro, 02/11/2026 (Xenia Edge 8dc77b0 merged). Its submodules at the
+#    commits that tree records, as its CI (all but MoltenVK and SPIRV-Cross, macOS only). The Slang shader compiler
+#    (a build tool, not shipped) is the release its xenia-build.py pins, checked by SHA-256.
 CORES=(
   "mgba|https://github.com/libretro/mgba.git|7a12d6d4b9acb14c0ae62c9166b6a2f3d08007f6|MPL-2.0|mgba_libretro"
   "gpsp|https://github.com/libretro/gpsp.git|5819380c2ffb0900219d700a382ee68c464ebb99|GPL-2.0-or-later|gpsp_libretro"
@@ -102,10 +107,15 @@ CORES=(
   "dolphin|https://github.com/libretro/dolphin.git|b93001ed50c8b34e6ead4eed713c2005a80386e4|GPL-2.0-or-later (modified: tools/dolphin-patches)|dolphin_libretro"
   "lrps2|https://github.com/libretro/parallel-ps2.git|083de59f52159ce4dd2f63a63f74fa9f0e936ee3|GPL-3.0 (modified: tools/lrps2-patches)|pcsx2_libretro"
   "pcee2|https://github.com/WizzardSK/pcee2-libretro.git|5719627731beb90e379ff1be1223391b7f563b3b|GPL-3.0-or-later (modified: tools/pcee2-patches)|pcee2_libretro"
+  "xenia|https://github.com/WizzardSK/xenia-libretro.git|8fd1709218e98767d4468a482656adc64f45a8ef|BSD-3-Clause (modified: tools/xenia-patches)|xenia_edge_libretro"
 )
 MELONDS_PIN=16f127dbb587a73371827ce79689c5d237c4b59b   # JesseTG/melonDS, see above
 AZAHAR_TAG=2126.2
-WINDOWS_HOST_ONLY=" dolphin lrps2 pcee2 " # built natively on Windows only (never cross-built on Linux)
+XENIA_SLANG=2026.8 # xenia-build.py's SLANG_VERSION at the pinned commit; SHA-256 of slang-2026.8-windows-x86_64.zip:
+XENIA_SLANG_SHA256=7a3ffcbd267dbddb4818f68ade13da37e2d394dd305c7276fef964933388f184
+XENIA_PY=(mako==1.4.3 markupsafe==3.0.4 meson==1.12.1 packaging==26.3 pyyaml==6.0.3) # its CI's pip list, pinned
+XENIA_PYTHON="${XENIA_PYTHON:-python}" # makes that venv (Python 3.9+)
+WINDOWS_HOST_ONLY=" dolphin lrps2 pcee2 xenia " # built natively on Windows only (never cross-built on Linux)
 
 field() { local IFS='|' a; read -r -a a <<< "$1"; echo "${a[$(( $2 - 1 ))]}"; }
 row() { local c; for c in "${CORES[@]}"; do [ "$(field "$c" 1)" = "$1" ] && { echo "$c"; return; }; done; echo "Unknown core: $1" >&2; exit 2; }
@@ -157,7 +167,8 @@ apply_patches() { # patch dir, source dir
 
 # After the build: every patch is really in the source that was built, and the built library holds the text each
 # patch adds (so a core built from an unpatched tree can never be recorded in the lock file or shipped).
-PATCH_DIRS=(ppsspp:ppsspp-patches azahar:azahar-patches dolphin:dolphin-patches lrps2:lrps2-patches pcee2:pcee2-patches)
+PATCH_DIRS=(ppsspp:ppsspp-patches azahar:azahar-patches dolphin:dolphin-patches lrps2:lrps2-patches pcee2:pcee2-patches
+            xenia:xenia-patches)
 PATCH_MARKERS=( # core|text the patched library must contain
   "dolphin|Shoalcade: cheat {} added"
   "lrps2|Shoalcade: %zu cheat line(s) active"
@@ -408,6 +419,104 @@ build_lrps2() { # PS2. CMake -DLIBRETRO=ON. Shoalcade's patches (tools/lrps2-pat
   find "$2" -name 'pcsx2_libretro.dll' | head -1
 }
 
+# Visual Studio 2022's x64 build environment (vcvars64.bat) in this shell: cl, MSVC's link (not coreutils' link) and
+# Visual Studio's own CMake and Ninja. MSYS2 and every other folder with a pkg-config are taken off PATH: Mesa's meson
+# build otherwise finds MinGW's zlib, zstd and expat through MSYS2's pkg-config and links them into an MSVC build.
+# Xenia's recipe only, inside its subshell.
+msvc_env() {
+  local vswhere="C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" vs bat k v d np="" winpath=""
+  [ -x "$vswhere" ] || { echo "MSVC: vswhere.exe not found (install Visual Studio 2022 Build Tools)" >&2; exit 1; }
+  vs="$("$vswhere" -latest -products '*' -version '[17,18)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+        -property installationPath | tr -d '\r')"
+  [ -n "$vs" ] || { echo "MSVC: no Visual Studio 2022 with the x64 C++ tools" >&2; exit 1; }
+  bat="$CORE_BUILD/vcvars-env.bat"
+  # vcvars64.bat runs vswhere.exe itself, from PATH
+  printf '@set "PATH=%s;%%PATH%%"\r\n@call "%s\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul || exit /b 1\r\n@set\r\n' \
+    "$(cygpath -w "$(dirname "$vswhere")")" "$vs" > "$bat"
+  while IFS='=' read -r k v; do
+    [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    case "$k" in
+      PATH|Path) winpath="$v" ;;
+      INCLUDE|LIB|LIBPATH|VCINSTALLDIR|VCToolsInstallDir|VCToolsVersion|VCToolsRedistDir|VSINSTALLDIR|\
+      VisualStudioVersion|WindowsSdkDir|WindowsSDKVersion|WindowsSDKLibVersion|WindowsSdkBinPath|WindowsSdkVerBinPath|\
+      WindowsLibPath|UCRTVersion|UniversalCRTSdkDir|ExtensionSdkDir|DevEnvDir|Platform|VSCMD_ARG_TGT_ARCH|\
+      VSCMD_ARG_HOST_ARCH|VSCMD_VER) export "$k=$v" ;;
+    esac
+  done < <(cmd.exe /c "$(cygpath -w "$bat")" | tr -d '\r')
+  [ -n "${VCToolsVersion:-}" ] && [ -n "$winpath" ] || { echo "MSVC: vcvars64.bat gave no environment" >&2; exit 1; }
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    case "$d" in "$MSYS2"|"$MSYS2"/*) continue ;; esac
+    [ -e "$d/pkg-config.exe" ] || [ -e "$d/pkgconf.exe" ] || [ -e "$d/pkg-config" ] && continue
+    np="${np:+$np:}$d"
+  done < <(cygpath -u -p "$winpath" | tr ':' '\n')
+  export PATH="$np"; hash -r
+  local t; for t in cl link cmake ninja; do
+    case "$(command -v "$t")" in */"Microsoft Visual Studio"/*) ;; *) echo "MSVC: $t is not Visual Studio's: $(command -v "$t" || echo none)" >&2; exit 1 ;; esac
+  done
+}
+
+build_xenia() { # Xbox 360 (plan-windows-x360.md). Xenia Edge's libretro core, built with MSVC as its own Windows CI
+  # (.github/workflows/libretro.yml): CMake + Ninja, Release, LTO on. Different from that CI, each on purpose:
+  #  - tools/xenia-patches: the static C runtime (/MT), so the DLL imports only Windows system DLLs, as every other core.
+  #  - no dxil.dll inside (XENIA_LIBRETRO_DXIL unset): Microsoft's Direct3D 12 shader validator, a binary download, and
+  #    Shoalcade runs the Vulkan backend only (plan X-1).
+  #  - no `xenia-build.py fetchdata`: it clones three data repos at their branch heads (unpinned). Only game-patches is
+  #    compiled in (the core's per-game Patch Manager) and that repo has no licence, so it is left out (the Patch
+  #    Manager lists no patches). The other two are not used by the libretro core.
+  local src="$CORE_SRC/xenia" tools="$CORE_BUILD/xenia-tools" subs
+  local venv="$tools/venv" zip="$tools/slang-$XENIA_SLANG-windows-x86_64.zip" slang="$tools/slang-$XENIA_SLANG"
+  # Submodules at the commits the tree records, shallow (Mesa, FFmpeg, DirectXShaderCompiler... are large).
+  subs="$(git -C "$src" config -f .gitmodules --get-regexp '^submodule\..*\.path$' | awk '{print $2}' |
+          grep -Ev '^third_party/(MoltenVK|SPIRV-Cross)$' | tr '\n' ' ')"
+  # shellcheck disable=SC2086
+  git -C "$src" "${GITO[@]}" submodule update -q --init --depth=1 -j "$JOBS" $subs
+  local off; off="$(git -C "$src" submodule status $subs | grep -v '^ ' || true)" # shellcheck disable=SC2086
+  [ -z "$off" ] || { printf 'xenia: a submodule is not at the recorded commit:
+%s
+' "$off" >&2; exit 1; }
+  # shellcheck disable=SC2016
+  git -C "$src" submodule foreach -q 'git diff --quiet HEAD' || { echo "xenia: a submodule has changes" >&2; exit 1; }
+  apply_patches "$HERE/tools/xenia-patches" "$src"
+  mkdir -p "$tools"
+  # Slang (the shader compiler, run at build time only): the pinned release, checked.
+  if [ ! -f "$slang/bin/slangc.exe" ]; then
+    [ -f "$zip" ] || curl -fsSL -o "$zip" \
+      "https://github.com/shader-slang/slang/releases/download/v$XENIA_SLANG/slang-$XENIA_SLANG-windows-x86_64.zip"
+    [ "$(sha256sum "$zip" | cut -d' ' -f1)" = "$XENIA_SLANG_SHA256" ] ||
+      { echo "xenia: Slang zip SHA-256 mismatch" >&2; rm -f "$zip"; exit 1; }
+    rm -rf "$slang"; mkdir -p "$slang"; unzip -q "$zip" -d "$slang"
+  fi
+  export SLANGC_PATH="$slang/bin/slangc.exe"
+  # Python for the build's own scripts and Mesa's meson build (spirv_to_dxil, the D3D12 backend's shader compiler):
+  # the pinned packages in their own venv, made again when they differ.
+  local want have=""; want="$(printf '%s\n' "${XENIA_PY[@]}" | tr 'A-Z' 'a-z' | LC_ALL=C sort | tr '\n' ' ')"
+  [ -x "$venv/Scripts/python.exe" ] &&
+    have="$("$venv/Scripts/python.exe" -I -m pip freeze 2>/dev/null | tr -d '\r' | tr 'A-Z' 'a-z' | LC_ALL=C sort | tr '\n' ' ' || true)"
+  if [ "$have" != "$want" ]; then
+    rm -rf "$venv"
+    "$XENIA_PYTHON" -I -m venv "$venv"
+    "$venv/Scripts/python.exe" -I -m pip install -q --disable-pip-version-check "${XENIA_PY[@]}" >&2
+  fi
+  msvc_env
+  PATH="$(cygpath -u "$venv/Scripts"):$PATH"; export PATH
+  unset XENIA_LIBRETRO_DXIL
+  local args=(-G Ninja -S "$src" -B "$2" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+              -DPython3_EXECUTABLE="$venv/Scripts/python.exe" -DXENIA_BUILD_TESTS=OFF -DXENIA_BUILD_MISC=OFF
+              -DXENIA_ENABLE_LTO=ON)
+  cmake "${args[@]}" >&2
+  cat "$2"/CMakeFiles/*/CMakeCXXCompiler.cmake | grep -q 'set(CMAKE_CXX_COMPILER_ID "MSVC")' ||
+    { echo "xenia: the compiler is not MSVC's cl" >&2; exit 1; }
+  # version.h, as xenia-build.py writes it after configuring (the core logs the commit it was built from).
+  local c; c="$(git -C "$src" rev-parse HEAD)"
+  printf '%s\n' "// Autogenerated by tools/build_windows_cores.sh, as xenia-build.py does." \
+    "#ifndef GENERATED_VERSION_H_" "#define GENERATED_VERSION_H_" "#define XE_BUILD_BRANCH \"libretro\"" \
+    "#define XE_BUILD_COMMIT \"$c\"" "#define XE_BUILD_COMMIT_SHORT \"${c:0:9}\"" "#define XE_BUILD_DATE __DATE__" \
+    "#endif  // GENERATED_VERSION_H_" > "$2/version.h"
+  cmake --build "$2" --target xenia-libretro -j"$BIG_JOBS" >&2
+  find "$2" -name 'xenia_edge_libretro.dll' | head -1
+}
+
 # ---------------------------------------------------------------------------------------------
 # Checks and the lock file.
 LOADER_WIN="$CORE_BUILD/loadcore.exe"; LOADER_LINUX="$CORE_BUILD/loadcore"
@@ -419,7 +528,7 @@ loaders() {
 
 # Windows system DLLs a core may import. Anything else (libstdc++-6, libgcc_s_seh-1,
 # libwinpthread-1, zlib1...) would have to be shipped, so it fails the build.
-SYSTEM_DLLS='^(kernel32|user32|gdi32|advapi32|shell32|shlwapi|ole32|oleaut32|msvcrt|ws2_32|iphlpapi|opengl32|winmm|winhttp|crypt32|bcrypt|dbghelp|version|setupapi|cfgmgr32|powrprof|imm32|dwmapi|uxtheme|comdlg32|comctl32|psapi|userenv|ntdll|secur32|dxgi|d3d11|d3d12|d3dcompiler_47|xinput1_4|hid|mfplat|mfreadwrite|mf|mfuuid|avrt|synchronization|api-ms-win-.*)\.dll$'
+SYSTEM_DLLS='^(kernel32|user32|gdi32|advapi32|shell32|shlwapi|ole32|oleaut32|msvcrt|ws2_32|wsock32|iphlpapi|opengl32|winmm|winhttp|crypt32|bcrypt|dbghelp|version|setupapi|cfgmgr32|powrprof|imm32|dwmapi|uxtheme|comdlg32|comctl32|psapi|userenv|ntdll|secur32|dxgi|d3d11|d3d12|d3dcompiler_47|xinput1_4|hid|mfplat|mfreadwrite|mf|mfuuid|avrt|synchronization|api-ms-win-.*)\.dll$'
 
 check_and_record() { # target name file
   local t="$1" n="$2" f="$3" imports="" load=""
@@ -467,7 +576,9 @@ build_one() { # name target
   log "$n ($t) from $commit"
   f="$("build_$n" "$t" "$bld" | tail -1)"
   [ -n "$f" ] && [ -f "$f" ] || { echo "$n ($t): build gave no library" >&2; exit 1; }
-  if [ "$t" = win ]; then dst="$OUT_WIN/$out.dll"; mkdir -p "$OUT_WIN"; $WSTRIP --strip-unneeded -o "$dst" "$f"
+  # An MSVC DLL (Xenia) holds no symbols (they are in its .pdb): copied as it is, not through binutils' strip.
+  if [ "$t" = win ] && [ "$n" = xenia ]; then dst="$OUT_WIN/$out.dll"; mkdir -p "$OUT_WIN"; cp "$f" "$dst"
+  elif [ "$t" = win ]; then dst="$OUT_WIN/$out.dll"; mkdir -p "$OUT_WIN"; $WSTRIP --strip-unneeded -o "$dst" "$f"
   else dst="$OUT_LINUX/$out.so"; mkdir -p "$OUT_LINUX"; strip --strip-unneeded -o "$dst" "$f"; fi
   verify_patched "$n" "$dst"
   check_and_record "$t" "$n" "$dst"
@@ -493,13 +604,13 @@ LIST=()
 for a in "$@"; do
   case "$a" in
     --win) TARGETS=(win) ;; --linux) TARGETS=(linux) ;; --both) TARGETS=(win linux) ;;
-    -h|--help) sed -n 2,39p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,41p "$0"; exit 0 ;;
     *) row "$a" >/dev/null; LIST+=("$a") ;;
   esac
 done
 if [ $WINHOST = 1 ]; then
   [ "${TARGETS[*]}" = win ] || { echo "On Windows only --win is built (the Linux .so files are built on Linux)" >&2; exit 2; }
-  [ ${#LIST[@]} -gt 0 ] || LIST=(mgba gpsp melonds pcsx mupen ppsspp azahar dolphin lrps2 pcee2)
+  [ ${#LIST[@]} -gt 0 ] || LIST=(mgba gpsp melonds pcsx mupen ppsspp azahar dolphin lrps2 pcee2 xenia)
 else
   [ ${#LIST[@]} -gt 0 ] || LIST=(mgba gpsp melonds pcsx mupen ppsspp azahar)
   for n in "${LIST[@]}"; do
@@ -509,7 +620,7 @@ fi
 
 need_tools=(cmake ninja git "$WCC" "$WCXX")
 for n in "${LIST[@]}"; do
-  case "$n" in gpsp|pcsx|mupen) need_tools+=("$MAKE") ;; ppsspp) need_tools+=(nasm zip) ;; esac
+  case "$n" in gpsp|pcsx|mupen) need_tools+=("$MAKE") ;; ppsspp) need_tools+=(nasm zip) ;; xenia) need_tools+=(curl unzip cmd.exe "$XENIA_PYTHON") ;; esac
 done
 for tool in "${need_tools[@]}"; do
   command -v "$tool" >/dev/null || { echo "Missing tool: $tool ($([ $WINHOST = 1 ] && echo 'MSYS2: pacman -S ...' || echo 'sudo apt-get install ...'))" >&2; exit 1; }

@@ -78,6 +78,7 @@ data class GameLayout(
             Console.GBA -> 1.5f
             Console.PSP -> 480f / 272f
             Console.PSX, Console.N64, Console.GC, Console.WII, Console.PS2 -> 4f / 3f
+            Console.XBOX360 -> 16f / 9f
             else -> 160f / 144f
         }
 
