@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/BBBannon/Shoalcade/main/server/assets/thumb.png",
     "versions": [
       {
+        "version": "0.13.0.0",
+        "changelog": "s0.13: Xbox 360 in the Windows app: your own discs, saves shared through Jellyfin. Phone app 0.16.0 and Windows app 0.16.0.",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/BBBannon/Shoalcade/releases/download/v0.13.0/Shoalcade_s0.13.zip",
+        "checksum": "952b2da74a4ba45f20386ced3bf92ad6",
+        "timestamp": "2026-11-07T12:02:21Z"
+      },
+      {
         "version": "0.12.0.0",
         "changelog": "s0.12: Continue card at the top of your games, controller shortcuts (hold Select + R1, L1, R2, L2), a controller rumble switch, Smooth picture on the phone, permanent Discord link. Phone and Windows apps 0.15.0.",
         "targetAbi": "12.3.0.0",
